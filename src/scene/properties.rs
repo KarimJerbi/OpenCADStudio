@@ -67,7 +67,7 @@ pub fn fallback_properties(_handle: Handle, entity: &EntityType) -> PropSection 
     }
 }
 
-fn entity_type_name(e: &EntityType) -> &'static str {
+pub fn entity_type_name(e: &EntityType) -> &'static str {
     match e {
         EntityType::Point(_) => "Point",
         EntityType::Line(_) => "Line",

@@ -153,52 +153,7 @@ pub(super) fn next_group_auto_name(scene: &crate::scene::Scene) -> String {
 // ── Entity type labels ─────────────────────────────────────────────────────
 
 pub(super) fn entity_type_label(entity: &acadrust::EntityType) -> String {
-    use acadrust::EntityType::*;
-    match entity {
-        Point(_) => "Point",
-        Line(_) => "Line",
-        Circle(_) => "Circle",
-        Arc(_) => "Arc",
-        Ellipse(_) => "Ellipse",
-        Spline(_) => "Spline",
-        LwPolyline(_) => "Polyline",
-        Polyline(_) => "Polyline",
-        Polyline2D(_) => "Polyline2D",
-        Polyline3D(_) => "Polyline3D",
-        PolyfaceMesh(_) => "PolyfaceMesh",
-        PolygonMesh(_) => "PolygonMesh",
-        Text(_) => "Text",
-        MText(_) => "MText",
-        Dimension(_) => "Dimension",
-        Leader(_) => "Leader",
-        MultiLeader(_) => "MultiLeader",
-        Tolerance(_) => "Tolerance",
-        Insert(_) => "Block Reference",
-        Block(_) => "Block",
-        BlockEnd(_) => "Block End",
-        Hatch(_) => "Hatch",
-        Solid(_) => "Solid",
-        Face3D(_) => "3D Face",
-        Solid3D(_) => "3D Solid",
-        Region(_) => "Region",
-        Body(_) => "Body",
-        Mesh(_) => "Mesh",
-        Ray(_) => "Ray",
-        XLine(_) => "XLine",
-        MLine(_) => "MLine",
-        Viewport(_) => "Viewport",
-        RasterImage(_) => "Raster Image",
-        Wipeout(_) => "Wipeout",
-        Underlay(_) => "Underlay",
-        Shape(_) => "Shape",
-        Table(_) => "Table",
-        AttributeDefinition(_) => "Attribute Definition",
-        AttributeEntity(_) => "Attribute",
-        Ole2Frame(_) => "OLE Frame",
-        Seqend(_) => "Seqend",
-        Unknown(_) => "Unknown",
-    }
-    .to_string()
+    crate::scene::properties::entity_type_name(entity).to_string()
 }
 
 pub(super) fn entity_type_key(entity: &acadrust::EntityType) -> String {
