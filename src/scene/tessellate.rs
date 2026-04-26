@@ -799,12 +799,42 @@ fn dimension_text_entity(dim: &Dimension) -> Option<Text> {
     let value = dimension_text_value(dim)?;
     let pos = dimension_text_position(dim);
     let base = dim.base();
+    // acadrust's DXF reader never parses group code 53 (text rotation), so
+    // base.text_rotation is always 0 for DXF files.  Fall back to the natural
+    // axis-aligned rotation derived from geometry; only use the stored value
+    // when it represents a genuine user override (non-zero).
+    let rotation = if base.text_rotation.abs() > 1e-9 {
+        base.text_rotation
+    } else {
+        dimension_text_natural_rotation(dim)
+    };
     let mut text = Text::with_value(value, Vector3::new(pos.x as f64, pos.y as f64, pos.z as f64))
         .with_height(dimension_text_height(dim))
-        .with_rotation(base.text_rotation);
+        .with_rotation(rotation);
     text.style = base.style_name.clone();
     text.common = base.common.clone();
     Some(text)
+}
+
+fn dimension_text_natural_rotation(dim: &Dimension) -> f64 {
+    let angle = match dim {
+        Dimension::Linear(d) => d.rotation,
+        Dimension::Aligned(d) => {
+            let dx = d.second_point.x - d.first_point.x;
+            let dy = d.second_point.y - d.first_point.y;
+            dy.atan2(dx)
+        }
+        _ => 0.0,
+    };
+    // Clamp to (-π/2, π/2] so text never appears upside-down.
+    let pi = std::f64::consts::PI;
+    if angle > pi / 2.0 {
+        angle - pi
+    } else if angle <= -pi / 2.0 {
+        angle + pi
+    } else {
+        angle
+    }
 }
 
 fn dimension_text_value(dim: &Dimension) -> Option<String> {
