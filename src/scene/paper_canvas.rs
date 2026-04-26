@@ -100,7 +100,7 @@ impl<'a> canvas::Program<Message> for PaperCanvas<'a> {
         };
 
         // ── Wires (entity lines + inactive viewport projections) ──────────────
-        for wire in &self.scene.paper_canvas_wires() {
+        for wire in self.scene.paper_canvas_wires().iter() {
             let [r, g, b, a] = wire.color;
             let color = Color { r, g, b, a };
 

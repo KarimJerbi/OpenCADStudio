@@ -98,6 +98,10 @@ pub struct Scene {
     /// Stores projected + clipped wires in paper-space coordinates.
     /// Maps vp_handle → (geometry_epoch, Vec<WireModel>).
     paper_projected_cache: RefCell<HashMap<Handle, (u64, Vec<WireModel>)>>,
+    /// Full paper-canvas wire list (sheet + inactive-viewport projections + interim/preview).
+    /// Keyed by geometry_epoch — valid for all navigation frames (pan/zoom do not bump epoch).
+    /// Returns Arc so paper_canvas_wires() is O(1) on cache hits.
+    paper_canvas_cache: RefCell<Option<(u64, Arc<Vec<WireModel>>)>>,
     /// Active layout name — "Model" or a paper space layout name.
     pub current_layout: String,
     /// GPU render data for hatch fills, keyed by the DXF entity Handle.
@@ -137,6 +141,7 @@ impl Scene {
             viewport_wire_cache: RefCell::new(HashMap::new()),
             paper_sheet_cache: RefCell::new(None),
             paper_projected_cache: RefCell::new(HashMap::new()),
+            paper_canvas_cache: RefCell::new(None),
             current_layout: "Model".to_string(),
             hatches: HashMap::new(),
             meshes: HashMap::new(),
@@ -2271,7 +2276,15 @@ impl Scene {
     /// All wires needed to render the paper-space canvas (2D widget path).
     /// Includes paper entities, paper boundary, inactive viewport projections
     /// (excluding the active MSPACE viewport), plus interim/preview wires.
-    pub fn paper_canvas_wires(&self) -> Vec<WireModel> {
+    pub fn paper_canvas_wires(&self) -> Arc<Vec<WireModel>> {
+        {
+            let cache = self.paper_canvas_cache.borrow();
+            if let Some((cached_epoch, ref arc)) = *cache {
+                if cached_epoch == self.geometry_epoch {
+                    return Arc::clone(arc);
+                }
+            }
+        }
         let layout_block = self.current_layout_block_handle();
         let mut wires = self.paper_sheet_wires();
         wires.extend(self.viewport_content_wires(layout_block, None, self.active_viewport));
@@ -2279,7 +2292,9 @@ impl Scene {
             wires.push(iw.clone());
         }
         wires.extend(self.preview_wires.iter().cloned());
-        wires
+        let arc = Arc::new(wires);
+        *self.paper_canvas_cache.borrow_mut() = Some((self.geometry_epoch, Arc::clone(&arc)));
+        arc
     }
 
     /// Hatch fills for the paper-space canvas.
