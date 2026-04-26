@@ -2,7 +2,7 @@ use acadrust::entities::Spline;
 use glam::Vec3;
 use truck_modeling::{
     base::{BoundedCurve, ParametricCurve},
-    builder, BSplineCurve, Curve, Edge, KnotVec, Point3,
+    builder, BSplineCurve, Curve, Edge, KnotVec, Point3, Wire,
 };
 
 use crate::command::EntityTransform;
@@ -34,12 +34,7 @@ fn to_truck(spl: &Spline) -> TruckEntity {
     let (t0, t1) = bspline.range_tuple();
     let p_start = bspline.subs(t0);
     let p_end = bspline.subs(t1);
-    let v_start = builder::vertex(p_start);
-    let v_end = builder::vertex(p_end);
-    let edge = Edge::new(&v_start, &v_end, Curve::BSplineCurve(bspline));
 
-    // Expose fit_points (preferred) or control_points as key_vertices so that
-    // Endpoint/Midpoint snap can reach spline construction points.
     let snap_source = if !spl.fit_points.is_empty() {
         &spl.fit_points
     } else {
@@ -50,8 +45,32 @@ fn to_truck(spl: &Spline) -> TruckEntity {
         .map(|p| [p.x as f32, p.y as f32, p.z as f32])
         .collect();
 
+    let is_closed = spl.flags.closed || spl.flags.periodic;
+    let gap = {
+        let dx = (p_end.x - p_start.x) as f32;
+        let dy = (p_end.y - p_start.y) as f32;
+        let dz = (p_end.z - p_start.z) as f32;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    let object = if is_closed && gap > 1e-6 {
+        // The B-spline doesn't self-close — add an explicit closing segment.
+        let v_start = builder::vertex(p_start);
+        let v_end = builder::vertex(p_end);
+        let v_close = builder::vertex(p_start);
+        let main_edge = Edge::new(&v_start, &v_end, Curve::BSplineCurve(bspline));
+        let close_edge = builder::line(&v_end, &v_close);
+        let wire: Wire = [main_edge, close_edge].into_iter().collect();
+        TruckObject::Contour(wire)
+    } else {
+        let v_start = builder::vertex(p_start);
+        let v_end = builder::vertex(p_end);
+        let edge = Edge::new(&v_start, &v_end, Curve::BSplineCurve(bspline));
+        TruckObject::Curve(edge)
+    };
+
     TruckEntity {
-        object: TruckObject::Curve(edge),
+        object,
         snap_pts: vec![],
         tangent_geoms: vec![],
         key_vertices,

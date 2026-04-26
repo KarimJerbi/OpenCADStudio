@@ -37,6 +37,10 @@ pub use wire_model::WireModel;
 
 use crate::command::EntityTransform;
 use acadrust::entities::{BoundaryEdge, BoundaryPath, Hatch as DxfHatch, PolylineEdge, Solid as DxfSolid};
+use truck_modeling::{
+    base::{BoundedCurve, ParametricCurve},
+    BSplineCurve as TruckBSpline, KnotVec, Point3,
+};
 use acadrust::entities::{Block, BlockEnd, Insert as DxfInsert};
 use acadrust::objects::ObjectType;
 use acadrust::types::Vector2;
@@ -1668,12 +1672,35 @@ impl Scene {
                     }
                 }
                 BoundaryEdge::Spline(spline) => {
-                    for cp in &spline.control_points {
-                        boundary.push([cp.x as f32, cp.y as f32]);
-                    }
-                    if boundary.len() > 1 {
-                        if let Some(&first) = boundary.first() {
-                            boundary.push(first);
+                    // Evaluate the B-spline curve into smooth boundary points.
+                    // Fall back to control-point polyline for degenerate inputs.
+                    let degree = spline.degree as usize;
+                    let cps: Vec<Point3> = spline.control_points
+                        .iter()
+                        .map(|p| Point3::new(p.x, p.y, 0.0))
+                        .collect();
+                    let knot_vec = if !spline.knots.is_empty() {
+                        KnotVec::from(spline.knots.clone())
+                    } else if cps.len() >= 2 {
+                        KnotVec::uniform_knot(degree, cps.len() - 1)
+                    } else {
+                        KnotVec::from(vec![])
+                    };
+                    let ok = cps.len() >= 2
+                        && degree >= 1
+                        && knot_vec.len() == cps.len() + degree + 1;
+                    if ok {
+                        let bspl = TruckBSpline::new(knot_vec, cps);
+                        let (t0, t1) = bspl.range_tuple();
+                        let segs = 16u32;
+                        for i in 0..=segs {
+                            let t = t0 + (t1 - t0) * (i as f64 / segs as f64);
+                            let p = bspl.subs(t);
+                            boundary.push([p.x as f32, p.y as f32]);
+                        }
+                    } else {
+                        for cp in &spline.control_points {
+                            boundary.push([cp.x as f32, cp.y as f32]);
                         }
                     }
                 }
