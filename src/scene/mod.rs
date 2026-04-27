@@ -1235,10 +1235,10 @@ impl Scene {
     pub fn add_entity(&mut self, mut entity: EntityType) -> Handle {
         let hatch_seed = if let EntityType::Hatch(dxf) = &entity {
             let color = self.render_style(&entity).0;
-            Self::hatch_model_from_dxf(dxf, color)
+            Self::hatch_model_from_dxf(dxf, color, self.world_offset)
         } else if let EntityType::Solid(solid) = &entity {
             let color = self.render_style(&entity).0;
-            Some(Self::solid_hatch_model(solid, color))
+            Some(Self::solid_hatch_model(solid, color, self.world_offset))
         } else {
             None
         };
@@ -1473,7 +1473,7 @@ impl Scene {
                     continue;
                 }
                 let color = self.render_style(&EntityType::Hatch(dxf.clone())).0;
-                if let Some(mut model) = Self::hatch_model_from_dxf(&dxf, color) {
+                if let Some(mut model) = Self::hatch_model_from_dxf(&dxf, color, self.world_offset) {
                     if selected {
                         model.color = [0.15, 0.55, 1.00, model.color[3]];
                     }
@@ -1537,7 +1537,7 @@ impl Scene {
             {
                 continue;
             }
-            let boundary = Self::wipeout_boundary_2d(wo);
+            let boundary = Self::wipeout_boundary_2d(wo, self.world_offset);
             if boundary.len() >= 3 {
                 let mut fill_color = bg_color;
                 if self.selected.contains(&wo.common.handle) {
@@ -1557,16 +1557,17 @@ impl Scene {
     }
 
     /// Compute the 2D (XY) boundary polygon for a Wipeout entity.
-    fn wipeout_boundary_2d(wo: &acadrust::entities::Wipeout) -> Vec<[f32; 2]> {
+    fn wipeout_boundary_2d(wo: &acadrust::entities::Wipeout, world_offset: [f64; 3]) -> Vec<[f32; 2]> {
         use acadrust::entities::WipeoutClipType;
 
+        let [wox, woy, _woz] = world_offset;
         let is_polygon = wo.clipping_enabled
             && wo.clip_boundary_vertices.len() >= 3
             && matches!(wo.clip_type, WipeoutClipType::Polygonal);
 
         if is_polygon {
-            let ox = wo.insertion_point.x as f32;
-            let oy = wo.insertion_point.y as f32;
+            let ox = (wo.insertion_point.x - wox) as f32;
+            let oy = (wo.insertion_point.y - woy) as f32;
             wo.clip_boundary_vertices.iter().map(|v| {
                 let wx = (wo.u_vector.x * v.x * wo.size.x + wo.v_vector.x * v.y * wo.size.y) as f32;
                 let wy = (wo.u_vector.y * v.x * wo.size.x + wo.v_vector.y * v.y * wo.size.y) as f32;
@@ -1574,8 +1575,8 @@ impl Scene {
             }).collect()
         } else {
             // Rectangular boundary from 4 corners.
-            let ox = wo.insertion_point.x as f32;
-            let oy = wo.insertion_point.y as f32;
+            let ox = (wo.insertion_point.x - wox) as f32;
+            let oy = (wo.insertion_point.y - woy) as f32;
             let oz = wo.insertion_point.z as f32;
             let ux = (wo.u_vector.x * wo.size.x) as f32;
             let uy = (wo.u_vector.y * wo.size.x) as f32;
@@ -1591,7 +1592,8 @@ impl Scene {
         }
     }
 
-    fn hatch_model_from_dxf(dxf: &DxfHatch, color: [f32; 4]) -> Option<HatchModel> {
+    fn hatch_model_from_dxf(dxf: &DxfHatch, color: [f32; 4], world_offset: [f64; 3]) -> Option<HatchModel> {
+        let [ox, oy, _oz] = world_offset;
         let path = dxf
             .paths
             .iter()
@@ -1615,10 +1617,10 @@ impl Scene {
                         let v1 = &verts[(i + 1) % count];
                         let bulge = v0.z;
                         if bulge.abs() < 1e-9 {
-                            boundary.push([v0.x as f32, v0.y as f32]);
+                            boundary.push([(v0.x - ox) as f32, (v0.y - oy) as f32]);
                         } else {
-                            let p0 = [v0.x as f32, v0.y as f32];
-                            let p1 = [v1.x as f32, v1.y as f32];
+                            let p0 = [(v0.x - ox) as f32, (v0.y - oy) as f32];
+                            let p1 = [(v1.x - ox) as f32, (v1.y - oy) as f32];
                             let angle = 4.0 * (bulge as f32).atan();
                             let dx = p1[0] - p0[0];
                             let dy = p1[1] - p0[1];
@@ -1656,12 +1658,12 @@ impl Scene {
                     }
                 }
                 BoundaryEdge::Line(line) => {
-                    boundary.push([line.start.x as f32, line.start.y as f32]);
-                    boundary.push([line.end.x as f32, line.end.y as f32]);
+                    boundary.push([(line.start.x - ox) as f32, (line.start.y - oy) as f32]);
+                    boundary.push([(line.end.x - ox) as f32, (line.end.y - oy) as f32]);
                 }
                 BoundaryEdge::CircularArc(arc) => {
-                    let cx = arc.center.x as f32;
-                    let cy = arc.center.y as f32;
+                    let cx = (arc.center.x - ox) as f32;
+                    let cy = (arc.center.y - oy) as f32;
                     let r = arc.radius as f32;
                     let (sa, ea) = if arc.counter_clockwise {
                         (arc.start_angle as f32, arc.end_angle as f32)
@@ -1680,8 +1682,8 @@ impl Scene {
                     }
                 }
                 BoundaryEdge::EllipticArc(ell) => {
-                    let cx = ell.center.x as f32;
-                    let cy = ell.center.y as f32;
+                    let cx = (ell.center.x - ox) as f32;
+                    let cy = (ell.center.y - oy) as f32;
                     let maj_x = ell.major_axis_endpoint.x as f32;
                     let maj_y = ell.major_axis_endpoint.y as f32;
                     let r_maj = (maj_x * maj_x + maj_y * maj_y).sqrt();
@@ -1733,11 +1735,11 @@ impl Scene {
                         for i in 0..=segs {
                             let t = t0 + (t1 - t0) * (i as f64 / segs as f64);
                             let p = bspl.subs(t);
-                            boundary.push([p.x as f32, p.y as f32]);
+                            boundary.push([(p.x - ox) as f32, (p.y - oy) as f32]);
                         }
                     } else {
                         for cp in &spline.control_points {
-                            boundary.push([cp.x as f32, cp.y as f32]);
+                            boundary.push([(cp.x - ox) as f32, (cp.y - oy) as f32]);
                         }
                     }
                 }
@@ -1834,11 +1836,11 @@ impl Scene {
             let model = match &kind {
                 EntityType::Hatch(dxf) => {
                     let color = tessellate::aci_to_rgba(&dxf.common.color);
-                    Self::hatch_model_from_dxf(dxf, color)
+                    Self::hatch_model_from_dxf(dxf, color, self.world_offset)
                 }
                 EntityType::Solid(solid) => {
                     let color = tessellate::aci_to_rgba(&solid.common.color);
-                    Some(Self::solid_hatch_model(solid, color))
+                    Some(Self::solid_hatch_model(solid, color, self.world_offset))
                 }
                 _ => None,
             };
@@ -1896,12 +1898,13 @@ impl Scene {
     /// Build a solid-fill HatchModel for a DXF Solid entity.
     /// DXF SOLID corners are in "Z-order": p0-p1 top, p2-p3 bottom.
     /// Visual quad is p0→p1→p3→p2 (closed).
-    fn solid_hatch_model(solid: &DxfSolid, color: [f32; 4]) -> HatchModel {
+    fn solid_hatch_model(solid: &DxfSolid, color: [f32; 4], world_offset: [f64; 3]) -> HatchModel {
+        let [ox, oy, _oz] = world_offset;
         let boundary = vec![
-            [solid.first_corner.x as f32,  solid.first_corner.y as f32],
-            [solid.second_corner.x as f32, solid.second_corner.y as f32],
-            [solid.fourth_corner.x as f32, solid.fourth_corner.y as f32],
-            [solid.third_corner.x as f32,  solid.third_corner.y as f32],
+            [(solid.first_corner.x - ox) as f32,  (solid.first_corner.y - oy) as f32],
+            [(solid.second_corner.x - ox) as f32, (solid.second_corner.y - oy) as f32],
+            [(solid.fourth_corner.x - ox) as f32, (solid.fourth_corner.y - oy) as f32],
+            [(solid.third_corner.x - ox) as f32,  (solid.third_corner.y - oy) as f32],
         ];
         HatchModel {
             boundary,
@@ -2161,7 +2164,7 @@ impl Scene {
             if self.hatches.contains_key(&h) {
                 let existing_color = self.hatches[&h].color;
                 let new_model = if let Some(EntityType::Hatch(dxf)) = self.document.get_entity(h) {
-                    Self::hatch_model_from_dxf(dxf, existing_color)
+                    Self::hatch_model_from_dxf(dxf, existing_color, self.world_offset)
                 } else {
                     None
                 };
@@ -2186,7 +2189,7 @@ impl Scene {
             if !h.is_null() {
                 let new_model = if let Some(EntityType::Hatch(dxf)) = self.document.get_entity(h) {
                     let color = tessellate::aci_to_rgba(&dxf.common.color);
-                    Self::hatch_model_from_dxf(dxf, color)
+                    Self::hatch_model_from_dxf(dxf, color, self.world_offset)
                 } else {
                     None
                 };
@@ -2210,7 +2213,7 @@ impl Scene {
         match self.document.get_entity(handle) {
             Some(EntityType::Hatch(dxf)) => {
                 let color = tessellate::aci_to_rgba(&dxf.common.color);
-                if let Some(model) = Self::hatch_model_from_dxf(dxf, color) {
+                if let Some(model) = Self::hatch_model_from_dxf(dxf, color, self.world_offset) {
                     self.hatches.insert(handle, model);
                 } else {
                     self.hatches.remove(&handle);
@@ -2218,7 +2221,7 @@ impl Scene {
             }
             Some(EntityType::Solid(solid)) => {
                 let color = tessellate::aci_to_rgba(&solid.common.color);
-                self.hatches.insert(handle, Self::solid_hatch_model(solid, color));
+                self.hatches.insert(handle, Self::solid_hatch_model(solid, color, self.world_offset));
             }
             _ => {}
         }
