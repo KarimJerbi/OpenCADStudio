@@ -244,11 +244,20 @@ impl H7CAD {
     /// Rebuild the cached selected_grips from the current entity selection.
     pub(super) fn refresh_selected_grips(&mut self) {
         let i = self.active_tab;
+        let wo = self.tabs[i].scene.world_offset;
         let (new_handle, new_grips) = {
             let selected = self.tabs[i].scene.selected_entities();
             if selected.len() == 1 {
                 let (handle, entity) = selected[0];
-                let grips = dispatch::grips(entity);
+                let grips = dispatch::grips(entity)
+                    .into_iter()
+                    .map(|mut g| {
+                        g.world.x -= wo[0] as f32;
+                        g.world.y -= wo[1] as f32;
+                        g.world.z -= wo[2] as f32;
+                        g
+                    })
+                    .collect();
                 (Some(handle), grips)
             } else {
                 (None, vec![])
