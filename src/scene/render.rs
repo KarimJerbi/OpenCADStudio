@@ -78,6 +78,9 @@ pub struct CameraState {
 #[derive(Debug)]
 pub struct Primitive {
     pub(super) wires: Arc<Vec<WireModel>>,
+    /// 3DFACE entity wires — separated so they are uploaded to the dedicated
+    /// face3d pipeline (fill + batched edges) instead of N individual WireGpu.
+    pub(super) face3d_wires: Arc<Vec<WireModel>>,
     pub(super) hatches: Arc<Vec<HatchModel>>,
     /// Wipeout fills — rendered in a separate pass AFTER wires.
     pub(super) wipeout_hatches: Arc<Vec<HatchModel>>,
@@ -125,6 +128,7 @@ impl shader::Primitive for Primitive {
             pipeline.upload_images(device, queue, &self.images[..]);
             pipeline.upload_meshes(device, &self.meshes[..]);
             pipeline.upload_wires(device, &self.wires[..]);
+            pipeline.upload_face3d(device, &self.face3d_wires[..]);
             pipeline.cached_epoch = self.geometry_epoch;
         }
         if self.show_viewcube {
@@ -280,10 +284,11 @@ impl Scene {
         self.selection.borrow_mut().vp_size = (bounds.width, bounds.height);
 
         let entity_arc = self.entity_wires_arc();
+        let (face3d_wires, other_wires) = split_face3d_wires(&entity_arc, &self.document);
         let all_wires = if self.interim_wire.is_none() && self.preview_wires.is_empty() {
-            entity_arc
+            Arc::new(other_wires)
         } else {
-            let mut v = (*entity_arc).clone();
+            let mut v = other_wires;
             if let Some(iw) = &self.interim_wire {
                 v.push(iw.clone());
             }
@@ -299,6 +304,7 @@ impl Scene {
 
         Primitive {
             wires: all_wires,
+            face3d_wires: Arc::new(face3d_wires),
             hatches: self.hatch_models_arc(),
             wipeout_hatches: self.wipeout_models_arc(),
             images: self.images_arc(),
@@ -327,10 +333,11 @@ impl Scene {
         };
 
         let base_arc = self.model_wires_for_viewport_arc(vp_handle);
+        let (face3d_wires, other_wires) = split_face3d_wires(&base_arc, &self.document);
         let all_wires = if self.interim_wire.is_none() && self.preview_wires.is_empty() {
-            base_arc
+            Arc::new(other_wires)
         } else {
-            let mut v = (*base_arc).clone();
+            let mut v = other_wires;
             if let Some(iw) = &self.interim_wire {
                 v.push(iw.clone());
             }
@@ -340,6 +347,7 @@ impl Scene {
 
         Primitive {
             wires: all_wires,
+            face3d_wires: Arc::new(face3d_wires),
             hatches: self.hatch_models_arc(),
             wipeout_hatches: self.wipeout_models_arc(),
             images: self.images_arc(),
@@ -438,4 +446,29 @@ pub(super) fn resolve_pattern(
         return solid;
     }
     (pat_len, pat)
+}
+
+/// Partition a wire list into (face3d_wires, other_wires).
+///
+/// Uses a document handle lookup so no changes to WireModel are needed.
+/// O(N) per geometry epoch — acceptable since it runs once per epoch.
+fn split_face3d_wires(
+    wires: &[WireModel],
+    document: &acadrust::CadDocument,
+) -> (Vec<WireModel>, Vec<WireModel>) {
+    let mut face3d = Vec::new();
+    let mut others = Vec::new();
+    for w in wires {
+        let is_face3d = w.name.parse::<u64>()
+            .ok()
+            .and_then(|v| document.get_entity(Handle::new(v)))
+            .map(|e| matches!(e, EntityType::Face3D(_)))
+            .unwrap_or(false);
+        if is_face3d {
+            face3d.push(w.clone());
+        } else {
+            others.push(w.clone());
+        }
+    }
+    (face3d, others)
 }
