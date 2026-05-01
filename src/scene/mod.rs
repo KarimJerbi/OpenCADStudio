@@ -3084,12 +3084,15 @@ fn tessellate_entity(
     let sel = selected.contains(&h);
 
     if let EntityType::Viewport(vp) = e {
+        // The sheet viewport (overall/id=1) is never shown — it represents the
+        // paper boundary, not a user-defined content window.
+        if !Scene::is_content_viewport(vp) {
+            return vec![];
+        }
         let is_active = active_viewport == Some(h);
         let is_locked = vp.status.locked;
-        let color = if sel && vp.id != 1 {
+        let color = if sel {
             [1.0, 1.0, 1.0, 1.0]
-        } else if vp.id == 1 {
-            [0.40, 0.40, 0.40, 1.0]
         } else if is_active {
             [1.0, 0.90, 0.20, 1.0]
         } else if is_locked {
