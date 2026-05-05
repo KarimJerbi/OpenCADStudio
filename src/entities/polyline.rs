@@ -146,6 +146,67 @@ fn tessellate_polyline2d(pl: &Polyline2D) -> TruckEntity {
         Point3::new(wx, wy, wz)
     };
 
+    if pl.thickness.abs() > 1e-10 {
+        let (nx, ny, nz) = normal;
+        let t = pl.thickness;
+        let off = |p: [f32; 3]| -> [f32; 3] {
+            [(p[0] as f64 + t * nx) as f32, (p[1] as f64 + t * ny) as f32, (p[2] as f64 + t * nz) as f32]
+        };
+        let mut path: Vec<[f32; 3]> = Vec::new();
+        let mut kv: Vec<[f32; 3]> = Vec::new();
+        let mut tgs: Vec<TangentGeom> = Vec::new();
+        let (w0x, w0y, w0z) = to_wcs(verts[0].location.x, verts[0].location.y);
+        path.push([w0x as f32, w0y as f32, w0z as f32]);
+        kv.push([w0x as f32, w0y as f32, w0z as f32]);
+        for i in 0..seg_count {
+            let va = &verts[i];
+            let vb = &verts[(i + 1) % count];
+            let (ox0, oy0) = (va.location.x, va.location.y);
+            let (ox1, oy1) = (vb.location.x, vb.location.y);
+            let bulge = va.bulge;
+            if bulge.abs() < 1e-9 {
+                let (wx, wy, wz) = to_wcs(ox1, oy1);
+                path.push([wx as f32, wy as f32, wz as f32]);
+                tgs.push(TangentGeom::Line { p1: path[path.len()-2], p2: *path.last().unwrap() });
+            } else {
+                let angle = 4.0 * bulge.atan();
+                let dx = ox1 - ox0; let dy = oy1 - oy0;
+                let d = (dx * dx + dy * dy).sqrt().max(1e-12);
+                let r = (d / 2.0) / (angle / 2.0).sin().abs();
+                let mx = (ox0 + ox1) * 0.5; let my = (oy0 + oy1) * 0.5;
+                let px = -dy / d;
+                let ss = if bulge > 0.0 { 1.0_f64 } else { -1.0_f64 };
+                let h = r - (r * r - d * d / 4.0).max(0.0).sqrt();
+                let ocx = mx + ss * px * (r - h);
+                let ocy = my + ss * (dx / d) * (r - h);
+                let a0 = (oy0 - ocy).atan2(ox0 - ocx);
+                let mut a1 = (oy1 - ocy).atan2(ox1 - ocx);
+                if bulge > 0.0 { if a1 < a0 { a1 += TAU; } } else { if a1 > a0 { a1 -= TAU; } }
+                let (wcx, wcy, wcz) = to_wcs(ocx, ocy);
+                tgs.push(TangentGeom::Circle { center: [wcx as f32, wcy as f32, wcz as f32], radius: r as f32 });
+                for j in 1..=16usize {
+                    let a = a0 + (a1 - a0) * (j as f64 / 16.0);
+                    let (wx, wy, wz) = to_wcs(ocx + r * a.cos(), ocy + r * a.sin());
+                    path.push([wx as f32, wy as f32, wz as f32]);
+                }
+            }
+            let (wbx, wby, wbz) = to_wcs(ox1, oy1);
+            kv.push([wbx as f32, wby as f32, wbz as f32]);
+        }
+        let mut pts: Vec<[f32; 3]> = Vec::with_capacity(path.len() * 2 + kv.len() * 3 + 4);
+        pts.extend_from_slice(&path);
+        pts.push([f32::NAN; 3]);
+        for &p in &path { pts.push(off(p)); }
+        if !kv.is_empty() {
+            pts.push([f32::NAN; 3]);
+            for (i, &pb) in kv.iter().enumerate() {
+                pts.push(pb); pts.push(off(pb));
+                if i + 1 < kv.len() { pts.push([f32::NAN; 3]); }
+            }
+        }
+        return TruckEntity { object: TruckObject::Lines(pts), snap_pts: vec![], tangent_geoms: tgs, key_vertices: kv };
+    }
+
     for i in 0..seg_count {
         let v0 = &verts[i];
         let v1 = &verts[(i + 1) % count];
