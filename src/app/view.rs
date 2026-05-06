@@ -344,23 +344,32 @@ impl H7CAD {
             }
             col.push(center_stack)
                .push(self.command_line.view())
-               .push(self.status_bar.view(
-                    &self.snapper,
-                    self.snap_popup_open,
-                    self.ortho_mode,
-                    self.polar_mode,
-                    self.polar_increment_deg,
-                    self.show_grid,
-                    self.dyn_input,
-                    self.snapper.otrack_enabled,
-                    tab.scene.layout_names(),
-                    tab.scene.current_layout.clone(),
-                    self.layout_rename_state.as_ref(),
-                    tab.scene.first_viewport_scale(),
-                    tab.scene.viewport_count(),
-                    tab.scene.active_viewport.is_some(),
-                    self.show_layout_tabs,
-               ))
+               .push({
+                    let is_model = tab.scene.current_layout == "Model";
+                    let scale_pill_enabled = is_model
+                        || tab.scene.active_viewport.is_some()
+                        || tab.scene.has_selected_viewport();
+                    self.status_bar.view(
+                        &self.snapper,
+                        self.snap_popup_open,
+                        self.ortho_mode,
+                        self.polar_mode,
+                        self.polar_increment_deg,
+                        self.show_grid,
+                        self.dyn_input,
+                        self.snapper.otrack_enabled,
+                        tab.scene.layout_names(),
+                        tab.scene.current_layout.clone(),
+                        self.layout_rename_state.as_ref(),
+                        tab.scene.first_viewport_scale(),
+                        tab.scene.viewport_count(),
+                        tab.scene.active_viewport.is_some(),
+                        self.show_layout_tabs,
+                        tab.scene.annotation_scale,
+                        self.scale_popup_open,
+                        scale_pill_enabled,
+                    )
+               })
                .width(Fill)
                .height(Fill)
         })
@@ -373,6 +382,17 @@ impl H7CAD {
 
         let snap_layer: Element<'_, Message> = if self.snap_popup_open {
             crate::ui::snap_popup::snap_popup_overlay(&self.snapper, 4.0)
+        } else {
+            iced::widget::Space::new().width(0).height(0).into()
+        };
+
+        let scale_layer: Element<'_, Message> = if self.scale_popup_open {
+            let is_model = tab.scene.current_layout == "Model";
+            crate::ui::scale_popup::scale_popup_overlay(
+                is_model,
+                tab.scene.annotation_scale,
+                tab.scene.first_viewport_scale(),
+            )
         } else {
             iced::widget::Space::new().width(0).height(0).into()
         };
@@ -406,7 +426,7 @@ impl H7CAD {
             }
         };
 
-        stack![main_ui, self.app_menu.view(), snap_layer, dropdown_layer, layout_ctx_layer, viewport_ctx_layer].into()
+        stack![main_ui, self.app_menu.view(), snap_layer, scale_layer, dropdown_layer, layout_ctx_layer, viewport_ctx_layer].into()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {

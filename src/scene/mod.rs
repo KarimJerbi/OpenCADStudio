@@ -130,6 +130,10 @@ pub struct Scene {
     /// EXTMIN/EXTMAX (10× safety margin). Used by fit_all() to ignore garbage
     /// entity coordinates (origin-stuck entities, bad Ray/XLine direction vectors).
     pub local_extent_max: f32,
+    /// Current annotation scale (CANNOSCALE equivalent).
+    /// Multiplier applied to Text/MText/Dimension sizes during tessellation.
+    /// 1.0 = no scaling. 50.0 = "1:50" drawing scale.
+    pub annotation_scale: f32,
 }
 
 impl Scene {
@@ -162,6 +166,7 @@ impl Scene {
             paper_bg_color: [1.0, 1.0, 1.0, 1.0],
             world_offset: [0.0; 3],
             local_extent_max: 1e9,
+            annotation_scale: 1.0,
         }
     }
 
@@ -439,6 +444,57 @@ impl Scene {
         }).count()
     }
 
+    /// True if any currently selected entity is a Viewport.
+    /// Used to enable the scale picker when a viewport is selected in paper space.
+    pub fn has_selected_viewport(&self) -> bool {
+        self.selected.iter().any(|&h| {
+            matches!(self.document.get_entity(h), Some(EntityType::Viewport(_)))
+        })
+    }
+
+    /// First content viewport handle in the current layout, used as fallback target
+    /// when no viewport is active or explicitly selected.
+    fn first_viewport_handle(&self) -> Option<Handle> {
+        if self.current_layout == "Model" {
+            return None;
+        }
+        let layout_block = self.current_layout_block_handle();
+        if layout_block.is_null() {
+            return None;
+        }
+        self.document.entities().find_map(|e| {
+            if let EntityType::Viewport(vp) = e {
+                if Self::is_content_viewport(vp) && vp.common.owner_handle == layout_block {
+                    return Some(vp.common.handle);
+                }
+            }
+            None
+        })
+    }
+
+    /// Set the scale of the active/selected viewport.
+    /// Priority: active_viewport → first selected viewport → first viewport in layout.
+    pub fn set_viewport_scale(&mut self, scale: f64) {
+        let target = self.active_viewport
+            .or_else(|| {
+                self.selected.iter().copied().find(|&h| {
+                    matches!(self.document.get_entity(h), Some(EntityType::Viewport(_)))
+                })
+            })
+            .or_else(|| self.first_viewport_handle());
+
+        if let Some(handle) = target {
+            if let Some(EntityType::Viewport(vp)) = self.document.get_entity_mut(handle) {
+                if !vp.status.locked && scale > 1e-9 {
+                    vp.custom_scale = scale;
+                    vp.view_height = vp.height / scale;
+                }
+            }
+            self.viewport_wire_cache.borrow_mut().remove(&handle);
+            self.bump_geometry();
+        }
+    }
+
     /// Sorted list of layout names: "Model" first, then paper layouts by tab order.
     pub fn layout_names(&self) -> Vec<String> {
         let mut names = vec!["Model".to_string()];
@@ -672,9 +728,10 @@ impl Scene {
         // coordinates, so world_offset must not be subtracted from them.
         let woff = if self.current_layout == "Model" { self.world_offset } else { [0.0; 3] };
         let bg = if self.current_layout == "Model" { self.bg_color } else { self.paper_bg_color };
+        let anno = if self.current_layout == "Model" { self.annotation_scale } else { 1.0 };
         let mut wires: Vec<WireModel> = visible
             .into_par_iter()
-            .flat_map(|e| tessellate_entity(doc, sel, avp, woff, bg, e))
+            .flat_map(|e| tessellate_entity(doc, sel, avp, woff, bg, anno, e))
             .collect();
 
         // Apply draw order via the cached index (O(1) block lookup).
@@ -733,7 +790,8 @@ impl Scene {
     /// Full tessellation pipeline for one entity.
     fn tessellate_one(&self, e: &EntityType) -> Vec<WireModel> {
         let bg = if self.current_layout == "Model" { self.bg_color } else { self.paper_bg_color };
-        tessellate_entity(&self.document, &self.selected, self.active_viewport, self.world_offset, bg, e)
+        let anno = if self.current_layout == "Model" { self.annotation_scale } else { 1.0 };
+        tessellate_entity(&self.document, &self.selected, self.active_viewport, self.world_offset, bg, anno, e)
     }
 
     fn model_space_block_handle(&self) -> Handle {
@@ -2941,9 +2999,20 @@ impl Scene {
     fn model_wires_for_viewport(&self, vp_handle: Handle) -> Vec<WireModel> {
         use std::collections::HashSet as HSet;
 
-        let frozen: HSet<Handle> = match self.document.get_entity(vp_handle) {
-            Some(EntityType::Viewport(vp)) => vp.frozen_layers.iter().cloned().collect(),
-            _ => HSet::new(),
+        let (frozen, vp_anno_scale) = match self.document.get_entity(vp_handle) {
+            Some(EntityType::Viewport(vp)) => {
+                let f: HSet<Handle> = vp.frozen_layers.iter().cloned().collect();
+                let vp_scale = if vp.custom_scale.abs() > 1e-9 {
+                    vp.custom_scale
+                } else if vp.view_height.abs() > 1e-9 {
+                    vp.height / vp.view_height
+                } else {
+                    1.0
+                };
+                let anno = if vp_scale > 1e-9 { (1.0 / vp_scale) as f32 } else { 1.0_f32 };
+                (f, anno)
+            }
+            _ => (HSet::new(), 1.0_f32),
         };
 
         let model_block = self.model_space_block_handle();
@@ -2982,6 +3051,7 @@ impl Scene {
                 self.active_viewport,
                 self.world_offset,
                 self.bg_color,
+                vp_anno_scale,
                 e,
             ))
             .collect()
@@ -3136,6 +3206,7 @@ fn tessellate_entity(
     active_viewport: Option<Handle>,
     world_offset: [f64; 3],
     bg_color: [f32; 4],
+    anno_scale: f32,
     e: &EntityType,
 ) -> Vec<WireModel> {
     let h = e.common().handle;
@@ -3164,7 +3235,7 @@ fn tessellate_entity(
             (0.0_f32, [0.0f32; 8])
         };
         let mut wire = tessellate::tessellate(
-            document, h, e, sel, color, pattern_length, pattern, 1.5, world_offset,
+            document, h, e, sel, color, pattern_length, pattern, 1.5, world_offset, 1.0,
         );
         wire.aabb = entity_aabb(e, world_offset);
         return vec![wire];
@@ -3175,11 +3246,15 @@ fn tessellate_entity(
     let entity_color = render::adapt_to_bg(entity_color, bg_color);
     let lt_scale = document.header.linetype_scale as f32 * e.common().linetype_scale as f32;
     let lt_name = render::linetype_name_for(document, e);
+    // PSLTSCALE: scale linetype dashes by viewport anno_scale so they appear uniform in paper space.
+    let pslt_factor = if document.header.paper_space_linetype_scaling { anno_scale } else { 1.0 };
+    let pattern_length = pattern_length * pslt_factor;
+    let pattern = pattern.map(|v| v * pslt_factor);
 
     if let EntityType::Dimension(dim) = e {
         let aabb = entity_aabb(e, world_offset);
         let mut wires = tessellate::tessellate_dimension(
-            document, h, dim, sel, entity_color, line_weight_px, world_offset,
+            document, h, dim, sel, entity_color, line_weight_px, world_offset, anno_scale,
         );
         for w in &mut wires {
             w.aci = aci;
@@ -3208,6 +3283,8 @@ fn tessellate_entity(
                     );
                 let sub_color = render::adapt_to_bg(sub_color, bg_color);
                 let sub_aabb = entity_aabb(&sub, world_offset);
+                let sub_pattern_length = sub_pattern_length * pslt_factor;
+                let sub_pattern = sub_pattern.map(|v| v * pslt_factor);
                 let mut wire = tessellate::tessellate(
                     document,
                     h,
@@ -3218,6 +3295,7 @@ fn tessellate_entity(
                     sub_pattern,
                     sub_line_weight_px,
                     world_offset,
+                    anno_scale,
                 );
                 wire.name = h.value().to_string();
                 wire.aci = sub_aci;
@@ -3253,7 +3331,7 @@ fn tessellate_entity(
 
     let aabb = entity_aabb(e, world_offset);
     let mut base = tessellate::tessellate(
-        document, h, e, sel, entity_color, pattern_length, pattern, line_weight_px, world_offset,
+        document, h, e, sel, entity_color, pattern_length, pattern, line_weight_px, world_offset, anno_scale,
     );
     base.aci = aci;
     base.aabb = aabb;
@@ -3263,7 +3341,7 @@ fn tessellate_entity(
             &base.name,
             &base.points,
             clt,
-            lt_scale.max(1e-4),
+            (lt_scale * pslt_factor).max(1e-4),
             entity_color,
             sel,
             base.line_weight_px,

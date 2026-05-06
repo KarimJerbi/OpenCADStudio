@@ -39,6 +39,7 @@ pub(super) struct H7CAD {
     vp_size: (f32, f32),
     snapper: Snapper,
     snap_popup_open: bool,
+    scale_popup_open: bool,
     /// Whether Tangent snap was enabled before a tangent-pick command started.
     pre_cmd_tangent: Option<bool>,
     /// Orthogonal drawing constraint (F8): constrains picks to 0°/90°/180°/270°.
@@ -322,6 +323,14 @@ pub enum Message {
     TogglePolar,
     /// Set polar tracking angle increment (right-click POLAR button).
     SetPolarAngle(f32),
+    /// Set the model-space annotation scale (CANNOSCALE equivalent).
+    SetAnnotationScale(f32),
+    /// Set the active viewport's custom_scale (paper space).
+    SetViewportScale(f64),
+    /// Toggle the scale picker popup open/closed.
+    ToggleScalePopup,
+    /// Close the scale picker popup.
+    CloseScalePopup,
     /// Toggle dynamic input overlay (F12).
     ToggleDynInput,
     /// Toggle object snap tracking (F11).
@@ -606,6 +615,7 @@ impl H7CAD {
             vp_size: (1280.0, 720.0),
             snapper: Snapper::default(),
             snap_popup_open: false,
+            scale_popup_open: false,
             pre_cmd_tangent: None,
             ortho_mode: false,
             polar_mode: false,

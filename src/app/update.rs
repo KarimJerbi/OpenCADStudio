@@ -60,6 +60,8 @@ impl H7CAD {
 
                 self.tabs[i].current_path = Some(path.clone());
                 self.tabs[i].scene.document = doc;
+                let stored = self.tabs[i].scene.document.header.user_real1;
+                self.tabs[i].scene.annotation_scale = if stored > 1e-9 { stored as f32 } else { 1.0 };
 
                 // Auto-resolve XREFs relative to the opened file's directory.
                 if let Some(base_dir) = path.parent() {
@@ -407,6 +409,7 @@ impl H7CAD {
                 let i = self.active_tab;
                 if let Some(path) = &self.tabs[i].current_path {
                     let path = path.clone();
+                    self.tabs[i].scene.document.header.user_real1 = self.tabs[i].scene.annotation_scale as f64;
                     match crate::io::save(&self.tabs[i].scene.document, &path) {
                         Ok(()) => {
                             self.command_line
@@ -468,6 +471,7 @@ impl H7CAD {
                 let (_, version) = crate::io::parse_save_format(&self.save_dialog_format);
                 let close = self.close_save_dialog_window();
                 let i = self.active_tab;
+                self.tabs[i].scene.document.header.user_real1 = self.tabs[i].scene.annotation_scale as f64;
                 match crate::io::save_as_version(&self.tabs[i].scene.document, &path, version) {
                     Ok(()) => {
                         self.command_line.push_output(&format!("Saved: {}", path.display()));
@@ -2019,6 +2023,23 @@ impl H7CAD {
                 self.ortho_mode = false;
                 Task::none()
             }
+            Message::SetAnnotationScale(scale) => {
+                self.scale_popup_open = false;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.scene.annotation_scale = scale;
+                    tab.scene.bump_geometry();
+                }
+                Task::none()
+            }
+            Message::SetViewportScale(scale) => {
+                self.scale_popup_open = false;
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.scene.set_viewport_scale(scale);
+                }
+                Task::none()
+            }
+            Message::ToggleScalePopup => { self.scale_popup_open ^= true; Task::none() }
+            Message::CloseScalePopup => { self.scale_popup_open = false; Task::none() }
             Message::ToggleSnap(t) => { self.snapper.toggle(t); Task::none() }
             Message::ToggleSnapPopup => { self.snap_popup_open ^= true; Task::none() }
             Message::CloseSnapPopup => { self.snap_popup_open = false; Task::none() }

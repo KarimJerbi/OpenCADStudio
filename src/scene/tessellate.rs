@@ -13,7 +13,8 @@
 // Entities not handled by acad_to_truck (Viewport, Hatch, …) are tessellated
 // by the legacy geometry() path so nothing regresses.
 
-use acadrust::entities::{Dimension, Leader, MultiLeader, MultiLeaderPathType, Text};
+use acadrust::entities::{Dimension, Leader, LeaderContentType, MultiLeader, MultiLeaderPathType, Text};
+use crate::entities::multileader::catmull_rom_pts;
 use acadrust::types::{Color as AcadColor, Vector3};
 use acadrust::{CadDocument, EntityType, Handle};
 use glam::Vec3;
@@ -52,6 +53,7 @@ pub fn tessellate(
     pattern: [f32; 8],
     line_weight_px: f32,
     world_offset: [f64; 3],
+    anno_scale: f32,
 ) -> WireModel {
     let color = if selected {
         WireModel::SELECTED
@@ -59,6 +61,18 @@ pub fn tessellate(
         entity_color
     };
     let name = handle.value().to_string();
+
+    // MultiLeader/Leader need anno_scale for arrow/dogleg/text — handle before generic path.
+    if let EntityType::MultiLeader(ml) = entity {
+        return tessellate_multileader_single(
+            document, handle, ml, selected, entity_color, line_weight_px, world_offset, anno_scale,
+        );
+    }
+    if let EntityType::Leader(leader) = entity {
+        return tessellate_leader_single(
+            handle, leader, selected, entity_color, line_weight_px, world_offset, anno_scale,
+        );
+    }
 
     // ── Try the truck path first ───────────────────────────────────────────
     if let Some(te) = convert(entity, document) {
@@ -73,9 +87,17 @@ pub fn tessellate(
 
                 let mut points: Vec<[f32; 3]> = Vec::new();
                 let mut first = true;
+                // Annotation scale: scale glyph strokes relative to the text
+                // insertion point (first group's origin) so multi-line MText
+                // lines spread apart correctly as well as growing in size.
+                let ref_origin = stroke_groups.first().map(|g| g.origin).unwrap_or([0.0, 0.0]);
+                let ref_lx = (ref_origin[0] - ox) as f32;
+                let ref_ly = (ref_origin[1] - oy) as f32;
                 for group in &stroke_groups {
                     let lx = (group.origin[0] - ox) as f32;
                     let ly = (group.origin[1] - oy) as f32;
+                    let slx = (lx - ref_lx) * anno_scale + ref_lx;
+                    let sly = (ly - ref_ly) * anno_scale + ref_ly;
                     for stroke in &group.strokes {
                         if stroke.len() < 2 {
                             continue;
@@ -85,7 +107,7 @@ pub fn tessellate(
                         }
                         first = false;
                         for &[x, y] in stroke {
-                            points.push([x + lx, y + ly, elev]);
+                            points.push([x * anno_scale + slx, y * anno_scale + sly, elev]);
                         }
                     }
                 }
@@ -309,6 +331,7 @@ pub fn tessellate_dimension(
     entity_color: [f32; 4],
     line_weight_px: f32,
     world_offset: [f64; 3],
+    anno_scale: f32,
 ) -> Vec<WireModel> {
     let color = if selected {
         WireModel::SELECTED
@@ -323,7 +346,7 @@ pub fn tessellate_dimension(
         .find(|s| s.name.eq_ignore_ascii_case(style_name)
             || (style_name.trim().is_empty() && s.name.eq_ignore_ascii_case("Standard")))
         .map(|s| {
-            let scale = if s.dimscale > 1e-6 { s.dimscale } else { 1.0 };
+            let scale = (if s.dimscale > 1e-6 { s.dimscale } else { 1.0 }) * anno_scale as f64;
             (
                 ((s.dimasz * scale) as f32).max(0.001),
                 (s.dimexo * scale) as f32,
@@ -368,6 +391,7 @@ pub fn tessellate_dimension(
             [0.0; 8],
             line_weight_px,
             world_offset,
+            anno_scale,
         );
         wire.name = name;
         wires.push(wire);
@@ -376,91 +400,81 @@ pub fn tessellate_dimension(
     wires
 }
 
-/// Kept for backwards compatibility — geometry now lives in entities/leader.rs.
-#[allow(dead_code)]
-fn tessellate_leader(
+fn tessellate_leader_single(
     handle: Handle,
     leader: &Leader,
     selected: bool,
     entity_color: [f32; 4],
     line_weight_px: f32,
-) -> Vec<WireModel> {
+    world_offset: [f64; 3],
+    anno_scale: f32,
+) -> WireModel {
     let color = if selected { WireModel::SELECTED } else { entity_color };
     let name = handle.value().to_string();
+    let [ox, oy, oz] = world_offset;
+    let p3 = |v: &Vector3| -> [f32; 3] {
+        [(v.x - ox) as f32, (v.y - oy) as f32, (v.z - oz) as f32]
+    };
+    let nan = [f32::NAN; 3];
 
     let verts = &leader.vertices;
+
     if verts.len() < 2 {
-        return vec![WireModel {
+        return WireModel {
             name,
             points: vec![],
             color,
             selected,
+            aci: 0,
             pattern_length: 0.0,
             pattern: [0.0; 8],
             line_weight_px,
             snap_pts: vec![],
             tangent_geoms: vec![],
-            aci: 0,
             key_vertices: vec![],
             aabb: WireModel::UNBOUNDED_AABB,
             plinegen: true,
             vp_scissor: None,
-        }];
+        };
     }
 
-    let to_f32 = |v: &Vector3| -> [f32; 3] { [v.x as f32, v.y as f32, v.z as f32] };
-    let nan = [f32::NAN; 3];
+    let mut points: Vec<[f32; 3]> = verts.iter().map(|v| p3(v)).collect();
+    let mut tangents: Vec<TangentGeom> = Vec::new();
+    let key_vertices: Vec<[f32; 3]> = verts.iter().map(|v| p3(v)).collect();
 
-    // Main path
-    let mut points: Vec<[f32; 3]> = verts.iter().map(to_f32).collect();
+    for i in 0..verts.len().saturating_sub(1) {
+        tangents.push(TangentGeom::Line { p1: p3(&verts[i]), p2: p3(&verts[i + 1]) });
+    }
 
-    // Arrowhead at vertex[0] — only when arrow_enabled
     if leader.arrow_enabled {
-        let tip = verts[0];
-        let next = verts[1];
+        let tip = &verts[0];
+        let next = &verts[1];
         let dx = (next.x - tip.x) as f32;
         let dy = (next.y - tip.y) as f32;
         let len = (dx * dx + dy * dy).sqrt().max(1e-9);
         let (dx, dy) = (dx / len, dy / len);
-        let arrow_size = (leader.text_height as f32).max(1.0) * 0.8;
-        let angle = std::f32::consts::PI / 6.0;
-        let (s, c) = angle.sin_cos();
-        let wing1 = [
-            tip.x as f32 + (dx * c - dy * s) * arrow_size,
-            tip.y as f32 + (dx * s + dy * c) * arrow_size,
-            tip.z as f32,
-        ];
-        let wing2 = [
-            tip.x as f32 + (dx * c + dy * s) * arrow_size,
-            tip.y as f32 + (-dx * s + dy * c) * arrow_size,
-            tip.z as f32,
-        ];
+        let sz = (leader.text_height as f32).max(1.0) * 0.8 * anno_scale;
+        let a = std::f32::consts::PI / 6.0;
+        let (s, c) = a.sin_cos();
+        let tip_f = p3(tip);
         points.push(nan);
-        points.push(wing1);
-        points.push(to_f32(&tip));
-        points.push(wing2);
+        points.push([tip_f[0] + (dx*c - dy*s)*sz, tip_f[1] + (dx*s + dy*c)*sz, tip_f[2]]);
+        points.push(tip_f);
+        points.push([tip_f[0] + (dx*c + dy*s)*sz, tip_f[1] + (-dx*s + dy*c)*sz, tip_f[2]]);
     }
 
-    // Landing line at last vertex
     if leader.hookline_enabled {
-        let last = *verts.last().unwrap();
-        let prev = verts[verts.len() - 2];
-        let last_dir_x = (last.x - prev.x) as f32;
-        let sign = if last_dir_x >= 0.0 { 1.0_f32 } else { -1.0_f32 };
-        let landing_len = leader.text_height as f32 * 1.5;
-        let landing_pt = [
-            last.x as f32 + sign * landing_len,
-            last.y as f32,
-            last.z as f32,
-        ];
+        let last = verts.last().unwrap();
+        let prev = &verts[verts.len() - 2];
+        let sign = if (last.x - prev.x) >= 0.0 { 1.0_f32 } else { -1.0_f32 };
+        let land_len = leader.text_height as f32 * 1.5 * anno_scale;
+        let last_f = p3(last);
         points.push(nan);
-        points.push(to_f32(&last));
-        points.push(landing_pt);
+        points.push(last_f);
+        points.push([last_f[0] + sign * land_len, last_f[1], last_f[2]]);
     }
 
-    let key_vertices: Vec<[f32; 3]> = verts.iter().map(to_f32).collect();
-
-    vec![WireModel {
+    WireModel {
         name,
         points,
         color,
@@ -470,17 +484,15 @@ fn tessellate_leader(
         pattern: [0.0; 8],
         line_weight_px,
         snap_pts: vec![],
-        tangent_geoms: vec![],
+        tangent_geoms: tangents,
         key_vertices,
         aabb: WireModel::UNBOUNDED_AABB,
-            plinegen: true,
-            vp_scissor: None,
-    }]
+        plinegen: true,
+        vp_scissor: None,
+    }
 }
 
-/// Kept for backwards compatibility — geometry now lives in entities/multileader.rs.
-#[allow(dead_code)]
-fn tessellate_multileader(
+fn tessellate_multileader_single(
     document: &CadDocument,
     handle: Handle,
     ml: &MultiLeader,
@@ -488,128 +500,125 @@ fn tessellate_multileader(
     entity_color: [f32; 4],
     line_weight_px: f32,
     world_offset: [f64; 3],
-) -> Vec<WireModel> {
+    anno_scale: f32,
+) -> WireModel {
     let color = if selected { WireModel::SELECTED } else { entity_color };
     let name = handle.value().to_string();
     let nan = [f32::NAN; 3];
-
     let [ox, oy, oz] = world_offset;
-    let to_f32 = |v: &acadrust::types::Vector3| -> [f32; 3] {
+    let p3 = |v: &acadrust::types::Vector3| -> [f32; 3] {
         [(v.x - ox) as f32, (v.y - oy) as f32, (v.z - oz) as f32]
     };
 
-    let arrow_size = ml.arrowhead_size as f32;
+    let arrow_size = ml.arrowhead_size as f32 * anno_scale;
     let draw_arrow = arrow_size > 0.0;
     let invisible = ml.path_type == MultiLeaderPathType::Invisible;
 
     let mut points: Vec<[f32; 3]> = Vec::new();
     let mut key_verts: Vec<[f32; 3]> = Vec::new();
-    let mut first_segment = true;
+    let mut snap_pts: Vec<(Vec3, SnapHint)> = Vec::new();
+    let mut tangents: Vec<TangentGeom> = Vec::new();
+    let mut first = true;
 
     for root in &ml.context.leader_roots {
         let cp = &root.connection_point;
-        let cp_f = to_f32(cp);
+        let cp_f = p3(cp);
+        snap_pts.push((Vec3::from(cp_f), SnapHint::Node));
 
         for line in &root.lines {
             if line.points.is_empty() { continue; }
 
-            // Leader line segments (hidden when path_type = Invisible)
             if !invisible {
-                if !first_segment { points.push(nan); }
-                first_segment = false;
+                if !first { points.push(nan); }
+                first = false;
 
-                for p in &line.points {
-                    points.push(to_f32(p));
-                    key_verts.push(to_f32(p));
+                let mut ctrl: Vec<[f32; 3]> = line.points.iter().map(|p| p3(p)).collect();
+                let last_f = *ctrl.last().unwrap_or(&cp_f);
+                let dist = ((last_f[0]-cp_f[0]).powi(2) + (last_f[1]-cp_f[1]).powi(2)).sqrt();
+                if dist > 1e-9 { ctrl.push(cp_f); }
+                for &c in &ctrl {
+                    key_verts.push(c);
+                    snap_pts.push((Vec3::from(c), SnapHint::Node));
                 }
 
-                // Closing segment: last bend point → connection_point
-                let last = line.points.last().unwrap();
-                let last_f = to_f32(last);
-                let dist = ((last_f[0]-cp_f[0]).powi(2) + (last_f[1]-cp_f[1]).powi(2)).sqrt();
-                if dist > 1e-9 {
-                    points.push(cp_f);
-                    key_verts.push(cp_f);
+                if ml.path_type == MultiLeaderPathType::Spline && ctrl.len() >= 2 {
+                    for pt in catmull_rom_pts(&ctrl, 8) { points.push(pt); }
+                } else {
+                    for &c in &ctrl { points.push(c); }
+                }
+                for i in 0..ctrl.len().saturating_sub(1) {
+                    tangents.push(TangentGeom::Line { p1: ctrl[i], p2: ctrl[i + 1] });
                 }
             }
 
-            // Arrowhead — only when arrowhead_size > 0
             if draw_arrow {
-                let tip = line.points[0];
-                let tip_f = to_f32(&tip);
-                let next_dir = if line.points.len() >= 2 { line.points[1] } else { *cp };
-                let dx = (next_dir.x - tip.x) as f32;
-                let dy = (next_dir.y - tip.y) as f32;
-                let dlen = (dx * dx + dy * dy).sqrt().max(1e-9);
-                let (dx, dy) = (dx / dlen, dy / dlen);
-                let angle = std::f32::consts::PI / 6.0;
-                let (s, c) = angle.sin_cos();
-                let w1 = [tip_f[0] + (dx*c - dy*s)*arrow_size,
-                          tip_f[1] + (dx*s + dy*c)*arrow_size, tip_f[2]];
-                let w2 = [tip_f[0] + (dx*c + dy*s)*arrow_size,
-                          tip_f[1] + (-dx*s + dy*c)*arrow_size, tip_f[2]];
+                let tip = &line.points[0];
+                let tip_f = p3(tip);
+                let next = if line.points.len() >= 2 { line.points[1] } else { *cp };
+                let dx = (next.x - tip.x) as f32;
+                let dy = (next.y - tip.y) as f32;
+                let dl = (dx * dx + dy * dy).sqrt().max(1e-9);
+                let (dx, dy) = (dx / dl, dy / dl);
+                let a = std::f32::consts::PI / 6.0;
+                let (s, c) = a.sin_cos();
                 points.push(nan);
-                points.push(w1);
+                points.push([tip_f[0] + (dx*c - dy*s)*arrow_size, tip_f[1] + (dx*s + dy*c)*arrow_size, tip_f[2]]);
                 points.push(tip_f);
-                points.push(w2);
+                points.push([tip_f[0] + (dx*c + dy*s)*arrow_size, tip_f[1] + (-dx*s + dy*c)*arrow_size, tip_f[2]]);
             }
         }
 
-        // Short landing shelf at connection_point — respects enable_landing and enable_dogleg
         if ml.enable_landing && ml.enable_dogleg && ml.dogleg_length > 0.0 {
             let dir = &root.direction;
-            let dlen = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
-            let dl = ml.dogleg_length;
-            let end = [
-                (cp.x + dir.x / dlen * dl - ox) as f32,
-                (cp.y + dir.y / dlen * dl - oy) as f32,
-                (cp.z - oz) as f32,
-            ];
+            let dl = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
+            let d = ml.dogleg_length * anno_scale as f64;
             points.push(nan);
             points.push(cp_f);
-            points.push(end);
+            points.push([(cp.x + dir.x/dl*d - ox) as f32, (cp.y + dir.y/dl*d - oy) as f32, cp_f[2]]);
         }
     }
 
-    let mut wires = vec![WireModel {
-        name: name.clone(),
+    // Text strokes — scale height, keep insertion point fixed.
+    if ml.content_type == LeaderContentType::MText && !ml.context.text_string.is_empty() {
+        let height = if ml.context.text_height > 0.0 { ml.context.text_height } else { ml.text_height };
+        let ins = &ml.context.text_location;
+        let z = (ins.z - oz) as f32;
+        snap_pts.push((Vec3::new((ins.x - ox) as f32, (ins.y - oy) as f32, z), SnapHint::Node));
+        let style = crate::entities::text_support::resolve_text_style("STANDARD", document);
+        let strokes = crate::scene::cxf::tessellate_text_ex(
+            [ins.x as f32, ins.y as f32],
+            (height as f32) * anno_scale,
+            0.0,
+            style.width_factor.max(0.01),
+            style.oblique_angle,
+            &style.font_name,
+            &ml.context.text_string,
+        );
+        for stroke in &strokes {
+            if stroke.len() < 2 { continue; }
+            points.push(nan);
+            for &[x, y] in stroke {
+                points.push([x - ox as f32, y - oy as f32, z]);
+            }
+        }
+    }
+
+    WireModel {
+        name,
         points,
         color,
         selected,
+        aci: 0,
         pattern_length: 0.0,
         pattern: [0.0; 8],
         line_weight_px,
-        snap_pts: vec![],
-        tangent_geoms: vec![],
-        aci: 0,
-            key_vertices: key_verts,
-            aabb: WireModel::UNBOUNDED_AABB,
-            plinegen: true,
-            vp_scissor: None,
-    }];
-
-    // Render text content as MText wire
-    if ml.content_type == acadrust::entities::LeaderContentType::MText
-        && !ml.context.text_string.is_empty()
-    {
-        let mut mtext = acadrust::entities::MText::new();
-        mtext.value = ml.context.text_string.clone();
-        mtext.insertion_point = ml.context.text_location;
-        mtext.height = if ml.context.text_height > 0.0 {
-            ml.context.text_height
-        } else {
-            ml.text_height
-        };
-        mtext.common.layer = ml.common.layer.clone();
-        let mut w = tessellate(
-            document, handle, &EntityType::MText(mtext),
-            selected, entity_color, 0.0, [0.0; 8], line_weight_px, world_offset,
-        );
-        w.name = name;
-        wires.push(w);
+        snap_pts,
+        tangent_geoms: tangents,
+        key_vertices: key_verts,
+        aabb: WireModel::UNBOUNDED_AABB,
+        plinegen: true,
+        vp_scissor: None,
     }
-
-    wires
 }
 
 /// Tessellate a Solid3D entity into a MeshModel (truck Shell/Solid path).
