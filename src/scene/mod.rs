@@ -285,8 +285,7 @@ impl Scene {
         self.geometry_epoch = GEOMETRY_EPOCH.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Compute scene centroid from DXF header extents and store as world_offset.
-    /// Must be called after `self.document` is set so all geometry is offset-corrected.
+    #[allow(dead_code)]
     pub fn compute_and_set_world_offset(&mut self) {
         let h = &self.document.header;
         let min = h.model_space_extents_min;
