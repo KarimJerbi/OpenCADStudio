@@ -23,4 +23,4 @@ rayon = "1"
 windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [patch.crates-io]
-acadrust = { path = "../acadrust" }
+acadrust = { git = "https://github.com/hakanaktt/acadrust" }

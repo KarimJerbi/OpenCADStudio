@@ -69,12 +69,8 @@ pub fn tessellate(
     let anno_scale = {
         let xdata = &entity.common().extended_data;
         let is_annotative = if xdata.is_empty() {
-            // Old DXF / no annotation metadata — fall back to group-code-293 flag.
-            match entity {
-                EntityType::Text(t) => t.is_annotative,
-                EntityType::MText(m) => m.is_annotative,
-                _ => true,
-            }
+            // Old DXF / no annotation metadata — treat as annotative.
+            true
         } else {
             xdata.get_record("AcAnnoPO").is_some()
         };
