@@ -2175,13 +2175,14 @@ impl Scene {
                         let ccw = arc.counter_clockwise;
                         let (sa, ea) = if ccw { (sa, ea) } else { (TAU - sa, TAU - ea) };
                         let span = ea - sa;
-                        let segs = ((span / TAU) * 32.0).ceil().max(4.0) as u32;
+                        let segs = ((span.abs() / TAU) * 32.0).ceil().max(4.0) as u32;
                         for i in 0..=segs {
                             let t = sa + span * (i as f64 / segs as f64);
                             boundary.push(to_xy(cx + r * t.cos(), cy + r * t.sin()));
                         }
                     }
                     BoundaryEdge::EllipticArc(ell) => {
+                        const TAU: f32 = std::f32::consts::TAU;
                         let cx = ell.center.x;
                         let cy = ell.center.y;
                         let maj_x = ell.major_axis_endpoint.x as f32;
@@ -2189,17 +2190,12 @@ impl Scene {
                         let r_maj = (maj_x * maj_x + maj_y * maj_y).sqrt();
                         let r_min = r_maj * ell.minor_axis_ratio as f32;
                         let rot = maj_y.atan2(maj_x);
-                        let (sa, ea) = if ell.counter_clockwise {
-                            (ell.start_angle as f32, ell.end_angle as f32)
-                        } else {
-                            (ell.end_angle as f32, ell.start_angle as f32)
-                        };
-                        let mut end = ea;
-                        if end < sa {
-                            end += std::f32::consts::TAU;
-                        }
-                        let span = end - sa;
-                        let segs = ((span / std::f32::consts::TAU) * 32.0).ceil().max(4.0) as u32;
+                        let ccw = ell.counter_clockwise;
+                        let sa = ell.start_angle as f32;
+                        let ea = ell.end_angle as f32;
+                        let (sa, ea) = if ccw { (sa, ea) } else { (TAU - sa, TAU - ea) };
+                        let span = ea - sa;
+                        let segs = ((span.abs() / TAU) * 32.0).ceil().max(4.0) as u32;
                         for i in 0..=segs {
                             let t = sa + span * (i as f32 / segs as f32);
                             let lx = r_maj * t.cos();

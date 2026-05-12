@@ -872,7 +872,7 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                             let ccw = arc.counter_clockwise;
                             let (sa, ea) = if ccw { (sa, ea) } else { (TAU - sa, TAU - ea) };
                             let span = ea - sa;
-                            let segs = ((span / TAU) * 32.0).ceil().max(4.0) as u32;
+                            let segs = ((span.abs() / TAU) * 32.0).ceil().max(4.0) as u32;
                             if !pts.is_empty() {
                                 pts.push([f32::NAN; 3]);
                             }
@@ -899,18 +899,18 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                             let r_min = r_maj * ell.minor_axis_ratio as f32;
                             let rot = (ell.major_axis_endpoint.y as f32)
                                 .atan2(ell.major_axis_endpoint.x as f32);
-                            let (sa, ea) = if ell.counter_clockwise {
-                                (ell.start_angle as f32, ell.end_angle as f32)
+                            const TAU: f32 = std::f32::consts::TAU;
+                            let ccw = ell.counter_clockwise;
+                            let sa = ell.start_angle as f32;
+                            let ea = ell.end_angle as f32;
+                            let (sa, ea) = if ccw {
+                                (sa, ea)
                             } else {
-                                (ell.end_angle as f32, ell.start_angle as f32)
+                                (TAU - sa, TAU - ea)
                             };
-                            let span = if ea > sa {
-                                ea - sa
-                            } else {
-                                ea - sa + std::f32::consts::TAU
-                            };
+                            let span = ea - sa;
                             let segs =
-                                ((span / std::f32::consts::TAU) * 32.0).ceil().max(4.0) as u32;
+                                ((span.abs() / TAU) * 32.0).ceil().max(4.0) as u32;
                             if !pts.is_empty() {
                                 pts.push([f32::NAN; 3]);
                             }
