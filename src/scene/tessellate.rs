@@ -766,9 +766,13 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                         acadrust::entities::BoundaryEdge::CircularArc(arc) => {
                             let sa = arc.start_angle;
                             let ea = arc.end_angle;
-                            let ccw_end = if ea >= sa { ea } else { ea + TAU };
-                            let (start_a, end_a) = (sa, ccw_end);
-                            let span = end_a - start_a;
+                            let ccw = arc.counter_clockwise;
+                            let (sa, ea) = if ccw {
+                                (sa, ea)
+                            } else {
+                                (TAU - sa, TAU - ea)
+                            };
+                            let span = ea - sa;
                             let segs = ((span / TAU) * 32.0)
                                 .ceil()
                                 .max(4.0) as u32;

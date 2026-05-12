@@ -2016,14 +2016,20 @@ impl Scene {
                     boundary.push(to_xy(line.end.x, line.end.y));
                 }
                 BoundaryEdge::CircularArc(arc) => {
+                    const TAU: f64 = std::f64::consts::TAU;
                     let cx = arc.center.x;
                     let cy = arc.center.y;
                     let r = arc.radius;
                     let sa = arc.start_angle;
                     let ea = arc.end_angle;
-                    let end = if ea >= sa { ea } else { ea + std::f64::consts::TAU };
-                    let span = end - sa;
-                    let segs = ((span / std::f64::consts::TAU) * 32.0).ceil().max(4.0) as u32;
+                    let ccw = arc.counter_clockwise;
+                    let (sa, ea) = if ccw {
+                        (sa, ea)
+                    } else {
+                        (TAU - sa, TAU - ea)
+                    };
+                    let span = ea - sa;
+                    let segs = ((span / TAU) * 32.0).ceil().max(4.0) as u32;
                     for i in 0..=segs {
                         let t = sa + span * (i as f64 / segs as f64);
                         boundary.push(to_xy(
