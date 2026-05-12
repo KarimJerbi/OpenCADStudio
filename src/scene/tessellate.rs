@@ -13,9 +13,10 @@
 // Entities not handled by acad_to_truck (Viewport, Hatch, …) are tessellated
 // by the legacy geometry() path so nothing regresses.
 
-use crate::entities::multileader::catmull_rom_pts;
+use crate::entities::multileader::{catmull_rom_pts, v_offset_for_attachment};
 use acadrust::entities::{
     Dimension, Leader, LeaderContentType, MultiLeader, MultiLeaderPathType, Text,
+    TextAttachmentPointType,
 };
 use acadrust::types::{Color as AcadColor, Vector3};
 use acadrust::{CadDocument, EntityType, Handle};
@@ -85,19 +86,8 @@ pub fn tessellate(
         }
     };
 
-    // MultiLeader/Leader need anno_scale for arrow/dogleg/text — handle before generic path.
-    if let EntityType::MultiLeader(ml) = entity {
-        return tessellate_multileader_single(
-            document,
-            handle,
-            ml,
-            selected,
-            entity_color,
-            line_weight_px,
-            world_offset,
-            anno_scale,
-        );
-    }
+    // MultiLeader is handled by scene/mod.rs since it emits multiple WireModels
+    // (leader, text, frame, fill) with distinct colors.
     if let EntityType::Leader(leader) = entity {
         return tessellate_leader_single(
             handle,
@@ -582,7 +572,21 @@ fn tessellate_leader_single(
     }
 }
 
-fn tessellate_multileader_single(
+/// Convert an acadrust `Color` to RGBA, falling back to `inherited` for
+/// `ByLayer` / `ByBlock` (assumes those are already resolved upstream).
+fn color_or_inherit(c: &AcadColor, inherited: [f32; 4]) -> [f32; 4] {
+    match c.rgb() {
+        Some((r, g, b)) => [
+            r as f32 / 255.0,
+            g as f32 / 255.0,
+            b as f32 / 255.0,
+            inherited[3],
+        ],
+        None => inherited,
+    }
+}
+
+pub fn tessellate_multileader(
     document: &CadDocument,
     handle: Handle,
     ml: &MultiLeader,
@@ -591,8 +595,8 @@ fn tessellate_multileader_single(
     line_weight_px: f32,
     world_offset: [f64; 3],
     anno_scale: f32,
-) -> WireModel {
-    let color = if selected {
+) -> Vec<WireModel> {
+    let line_color = if selected {
         WireModel::SELECTED
     } else {
         entity_color
@@ -604,10 +608,21 @@ fn tessellate_multileader_single(
         [(v.x - ox) as f32, (v.y - oy) as f32, (v.z - oz) as f32]
     };
 
-    let arrow_size = ml.arrowhead_size as f32 * anno_scale;
+    // ── Scaling ──────────────────────────────────────────────────────────────
+    // ml.scale_factor is always applied; anno_scale is only applied when the
+    // multileader is marked annotative.
+    let effective_scale = (ml.scale_factor as f32)
+        * if ml.enable_annotation_scale {
+            anno_scale
+        } else {
+            1.0
+        };
+
+    let arrow_size = ml.arrowhead_size as f32 * effective_scale;
     let draw_arrow = arrow_size > 0.0;
     let invisible = ml.path_type == MultiLeaderPathType::Invisible;
 
+    // ── Leader / arrow / dogleg points ───────────────────────────────────────
     let mut points: Vec<[f32; 3]> = Vec::new();
     let mut key_verts: Vec<[f32; 3]> = Vec::new();
     let mut snap_pts: Vec<(Vec3, SnapHint)> = Vec::new();
@@ -690,7 +705,7 @@ fn tessellate_multileader_single(
         if ml.enable_landing && ml.enable_dogleg && ml.dogleg_length > 0.0 {
             let dir = &root.direction;
             let dl = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
-            let d = ml.dogleg_length * anno_scale as f64;
+            let d = ml.dogleg_length * effective_scale as f64;
             points.push(nan);
             points.push(cp_f);
             points.push([
@@ -701,44 +716,14 @@ fn tessellate_multileader_single(
         }
     }
 
-    // Text strokes — scale height, keep insertion point fixed.
-    if ml.content_type == LeaderContentType::MText && !ml.context.text_string.is_empty() {
-        let height = if ml.context.text_height > 0.0 {
-            ml.context.text_height
-        } else {
-            ml.text_height
-        };
-        let ins = &ml.context.text_location;
-        let z = (ins.z - oz) as f32;
-        snap_pts.push((
-            Vec3::new((ins.x - ox) as f32, (ins.y - oy) as f32, z),
-            SnapHint::Node,
-        ));
-        let style = crate::entities::text_support::resolve_text_style("STANDARD", document);
-        let strokes = crate::scene::cxf::tessellate_text_ex(
-            [ins.x as f32, ins.y as f32],
-            (height as f32) * anno_scale,
-            0.0,
-            style.width_factor.max(0.01),
-            style.oblique_angle,
-            &style.font_name,
-            &ml.context.text_string,
-        );
-        for stroke in &strokes {
-            if stroke.len() < 2 {
-                continue;
-            }
-            points.push(nan);
-            for &[x, y] in stroke {
-                points.push([x - ox as f32, y - oy as f32, z]);
-            }
-        }
-    }
-
-    WireModel {
-        name,
+    // The leader/arrow/dogleg wire goes out as a single WireModel. Text, frame,
+    // and background fill (each with their own color) are appended as separate
+    // WireModels so the renderer respects per-piece coloring.
+    let mut wires: Vec<WireModel> = Vec::new();
+    wires.push(WireModel {
+        name: name.clone(),
         points,
-        color,
+        color: line_color,
         selected,
         aci: 0,
         pattern_length: 0.0,
@@ -751,7 +736,248 @@ fn tessellate_multileader_single(
         plinegen: true,
         vp_scissor: None,
         fill_tris: vec![],
+    });
+
+    // ── Text strokes / frame / background fill ──────────────────────────────
+    // Strip inline format codes, split / word-wrap into lines, then place each
+    // line according to text_attachment_point (horizontal) and
+    // text_left_attachment (vertical), with text_rotation/text_direction applied.
+    if ml.content_type == LeaderContentType::MText && !ml.context.text_string.is_empty() {
+        let ctx = &ml.context;
+        let raw_height = if ctx.text_height > 0.0 {
+            ctx.text_height
+        } else {
+            ml.text_height
+        } as f32;
+        let height = raw_height * effective_scale;
+
+        let ins = &ctx.text_location;
+        // Subtract world_offset in f64 before casting to f32: drawings often
+        // sit at large absolute coordinates and casting first then subtracting
+        // throws away the precision needed for the rotated sub-glyph offsets.
+        let local_ins_x = (ins.x - ox) as f32;
+        let local_ins_y = (ins.y - oy) as f32;
+        let z = (ins.z - oz) as f32;
+
+        // Rotation: prefer text_direction (transforms survive rotations / mirrors
+        // when acadrust updates it) and fall back to text_rotation.
+        let td = ctx.text_direction;
+        let rot = if td.x.abs() > 1e-9 || td.y.abs() > 1e-9 {
+            (td.y as f32).atan2(td.x as f32)
+        } else {
+            ctx.text_rotation as f32
+        };
+        let (cos_r, sin_r) = (rot.cos(), rot.sin());
+
+        // Resolve text style via handle when available, falling back to STANDARD.
+        let style_name = ctx
+            .text_style_handle
+            .as_ref()
+            .and_then(|h| {
+                document
+                    .text_styles
+                    .iter()
+                    .find(|s| s.handle == *h)
+                    .map(|s| s.name.clone())
+            })
+            .unwrap_or_else(|| "STANDARD".to_string());
+        let style = crate::entities::text_support::resolve_text_style(&style_name, document);
+        let font_name = style.font_name;
+        let font = crate::scene::cxf::get_font(&font_name);
+        let width_factor = style.width_factor.max(0.01);
+        let oblique = style.oblique_angle;
+
+        // Strip MText format codes (e.g. `{\fArial Black|b0|i0|c162|p34;...}`),
+        // then split on \P / \n / \N and optionally word-wrap to text_width.
+        let plain = crate::entities::text_support::strip_mtext_codes(&ctx.text_string);
+        let explicit_lines = crate::entities::text_support::split_mtext_lines(&plain);
+        let lines: Vec<String> = if ctx.text_width > 0.0 {
+            let scale = height / 9.0 * width_factor;
+            let max_w = ctx.text_width as f32 * effective_scale;
+            explicit_lines
+                .iter()
+                .flat_map(|line| {
+                    crate::entities::text_support::word_wrap(line, max_w, scale, font)
+                })
+                .collect()
+        } else {
+            explicit_lines
+        };
+
+        let ls_factor = if ctx.line_spacing_factor > 0.0 {
+            ctx.line_spacing_factor as f32
+        } else {
+            1.0
+        };
+        let line_h = height * ls_factor * (5.0 / 3.0) * font.line_spacing;
+        let n_lines = lines.len().max(1) as f32;
+
+        let h_anchor = match ctx.text_attachment_point {
+            TextAttachmentPointType::Left => 0.0_f32,
+            TextAttachmentPointType::Center => 0.5,
+            TextAttachmentPointType::Right => 1.0,
+        };
+        // Vertical anchor: use text_left_attachment (matches the leader-to-text
+        // attachment convention for the common case of left-side leaders).
+        let v_offset =
+            v_offset_for_attachment(ctx.text_left_attachment, n_lines, height, line_h);
+
+        let scale = height / 9.0 * width_factor;
+        let line_widths: Vec<f32> = lines
+            .iter()
+            .map(|line| crate::entities::text_support::measure_mtext_chars(line, scale, font))
+            .collect();
+        let max_line_w = line_widths.iter().cloned().fold(0.0_f32, f32::max);
+
+        // Resolve text color (falls back to entity color for ByLayer / ByBlock).
+        let text_color = if selected {
+            line_color
+        } else {
+            color_or_inherit(&ctx.text_color, entity_color)
+        };
+
+        // Build per-line stroke points in WCS.
+        let mut text_points: Vec<[f32; 3]> = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            let li = i as f32;
+            let line_y_local = -li * line_h + v_offset;
+            let line_w = line_widths[i];
+            let h_shift_local = -line_w * h_anchor;
+            let wcs_dx = h_shift_local * cos_r - line_y_local * sin_r;
+            let wcs_dy = h_shift_local * sin_r + line_y_local * cos_r;
+            // Origin already in offset-relative space — tessellator will rotate
+            // glyph offsets around it and produce points directly in render space.
+            let origin = [local_ins_x + wcs_dx, local_ins_y + wcs_dy];
+            let strokes = crate::scene::cxf::tessellate_text_ex(
+                origin,
+                height,
+                rot,
+                width_factor,
+                oblique,
+                &font_name,
+                line,
+            );
+            for stroke in &strokes {
+                if stroke.len() < 2 {
+                    continue;
+                }
+                text_points.push(nan);
+                for &[x, y] in stroke {
+                    text_points.push([x, y, z]);
+                }
+            }
+        }
+
+        if !text_points.is_empty() {
+            wires.push(WireModel {
+                name: name.clone(),
+                points: text_points,
+                color: text_color,
+                selected,
+                aci: 0,
+                pattern_length: 0.0,
+                pattern: [0.0; 8],
+                line_weight_px,
+                snap_pts: vec![(
+                    Vec3::new(local_ins_x, local_ins_y, z),
+                    SnapHint::Node,
+                )],
+                tangent_geoms: vec![],
+                key_vertices: vec![],
+                aabb: WireModel::UNBOUNDED_AABB,
+                plinegen: true,
+                vp_scissor: None,
+                fill_tris: vec![],
+            });
+        }
+
+        // Text frame / background-fill rectangle in local frame, then rotated to WCS.
+        if ml.text_frame || ctx.background_fill_enabled {
+            // Visual gap so the frame/fill doesn't touch glyph caps.
+            let pad = height * 0.25;
+            let block_top = v_offset + height + pad;
+            let block_bottom = v_offset - (n_lines - 1.0) * line_h - pad;
+            let block_left = -max_line_w * h_anchor - pad;
+            let block_right = max_line_w * (1.0 - h_anchor) + pad;
+            let local_corners: [[f32; 2]; 4] = [
+                [block_left, block_bottom],
+                [block_right, block_bottom],
+                [block_right, block_top],
+                [block_left, block_top],
+            ];
+            let wcs_corners: [[f32; 3]; 4] = std::array::from_fn(|i| {
+                let lx = local_corners[i][0];
+                let ly = local_corners[i][1];
+                let wx = local_ins_x + lx * cos_r - ly * sin_r;
+                let wy = local_ins_y + lx * sin_r + ly * cos_r;
+                [wx, wy, z]
+            });
+
+            // Background fill — emit two triangles; renders under the text strokes.
+            if ctx.background_fill_enabled {
+                let fill_color = if selected {
+                    line_color
+                } else {
+                    color_or_inherit(&ctx.background_fill_color, entity_color)
+                };
+                let fill_tris: Vec<[f32; 3]> = vec![
+                    wcs_corners[0],
+                    wcs_corners[1],
+                    wcs_corners[2],
+                    wcs_corners[0],
+                    wcs_corners[2],
+                    wcs_corners[3],
+                ];
+                wires.push(WireModel {
+                    name: name.clone(),
+                    points: vec![],
+                    color: fill_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: 0.0,
+                    pattern: [0.0; 8],
+                    line_weight_px: 1.0,
+                    snap_pts: vec![],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris,
+                });
+            }
+
+            // Text frame — closed rectangle, matches text color.
+            if ml.text_frame {
+                let frame_points: Vec<[f32; 3]> = vec![
+                    wcs_corners[0],
+                    wcs_corners[1],
+                    wcs_corners[2],
+                    wcs_corners[3],
+                    wcs_corners[0],
+                ];
+                wires.push(WireModel {
+                    name,
+                    points: frame_points,
+                    color: text_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: 0.0,
+                    pattern: [0.0; 8],
+                    line_weight_px,
+                    snap_pts: vec![],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris: vec![],
+                });
+            }
+        }
     }
+
+    wires
 }
 
 /// Tessellate a Solid3D entity into a MeshModel (truck Shell/Solid path).

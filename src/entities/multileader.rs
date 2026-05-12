@@ -1,4 +1,32 @@
-use acadrust::entities::{LeaderContentType, MultiLeader, MultiLeaderPathType, TextAttachmentType};
+use acadrust::entities::{
+    LeaderContentType, MultiLeader, MultiLeaderPathType, TextAttachmentPointType, TextAttachmentType,
+};
+
+/// Local-frame vertical baseline offset for line 0 given a vertical attachment
+/// and the overall block geometry. The baseline is at y=0 for `BottomOfTopLine*`
+/// (i.e. text_location coincides with line-0 baseline); other variants offset
+/// the block above/below/around text_location.
+pub(crate) fn v_offset_for_attachment(
+    attach: TextAttachmentType,
+    n_lines: f32,
+    h: f32,
+    line_h: f32,
+) -> f32 {
+    match attach {
+        TextAttachmentType::TopOfTopLine => -h,
+        TextAttachmentType::MiddleOfTopLine => -h * 0.5,
+        TextAttachmentType::MiddleOfText
+        | TextAttachmentType::CenterOfText
+        | TextAttachmentType::CenterOfTextOverline => ((n_lines - 1.0) * line_h - h) * 0.5,
+        TextAttachmentType::MiddleOfBottomLine => (n_lines - 1.0) * line_h - h * 0.5,
+        TextAttachmentType::BottomOfBottomLine | TextAttachmentType::BottomLine => {
+            (n_lines - 1.0) * line_h
+        }
+        TextAttachmentType::BottomOfTopLineUnderlineBottomLine
+        | TextAttachmentType::BottomOfTopLineUnderlineTopLine
+        | TextAttachmentType::BottomOfTopLineUnderlineAll => 0.0,
+    }
+}
 use glam::Vec3;
 
 use crate::command::EntityTransform;
@@ -146,33 +174,117 @@ fn to_truck(ml: &MultiLeader, document: &acadrust::CadDocument) -> Option<TruckE
         }
     }
 
-    // Text strokes (MText content rendered inline)
+    // Text strokes (MText content rendered inline). Mirrors the MText pipeline:
+    // strip inline format codes, split / word-wrap into lines, then place each
+    // line with the multileader's rotation, horizontal & vertical attachment,
+    // line spacing and scale_factor applied. Annotation scale is NOT applied
+    // here — this path is consumed by snap / truck export which work in WCS.
     if ml.content_type == LeaderContentType::MText && !ml.context.text_string.is_empty() {
-        let height = if ml.context.text_height > 0.0 {
-            ml.context.text_height
+        let ctx = &ml.context;
+        let raw_height = if ctx.text_height > 0.0 {
+            ctx.text_height
         } else {
             ml.text_height
-        };
-        let ins = &ml.context.text_location;
+        } as f32;
+        let scale_factor = ml.scale_factor as f32;
+        let height = raw_height * scale_factor;
+
+        let ins = &ctx.text_location;
+        let ins_x = ins.x;
+        let ins_y = ins.y;
         let z = ins.z as f32;
-        snap_pts.push(node([ins.x as f32, ins.y as f32, z]));
-        let style = crate::entities::text_support::resolve_text_style("STANDARD", document);
-        let strokes = crate::scene::cxf::tessellate_text_ex(
-            [ins.x as f32, ins.y as f32],
-            height as f32,
-            0.0,
-            style.width_factor.max(0.01),
-            style.oblique_angle,
-            &style.font_name,
-            &ml.context.text_string,
-        );
-        for stroke in &strokes {
-            if stroke.len() < 2 {
-                continue;
-            }
-            points.push(nan);
-            for &[x, y] in stroke {
-                points.push([x, y, z]);
+        // Prefer text_direction (carries through rotations/mirrors); fall back
+        // to text_rotation when no direction has been set.
+        let td = ctx.text_direction;
+        let rot = if td.x.abs() > 1e-9 || td.y.abs() > 1e-9 {
+            (td.y as f32).atan2(td.x as f32)
+        } else {
+            ctx.text_rotation as f32
+        };
+        let (cos_r, sin_r) = (rot.cos(), rot.sin());
+        snap_pts.push(node([ins_x as f32, ins_y as f32, z]));
+
+        // Resolve text style via handle when available, falling back to STANDARD.
+        let style_name = ctx
+            .text_style_handle
+            .as_ref()
+            .and_then(|h| {
+                document
+                    .text_styles
+                    .iter()
+                    .find(|s| s.handle == *h)
+                    .map(|s| s.name.clone())
+            })
+            .unwrap_or_else(|| "STANDARD".to_string());
+        let style = crate::entities::text_support::resolve_text_style(&style_name, document);
+        let font_name = style.font_name;
+        let font = crate::scene::cxf::get_font(&font_name);
+        let width_factor = style.width_factor.max(0.01);
+        let oblique = style.oblique_angle;
+
+        // Strip MText format codes (e.g. `{\fArial Black|b0|i0|c162|p34;...}`),
+        // then split on \P / \n / \N and optionally word-wrap to text_width.
+        let plain = crate::entities::text_support::strip_mtext_codes(&ctx.text_string);
+        let explicit_lines = crate::entities::text_support::split_mtext_lines(&plain);
+        let lines: Vec<String> = if ctx.text_width > 0.0 {
+            let scale = height / 9.0 * width_factor;
+            let max_w = ctx.text_width as f32 * scale_factor;
+            explicit_lines
+                .iter()
+                .flat_map(|line| {
+                    crate::entities::text_support::word_wrap(line, max_w, scale, font)
+                })
+                .collect()
+        } else {
+            explicit_lines
+        };
+
+        let ls_factor = if ctx.line_spacing_factor > 0.0 {
+            ctx.line_spacing_factor as f32
+        } else {
+            1.0
+        };
+        let line_h = height * ls_factor * (5.0 / 3.0) * font.line_spacing;
+        let n_lines = lines.len().max(1) as f32;
+
+        let h_anchor = match ctx.text_attachment_point {
+            TextAttachmentPointType::Left => 0.0_f32,
+            TextAttachmentPointType::Center => 0.5,
+            TextAttachmentPointType::Right => 1.0,
+        };
+        let v_offset =
+            v_offset_for_attachment(ctx.text_left_attachment, n_lines, height, line_h);
+
+        let scale = height / 9.0 * width_factor;
+        for (i, line) in lines.iter().enumerate() {
+            let li = i as f32;
+            let line_y_local = -li * line_h + v_offset;
+            let line_w = if h_anchor > 0.0 {
+                crate::entities::text_support::measure_mtext_chars(line, scale, font)
+            } else {
+                0.0
+            };
+            let h_shift_local = -line_w * h_anchor;
+            let wcs_dx = h_shift_local * cos_r - line_y_local * sin_r;
+            let wcs_dy = h_shift_local * sin_r + line_y_local * cos_r;
+            let origin = [ins_x as f32 + wcs_dx, ins_y as f32 + wcs_dy];
+            let strokes = crate::scene::cxf::tessellate_text_ex(
+                origin,
+                height,
+                rot,
+                width_factor,
+                oblique,
+                &font_name,
+                line,
+            );
+            for stroke in &strokes {
+                if stroke.len() < 2 {
+                    continue;
+                }
+                points.push(nan);
+                for &[x, y] in stroke {
+                    points.push([x, y, z]);
+                }
             }
         }
     }
@@ -532,10 +644,28 @@ fn parse_attachment(s: &str) -> TextAttachmentType {
 
 fn apply_transform(ml: &mut MultiLeader, t: &EntityTransform) {
     crate::scene::transform::apply_standard_entity_transform(ml, t, |entity, p1, p2| {
+        // Reflect every point on the leader (line points, connection points,
+        // break-point endpoints) AND every direction vector that drives the
+        // text orientation. Without the direction reflection text would keep
+        // its original rotation while the leader appears mirrored.
         for root in &mut entity.context.leader_roots {
             for line in &mut root.lines {
                 for p in &mut line.points {
                     crate::scene::transform::reflect_xy_point(&mut p.x, &mut p.y, p1, p2);
+                }
+                for bp in &mut line.break_points {
+                    crate::scene::transform::reflect_xy_point(
+                        &mut bp.start_point.x,
+                        &mut bp.start_point.y,
+                        p1,
+                        p2,
+                    );
+                    crate::scene::transform::reflect_xy_point(
+                        &mut bp.end_point.x,
+                        &mut bp.end_point.y,
+                        p1,
+                        p2,
+                    );
                 }
             }
             crate::scene::transform::reflect_xy_point(
@@ -544,6 +674,21 @@ fn apply_transform(ml: &mut MultiLeader, t: &EntityTransform) {
                 p1,
                 p2,
             );
+            reflect_xy_direction(&mut root.direction.x, &mut root.direction.y, p1, p2);
+            for bp in &mut root.break_points {
+                crate::scene::transform::reflect_xy_point(
+                    &mut bp.start_point.x,
+                    &mut bp.start_point.y,
+                    p1,
+                    p2,
+                );
+                crate::scene::transform::reflect_xy_point(
+                    &mut bp.end_point.x,
+                    &mut bp.end_point.y,
+                    p1,
+                    p2,
+                );
+            }
         }
         crate::scene::transform::reflect_xy_point(
             &mut entity.context.text_location.x,
@@ -551,7 +696,32 @@ fn apply_transform(ml: &mut MultiLeader, t: &EntityTransform) {
             p1,
             p2,
         );
+        reflect_xy_direction(
+            &mut entity.context.text_direction.x,
+            &mut entity.context.text_direction.y,
+            p1,
+            p2,
+        );
+        reflect_xy_direction(
+            &mut entity.context.base_direction.x,
+            &mut entity.context.base_direction.y,
+            p1,
+            p2,
+        );
     });
+}
+
+/// Reflect a direction (not position) vector across the mirror line p1→p2.
+/// Reflecting a direction is the same as reflecting `p1 + dir` then subtracting
+/// the reflection of `p1`, which simplifies to reflecting around the origin.
+fn reflect_xy_direction(dx: &mut f64, dy: &mut f64, p1: Vec3, p2: Vec3) {
+    let zero = Vec3::ZERO;
+    let p2_rel = Vec3::new(p2.x - p1.x, p2.y - p1.y, 0.0);
+    let mut tip_x = *dx;
+    let mut tip_y = *dy;
+    crate::scene::transform::reflect_xy_point(&mut tip_x, &mut tip_y, zero, p2_rel);
+    *dx = tip_x;
+    *dy = tip_y;
 }
 
 // ── Trait impls ────────────────────────────────────────────────────────────

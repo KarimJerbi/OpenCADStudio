@@ -3787,6 +3787,25 @@ fn tessellate_entity(
         return wires;
     }
 
+    if let EntityType::MultiLeader(ml) = e {
+        let aabb = entity_aabb(e, world_offset);
+        let mut wires = tessellate::tessellate_multileader(
+            document,
+            h,
+            ml,
+            sel,
+            entity_color,
+            line_weight_px,
+            world_offset,
+            anno_scale,
+        );
+        for w in &mut wires {
+            w.aci = aci;
+            w.aabb = aabb;
+        }
+        return wires;
+    }
+
     if let EntityType::Insert(ins) = e {
         // Resolve the INSERT's own style so ByBlock sub-entities can inherit it.
         let (ins_color, ins_pat_len, ins_pat, ins_lw_px, _) = render::render_style_for(document, e);
