@@ -20,9 +20,27 @@ use acadrust::CadDocument;
 use iced::time::Instant;
 use iced::window;
 use iced::{mouse, Point, Task, Theme};
+use std::sync::atomic::AtomicU8;
+use std::sync::Arc;
 
 pub(super) const POLY_START_DELAY_MS: u128 = 150;
 pub(super) const VARIES_LABEL: &str = "*VARIES*";
+
+// ── File-open progress ─────────────────────────────────────────────────────
+// Phase encoding for OpenProgress.phase atomic. Updated from the background
+// loader thread, read by the UI overlay on every frame.
+pub const OPEN_PHASE_READING: u8 = 0;
+pub const OPEN_PHASE_PARSING: u8 = 1;
+pub const OPEN_PHASE_CACHING: u8 = 2;
+pub const OPEN_PHASE_FINALIZING: u8 = 3;
+
+#[derive(Debug, Clone)]
+pub(super) struct OpenProgress {
+    pub name: String,
+    pub size_bytes: u64,
+    pub phase: Arc<AtomicU8>,
+    pub started: Instant,
+}
 
 // ── Application state ──────────────────────────────────────────────────────
 
@@ -148,6 +166,11 @@ pub(super) struct H7CAD {
     ps_lineweight_buf: String,
     ps_screening_buf: String,
 
+    // ── File-open progress ────────────────────────────────────────────────
+    /// `Some` while a CAD file is loading — drives the modal overlay.
+    /// Cleared when the load finishes, errors, or the user cancels.
+    pub(super) opening: Option<OpenProgress>,
+
     // ── Unsaved-changes dialog ────────────────────────────────────────────
     /// Set when the user tries to close a tab or quit while there are unsaved changes.
     pending_close: Option<PendingClose>,
@@ -250,6 +273,12 @@ pub enum DsField {
 pub enum Message {
     Tick(Instant),
     OpenFile,
+    /// File picker returned. `Some((path, size_in_bytes))` → start loading;
+    /// `None` → user cancelled the dialog (no overlay shown).
+    OpenPathPicked(Option<(PathBuf, u64)>),
+    /// User clicked Cancel on the loading overlay. The parser thread keeps
+    /// running but its result is discarded.
+    OpenCancel,
     FileOpened(Result<(String, PathBuf, CadDocument, crate::scene::DerivedCaches), String>),
     SaveFile,
     SaveAs,
@@ -698,6 +727,7 @@ impl H7CAD {
             page_setup_offset_y: "0.0".to_string(),
             page_setup_rotation: "0".to_string(),
             page_setup_scale: "Fit".to_string(),
+            opening: None,
             pending_close: None,
             unsaved_dialog_window: None,
             save_dialog_window: None,

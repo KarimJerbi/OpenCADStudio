@@ -15,6 +15,22 @@ use iced::{mouse, Task};
 
 const VIEWCUBE_HIT_SIZE: f32 = VIEWCUBE_DRAW_PX;
 
+fn format_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.2} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 impl H7CAD {
     pub fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
@@ -35,9 +51,49 @@ impl H7CAD {
                 Task::none()
             }
 
-            Message::OpenFile => Task::perform(crate::io::pick_and_open(), Message::FileOpened),
+            Message::OpenFile => {
+                Task::perform(crate::io::pick_open_path(), Message::OpenPathPicked)
+            }
+
+            Message::OpenPathPicked(None) => Task::none(),
+
+            Message::OpenPathPicked(Some((path, size_bytes))) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "unknown".into());
+                let phase =
+                    std::sync::Arc::new(std::sync::atomic::AtomicU8::new(super::OPEN_PHASE_READING));
+                self.opening = Some(super::OpenProgress {
+                    name: name.clone(),
+                    size_bytes,
+                    phase: phase.clone(),
+                    started: Instant::now(),
+                });
+                let size_label = format_size(size_bytes);
+                self.command_line
+                    .push_info(&format!("Opening \"{name}\" ({size_label})…"));
+                Task::perform(
+                    crate::io::open_path_with_phase(path, phase),
+                    Message::FileOpened,
+                )
+            }
+
+            Message::OpenCancel => {
+                if let Some(p) = self.opening.take() {
+                    self.command_line
+                        .push_info(&format!("Open cancelled: \"{}\"", p.name));
+                }
+                Task::none()
+            }
 
             Message::FileOpened(Ok((name, path, doc, caches))) => {
+                // If the user clicked Cancel while the parser was running, the
+                // overlay state was cleared and we silently drop the result.
+                if self.opening.is_none() {
+                    return Task::none();
+                }
+                self.opening = None;
                 let entity_count = doc.entities().count();
                 self.command_line
                     .push_output(&format!("Opened \"{name}\" — {entity_count} entities"));
@@ -114,7 +170,10 @@ impl H7CAD {
             }
 
             Message::FileOpened(Err(e)) => {
-                if e != "Cancelled" {
+                // If the user cancelled, the overlay was already cleared and
+                // we suppress the noise.
+                let was_open = self.opening.take().is_some();
+                if was_open && e != "Cancelled" {
                     self.command_line.push_error(&format!("Open failed: {e}"));
                 }
                 Task::none()

@@ -16,12 +16,21 @@ use acadrust::entities::{Dimension, EntityType};
 use acadrust::io::dwg::DwgReader;
 use acadrust::{CadDocument, DwgWriter, DxfReader, DxfWriter};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+
+// Phase tags written into the shared atomic so the UI overlay can display a
+// human-readable label. Kept in sync with the constants in `crate::app`.
+const PHASE_PARSING: u8 = 1;
+const PHASE_CACHING: u8 = 2;
+const PHASE_FINALIZING: u8 = 3;
 
 // ── Open ──────────────────────────────────────────────────────────────────
 
-/// Show a file-open dialog and load the selected DWG or DXF file.
-/// Returns `(filename, path, document, caches)` or an error string.
-pub async fn pick_and_open() -> Result<(String, PathBuf, CadDocument, DerivedCaches), String> {
+/// Show the file picker and return the chosen path plus its size in bytes.
+/// Returning size up-front lets the loading overlay display "47.3 MB" before
+/// the parser thread starts.
+pub async fn pick_open_path() -> Option<(PathBuf, u64)> {
     let handle = rfd::AsyncFileDialog::new()
         .set_title("Open CAD file")
         .add_filter("CAD Files", &["dwg", "dxf", "DWG", "DXF"])
@@ -29,31 +38,33 @@ pub async fn pick_and_open() -> Result<(String, PathBuf, CadDocument, DerivedCac
         .add_filter("DXF Files", &["dxf", "DXF"])
         .add_filter("All Files", &["*"])
         .pick_file()
-        .await;
-
-    let handle = match handle {
-        Some(h) => h,
-        None => return Err("Cancelled".into()),
-    };
-
+        .await?;
     let path = handle.path().to_path_buf();
-    open_path(path).await
+    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    Some((path, size))
 }
 
-/// Load a CAD file from a known path (used by recent files).
-/// Parsing and cache building run on a dedicated OS thread so the async
-/// executor stays free for rendering during the load.
-pub async fn open_path(
+/// Load a CAD file from a known path. Parsing and cache building run on a
+/// dedicated OS thread so the async executor stays free for rendering during
+/// the load. Writes phase markers into `phase` so the UI can show
+/// "Parsing entities…" / "Building caches…" / "Finalizing…" while the loader
+/// thread runs.
+pub async fn open_path_with_phase(
     path: PathBuf,
+    phase: Arc<AtomicU8>,
 ) -> Result<(String, PathBuf, CadDocument, DerivedCaches), String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "unknown".into());
     let path2 = path.clone();
+    let phase2 = phase.clone();
     let (doc, caches) = std::thread::spawn(move || -> Result<_, String> {
+        phase2.store(PHASE_PARSING, Ordering::Relaxed);
         let doc = load_file(&path2)?;
+        phase2.store(PHASE_CACHING, Ordering::Relaxed);
         let caches = crate::scene::build_derived_caches(&doc);
+        phase2.store(PHASE_FINALIZING, Ordering::Relaxed);
         Ok((doc, caches))
     })
     .join()

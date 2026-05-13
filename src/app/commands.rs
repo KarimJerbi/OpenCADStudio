@@ -18,7 +18,8 @@ impl H7CAD {
 
         if let Some(path_str) = cmd.strip_prefix("OPEN_RECENT:") {
             let path = PathBuf::from(path_str);
-            return Task::perform(crate::io::open_path(path), Message::FileOpened);
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            return Task::done(Message::OpenPathPicked(Some((path, size))));
         }
 
         match cmd {

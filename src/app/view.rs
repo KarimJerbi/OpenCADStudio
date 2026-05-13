@@ -577,6 +577,12 @@ impl H7CAD {
             }
         };
 
+        let open_progress_layer: Element<'_, Message> = if let Some(p) = &self.opening {
+            crate::ui::open_progress::view(p, iced::time::Instant::now())
+        } else {
+            iced::widget::Space::new().width(0).height(0).into()
+        };
+
         stack![
             main_ui,
             self.app_menu.view(),
@@ -584,7 +590,8 @@ impl H7CAD {
             scale_layer,
             dropdown_layer,
             layout_ctx_layer,
-            viewport_ctx_layer
+            viewport_ctx_layer,
+            open_progress_layer,
         ]
         .into()
     }
