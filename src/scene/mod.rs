@@ -293,6 +293,11 @@ pub struct Scene {
     /// Last viewport aspect ratio captured by the render pipeline. Used by
     /// `view_world_aabb` to compute the world-space view rect on demand.
     last_render_aspect: std::cell::Cell<f32>,
+    /// World units that map to one screen pixel at the current camera +
+    /// viewport size, captured each render. Drives the LOD pixel-size cull
+    /// in expand_insert / tessellate_entity. 0 means "not yet set" — culling
+    /// falls back to None.
+    last_world_per_pixel: std::cell::Cell<f32>,
 }
 
 impl Scene {
@@ -330,6 +335,7 @@ impl Scene {
             entity_block_map_cache: RefCell::new(None),
             block_defn_cache: RefCell::new(None),
             last_render_aspect: std::cell::Cell::new(16.0 / 9.0),
+            last_world_per_pixel: std::cell::Cell::new(0.0),
         }
     }
 
@@ -373,6 +379,33 @@ impl Scene {
     pub fn set_render_aspect(&self, aspect: f32) {
         if aspect.is_finite() && aspect > 0.0 {
             self.last_render_aspect.set(aspect);
+        }
+    }
+
+    /// World units per screen pixel at the current viewport size. Returns
+    /// `None` until the first render captures real bounds.
+    pub(super) fn world_per_pixel(&self) -> Option<f32> {
+        let v = self.last_world_per_pixel.get();
+        if v > 0.0 && v.is_finite() {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// Called from the render path with the current widget bounds so the
+    /// LOD pixel-size culler knows how big one world unit projects to.
+    pub fn set_render_pixel_scale(&self, width_px: f32, height_px: f32) {
+        if !width_px.is_finite() || !height_px.is_finite() || height_px <= 0.0 {
+            return;
+        }
+        let cam = self.camera.borrow();
+        // Orthographic only. (Perspective varies with depth — we'd want a
+        // depth-aware scale per entity. Skipped for now.)
+        let h = cam.ortho_size();
+        let world_per_px = (2.0 * h) / height_px;
+        if world_per_px.is_finite() && world_per_px > 0.0 {
+            self.last_world_per_pixel.set(world_per_px);
         }
     }
 
@@ -1006,10 +1039,22 @@ impl Scene {
         let blk_cache = self.block_cache_arc();
         let blk_ref: &block_cache::BlockCache = &blk_cache;
         let view_aabb = self.view_world_aabb();
+        let wpp = self.world_per_pixel();
         let mut wires: Vec<WireModel> = visible
             .into_par_iter()
             .flat_map(|e| {
-                tessellate_entity(doc, sel, avp, woff, bg, anno, e, Some(blk_ref), view_aabb)
+                tessellate_entity(
+                    doc,
+                    sel,
+                    avp,
+                    woff,
+                    bg,
+                    anno,
+                    e,
+                    Some(blk_ref),
+                    view_aabb,
+                    wpp,
+                )
             })
             .collect();
 
@@ -1118,6 +1163,7 @@ impl Scene {
             anno,
             e,
             Some(&blk_cache),
+            None,
             None,
         )
     }
@@ -3636,6 +3682,7 @@ impl Scene {
                     e,
                     Some(&blk_cache),
                     None,
+                    None,
                 )
             })
             .collect()
@@ -3829,21 +3876,35 @@ fn tessellate_entity(
     // World-space XY view AABB (post `world_offset` subtraction). When
     // `Some`, entities whose AABB doesn't intersect this rect are skipped.
     view_aabb: Option<[f32; 4]>,
+    // World units per screen pixel for LOD culling. `None` = no LOD.
+    world_per_pixel: Option<f32>,
 ) -> Vec<WireModel> {
     let h = e.common().handle;
     let sel = selected.contains(&h);
 
-    // Frustum cull for non-Insert, non-Viewport entities. Insert is handled
-    // separately (its WCS bbox depends on the block defn AABB × Insert
-    // transform — done inside expand_insert). Viewports always emit so the
-    // viewport frame stays visible regardless of zoom.
-    if let Some(view) = view_aabb {
+    // Frustum + LOD cull for non-Insert, non-Viewport entities. Insert is
+    // handled separately (its WCS bbox depends on the block defn AABB ×
+    // Insert transform — done inside expand_insert). Viewports always emit
+    // so the viewport frame stays visible regardless of zoom.
+    let needs_cull = view_aabb.is_some() || world_per_pixel.is_some();
+    if needs_cull {
         match e {
             EntityType::Viewport(_) | EntityType::Insert(_) => {}
             _ => {
                 let ab = entity_aabb(e, world_offset);
-                if ab != WireModel::UNBOUNDED_AABB && block_cache::aabb_disjoint_xy(ab, view) {
-                    return vec![];
+                if ab != WireModel::UNBOUNDED_AABB {
+                    if let Some(view) = view_aabb {
+                        if block_cache::aabb_disjoint_xy(ab, view) {
+                            return vec![];
+                        }
+                    }
+                    if let Some(wpp) = world_per_pixel {
+                        let w = (ab[2] - ab[0]).abs();
+                        let h = (ab[3] - ab[1]).abs();
+                        if w.max(h) / wpp < 0.5 {
+                            return vec![];
+                        }
+                    }
                 }
             }
         }
@@ -3980,6 +4041,7 @@ fn tessellate_entity(
                 world_offset,
                 pslt_factor,
                 view_aabb,
+                world_per_pixel,
             ) {
                 wires.push(marker);
                 return wires;

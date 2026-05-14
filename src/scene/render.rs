@@ -321,6 +321,7 @@ impl Scene {
         // a correct culling rectangle before entity_wires_arc() runs.
         if bounds.height > 0.0 {
             self.set_render_aspect(bounds.width / bounds.height);
+            self.set_render_pixel_scale(bounds.width, bounds.height);
         }
 
         let entity_arc = self.entity_wires_arc();

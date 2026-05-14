@@ -25,6 +25,10 @@ use crate::scene::tessellate;
 use crate::scene::wire_model::{SnapHint, TangentGeom, WireModel};
 
 const MAX_NESTING_DEPTH: usize = 32;
+/// Skip wires whose world-AABB projects to fewer than this many pixels in
+/// the active view. Picks up sub-pixel detail at extreme zoom-out so the
+/// tessellator doesn't waste time on geometry the user can't see anyway.
+const MIN_PIXEL_SIZE: f32 = 0.5;
 
 #[derive(Clone, Debug)]
 pub struct LocalWire {
@@ -401,6 +405,9 @@ pub fn expand_insert(
     // comparison is in the same f32 space as emitted wires). `None` disables
     // frustum culling — every cached sub is emitted.
     view_aabb: Option<[f32; 4]>,
+    // World units per screen pixel. When `Some`, wires whose AABB projects
+    // smaller than `MIN_PIXEL_SIZE` get skipped entirely (LOD).
+    world_per_pixel: Option<f32>,
 ) -> Option<Vec<WireModel>> {
     let defn = cache.defn(&ins.block_name)?;
     let xform = ins.get_transform();
@@ -409,17 +416,24 @@ pub fn expand_insert(
     let mut visited: Vec<String> = Vec::with_capacity(8);
     let [ox, oy, _] = world_offset;
 
-    // Whole-Insert cull: if the Insert's world AABB doesn't intersect the
-    // view, bail without doing any per-sub work.
+    let insert_world = transform_aabb_xy(defn.aabb_local, &xform);
+    let insert_local = [
+        insert_world[0] - ox as f32,
+        insert_world[1] - oy as f32,
+        insert_world[2] - ox as f32,
+        insert_world[3] - oy as f32,
+    ];
+
+    // Whole-Insert frustum cull.
     if let Some(view) = view_aabb {
-        let insert_world = transform_aabb_xy(defn.aabb_local, &xform);
-        let insert_local = [
-            (insert_world[0] - ox as f32),
-            (insert_world[1] - oy as f32),
-            (insert_world[2] - ox as f32),
-            (insert_world[3] - oy as f32),
-        ];
         if aabb_disjoint_xy(insert_local, view) {
+            return Some(vec![]);
+        }
+    }
+    // Whole-Insert pixel-size LOD: if the entire Insert footprint projects
+    // to sub-pixel size, skip it entirely.
+    if let Some(wpp) = world_per_pixel {
+        if aabb_pixel_size(insert_local, wpp) < MIN_PIXEL_SIZE {
             return Some(vec![]);
         }
     }
@@ -443,10 +457,17 @@ pub fn expand_insert(
             world_offset,
             pslt_factor,
             view_aabb,
+            world_per_pixel,
         };
         expand_defn(defn, &base_xform, &ctx, &mut batches, &mut visited, 0);
     }
     Some(batches.finalize(&name, selected))
+}
+
+fn aabb_pixel_size(local_aabb: [f32; 4], world_per_pixel: f32) -> f32 {
+    let w = (local_aabb[2] - local_aabb[0]).abs();
+    let h = (local_aabb[3] - local_aabb[1]).abs();
+    w.max(h) / world_per_pixel
 }
 
 struct ExpandCtx<'a> {
@@ -460,6 +481,8 @@ struct ExpandCtx<'a> {
     pslt_factor: f32,
     // World-space XY view AABB (post world_offset). `None` = no culling.
     view_aabb: Option<[f32; 4]>,
+    // World units per screen pixel. `None` = no pixel-size LOD.
+    world_per_pixel: Option<f32>,
 }
 
 /// Style fingerprint used to group local wires into a single GPU buffer.
@@ -605,16 +628,21 @@ fn expand_defn(
     for sub in &defn.subs {
         match sub {
             LocalSub::Wire(lw) => {
+                let world = transform_aabb_xy(lw.aabb_local, accum_xform);
+                let [ox, oy, _] = ctx.world_offset;
+                let local = [
+                    world[0] - ox as f32,
+                    world[1] - oy as f32,
+                    world[2] - ox as f32,
+                    world[3] - oy as f32,
+                ];
                 if let Some(view) = ctx.view_aabb {
-                    let world = transform_aabb_xy(lw.aabb_local, accum_xform);
-                    let [ox, oy, _] = ctx.world_offset;
-                    let local = [
-                        world[0] - ox as f32,
-                        world[1] - oy as f32,
-                        world[2] - ox as f32,
-                        world[3] - oy as f32,
-                    ];
                     if aabb_disjoint_xy(local, view) {
+                        continue;
+                    }
+                }
+                if let Some(wpp) = ctx.world_per_pixel {
+                    if aabb_pixel_size(local, wpp) < MIN_PIXEL_SIZE {
                         continue;
                     }
                 }
@@ -628,19 +656,24 @@ fn expand_defn(
                 let Some(nested_defn) = ctx.cache.defn(&nref.block_name) else {
                     continue;
                 };
-                // Nested-INSERT cull: union AABB of the nested defn, transformed
-                // by composed xform, vs view rect.
+                // Nested-INSERT cull: union AABB of the nested defn,
+                // transformed by composed xform, vs view rect + pixel size.
+                let composed = nref.xform.then(accum_xform);
+                let world = transform_aabb_xy(nested_defn.aabb_local, &composed);
+                let [ox, oy, _] = ctx.world_offset;
+                let local = [
+                    world[0] - ox as f32,
+                    world[1] - oy as f32,
+                    world[2] - ox as f32,
+                    world[3] - oy as f32,
+                ];
                 if let Some(view) = ctx.view_aabb {
-                    let composed = nref.xform.then(accum_xform);
-                    let world = transform_aabb_xy(nested_defn.aabb_local, &composed);
-                    let [ox, oy, _] = ctx.world_offset;
-                    let local = [
-                        world[0] - ox as f32,
-                        world[1] - oy as f32,
-                        world[2] - ox as f32,
-                        world[3] - oy as f32,
-                    ];
                     if aabb_disjoint_xy(local, view) {
+                        continue;
+                    }
+                }
+                if let Some(wpp) = ctx.world_per_pixel {
+                    if aabb_pixel_size(local, wpp) < MIN_PIXEL_SIZE {
                         continue;
                     }
                 }
@@ -670,6 +703,7 @@ fn expand_defn(
                     world_offset: ctx.world_offset,
                     pslt_factor: ctx.pslt_factor,
                     view_aabb: ctx.view_aabb,
+                    world_per_pixel: ctx.world_per_pixel,
                 };
                 visited.push(nref.block_name.clone());
                 for offset in &nref.instance_offsets {
