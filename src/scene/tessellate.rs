@@ -23,9 +23,8 @@ use acadrust::{CadDocument, EntityType, Handle};
 use glam::Vec3;
 
 use crate::scene::acad_to_truck::{convert, TruckObject};
-use crate::scene::mesh_model::MeshModel;
 use crate::scene::truck_tess::{
-    self, tessellate_edge, tessellate_solid, tessellate_vertex, tessellate_wire, TruckTessResult,
+    tessellate_edge, tessellate_vertex, tessellate_wire, TruckTessResult,
 };
 use crate::scene::wire_model::{SnapHint, TangentGeom, WireModel};
 
@@ -47,7 +46,8 @@ pub fn aci_to_rgba(color: &AcadColor) -> [f32; 4] {
 /// Tessellate one entity into a WireModel.
 /// For Text/MText entities this produces one WireModel with all glyph strokes
 /// encoded as NaN-separated segments (wire_gpu skips NaN pairs).
-/// For Solid3D entities this returns an empty wire; use `tessellate_mesh` instead.
+/// For Solid3D entities this returns an empty wire; mesh tessellation lives
+/// in `solid3d_tess` and is uploaded via the mesh pipeline instead.
 pub fn tessellate(
     document: &CadDocument,
     handle: Handle,
@@ -351,10 +351,11 @@ pub fn tessellate(
             }
 
             TruckObject::Volume(_) => {
-                // Solid3D / Region / Body → handled by tessellate_mesh().
-                // As a wire fallback, render the pre-computed edge wires
-                // stored in the entity when present (e.g. from SOLVIEW output
-                // or when the SAT kernel cannot parse the ACIS data).
+                // Solid3D / Region / Body → mesh tessellation lives in
+                // `solid3d_tess`. As a wire fallback, render the pre-computed
+                // edge wires stored in the entity when present (e.g. from
+                // SOLVIEW output or when the SAT kernel cannot parse the
+                // ACIS data).
                 let wire_pts = solid_wire_fallback(entity, world_offset);
                 let mut wm = WireModel::solid(name, wire_pts, color, selected);
                 // Add insertion snap at point_of_reference.
@@ -1096,29 +1097,6 @@ pub fn tessellate_multileader(
     }
 
     wires
-}
-
-/// Tessellate a Solid3D entity into a MeshModel (truck Shell/Solid path).
-#[allow(dead_code)]
-pub fn tessellate_mesh(
-    document: &CadDocument,
-    handle: Handle,
-    entity: &EntityType,
-    selected: bool,
-    color: [f32; 4],
-    world_offset: [f64; 3],
-) -> Option<MeshModel> {
-    let te = convert(entity, document)?;
-    let result = match te.object {
-        TruckObject::Volume(solid) => tessellate_solid(&solid, world_offset),
-        _ => return None,
-    };
-    truck_tess::tess_to_mesh_model(
-        result,
-        handle.value().to_string(),
-        if selected { MeshModel::SELECTED } else { color },
-        selected,
-    )
 }
 
 // ── Entity Z helper ───────────────────────────────────────────────────────

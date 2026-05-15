@@ -28,39 +28,16 @@ pub fn tool() -> ToolDef {
     }
 }
 
-#[allow(dead_code)]
-enum Step {
-    /// Waiting for the user to type (or accept) a file path.
-    FilePath,
-    /// File path is confirmed; waiting for an insertion point.
-    InsertionPoint { path: String, block_name: String },
-}
-
 pub struct XAttachCommand {
-    step: Step,
-    /// Pre-supplied path (from the file-picker message).
-    prefilled_path: Option<String>,
+    path: String,
+    block_name: String,
 }
 
 impl XAttachCommand {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
-            step: Step::FilePath,
-            prefilled_path: None,
-        }
-    }
-
     /// Create an XATTACH command with a path already filled in (from file-picker).
     pub fn with_path(path: String) -> Self {
         let block_name = path_to_block_name(&path);
-        Self {
-            step: Step::InsertionPoint {
-                path: path.clone(),
-                block_name,
-            },
-            prefilled_path: Some(path),
-        }
+        Self { path, block_name }
     }
 }
 
@@ -70,47 +47,16 @@ impl CadCommand for XAttachCommand {
     }
 
     fn prompt(&self) -> String {
-        match &self.step {
-            Step::FilePath => "XATTACH  Enter path to external DWG/DXF file:".to_string(),
-            Step::InsertionPoint { block_name, .. } => {
-                format!("XATTACH  Specify insertion point for \"{}\":", block_name)
-            }
-        }
-    }
-
-    fn wants_text_input(&self) -> bool {
-        matches!(self.step, Step::FilePath)
-    }
-
-    fn on_text_input(&mut self, text: &str) -> Option<CmdResult> {
-        if !matches!(self.step, Step::FilePath) {
-            return None;
-        }
-        let path = text.trim().to_string();
-        if path.is_empty() {
-            return None;
-        }
-        let block_name = path_to_block_name(&path);
-        self.step = Step::InsertionPoint { path, block_name };
-        Some(CmdResult::NeedPoint)
+        format!("XATTACH  Specify insertion point for \"{}\":", self.block_name)
     }
 
     fn on_point(&mut self, pt: Vec3) -> CmdResult {
-        match &self.step {
-            Step::FilePath => CmdResult::NeedPoint,
-            Step::InsertionPoint {
-                path: _,
-                block_name,
-            } => {
-                // We return the INSERT entity; the command handler in
-                // commands.rs will call `prepare_xref_block` on the scene
-                // before committing.
-                CmdResult::CommitAndExit(EntityType::Insert(Insert::new(
-                    block_name.clone(),
-                    Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64),
-                )))
-            }
-        }
+        // We return the INSERT entity; the command handler in commands.rs
+        // calls `prepare_xref_block` on the scene before committing.
+        CmdResult::CommitAndExit(EntityType::Insert(Insert::new(
+            self.block_name.clone(),
+            Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64),
+        )))
     }
 
     fn on_enter(&mut self) -> CmdResult {
@@ -122,10 +68,7 @@ impl CadCommand for XAttachCommand {
     }
 
     fn xattach_path(&self) -> Option<String> {
-        match &self.step {
-            Step::InsertionPoint { path, .. } => Some(path.clone()),
-            Step::FilePath => self.prefilled_path.clone(),
-        }
+        Some(self.path.clone())
     }
 }
 

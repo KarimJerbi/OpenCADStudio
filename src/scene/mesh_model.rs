@@ -21,12 +21,6 @@ pub struct MeshModel {
     pub selected: bool,
 }
 
-impl MeshModel {
-    #[allow(dead_code)]
-    pub const WHITE: [f32; 4] = [1.00, 1.00, 1.00, 1.0];
-    pub const SELECTED: [f32; 4] = [0.15, 0.55, 1.00, 1.0];
-}
-
 /// Bundle of mesh tessellations at different sampling densities, picked
 /// per frame by the render pipeline based on the projected pixel size of
 /// `world_aabb`. Phase 3.4 LOD ladder:

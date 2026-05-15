@@ -13,7 +13,6 @@ use truck_modeling::base::{BoundedCurve, ParameterDivision1D};
 use truck_modeling::{Edge, Shell, Solid, Vertex, Wire};
 use truck_polymesh::PolygonMesh;
 
-use crate::scene::mesh_model::MeshModel;
 
 // Chord-height tolerance used for adaptive curve sampling (world units).
 const CURVE_TOL: f64 = 0.005;
@@ -139,32 +138,6 @@ pub fn tessellate_shell(s: &Shell, offset: [f64; 3]) -> TruckTessResult {
 pub fn tessellate_solid(s: &Solid, offset: [f64; 3]) -> TruckTessResult {
     let meshed = s.triangulation(MESH_TOL);
     polygon_to_result(meshed.to_polygon(), offset)
-}
-
-// ── MeshModel helper ──────────────────────────────────────────────────────
-
-/// Convert a TruckTessResult::Mesh into a MeshModel (fills name/color later).
-pub fn tess_to_mesh_model(
-    result: TruckTessResult,
-    name: String,
-    color: [f32; 4],
-    selected: bool,
-) -> Option<MeshModel> {
-    match result {
-        TruckTessResult::Mesh {
-            verts,
-            normals,
-            indices,
-        } => Some(MeshModel {
-            name,
-            verts,
-            normals,
-            indices,
-            color,
-            selected,
-        }),
-        _ => None,
-    }
 }
 
 // ── Internal ─────────────────────────────────────────────────────────────

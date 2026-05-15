@@ -67,7 +67,6 @@ pub struct PlotStyleTable {
 
 impl PlotStyleTable {
     /// Create an identity CTB table (no overrides for any color).
-    #[allow(dead_code)]
     pub fn identity(name: impl Into<String>) -> Self {
         PlotStyleTable {
             name: name.into(),

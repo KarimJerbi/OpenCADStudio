@@ -632,14 +632,6 @@ impl Scene {
         self.geometry_epoch = GEOMETRY_EPOCH.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[allow(dead_code)]
-    pub fn compute_and_set_world_offset(&mut self) {
-        let model_block = self.model_space_block_handle();
-        let (offset, lim) = compute_world_offset(&self.document, model_block);
-        self.world_offset = offset;
-        self.local_extent_max = lim;
-    }
-
     /// Returns true if this viewport should display model-space content
     /// (i.e. it is a user viewport, not the sheet/overall viewport).
     ///
