@@ -4195,22 +4195,13 @@ fn tessellate_entity(
             }
             if h_px < 5.0 && aabb != WireModel::UNBOUNDED_AABB {
                 let fill_tris = text_greek_obb_tris(e, anno_scale, world_offset);
-                // The face3d pipeline dims fill_tris colors to 45% to fake
-                // ambient occlusion on PolyfaceMesh / 3DFACE solids. Greeked
-                // text doesn't want that shading — pre-boost the color so it
-                // emerges close to the original text color after the dim.
-                let boost = 1.0 / 0.45;
-                let [r, g, b, a] = entity_color;
-                let greek_color = [
-                    (r * boost).min(1.0),
-                    (g * boost).min(1.0),
-                    (b * boost).min(1.0),
-                    a,
-                ];
+                if fill_tris.is_empty() {
+                    return vec![];
+                }
                 return vec![WireModel {
                     name: h.value().to_string(),
                     points: vec![],
-                    color: greek_color,
+                    color: entity_color,
                     selected: sel,
                     aci,
                     pattern_length: 0.0,
@@ -4401,8 +4392,11 @@ fn text_baseline_points(
     vec![cast(corners[0]), cast(corners[1])]
 }
 
-/// 6-vertex (2-triangle) fill for a greeked top-level Text / MText, in
-/// world-offset-subtracted f32 space.
+/// 6-vertex filled rect (2 triangles) for a greeked top-level Text / MText.
+/// Clamped to a single line's height — multi-line MText's OBB spans the
+/// whole block and using its full height would emit a misleadingly tall
+/// box. The face3d pipeline skips its 0.45 dim for wires with empty
+/// `points`, so these tris render at the literal text color.
 fn text_greek_obb_tris(
     e: &EntityType,
     anno_scale: f32,
@@ -4411,13 +4405,35 @@ fn text_greek_obb_tris(
     let Some(corners) = text_obb_corners_native(e, anno_scale) else {
         return vec![];
     };
+    let line_h = match e {
+        EntityType::Text(t) => (t.height * anno_scale as f64) as f32,
+        EntityType::MText(m) => (m.height * anno_scale as f64) as f32,
+        _ => return vec![],
+    };
+    if line_h <= 0.0 {
+        return vec![];
+    }
     let [ox, oy, oz] = world_offset;
     let cast = |p: [f64; 3]| -> [f32; 3] {
         [(p[0] - ox) as f32, (p[1] - oy) as f32, (p[2] - oz) as f32]
     };
-    let [p00, p10, p11, p01] = corners;
-    let (p00, p10, p11, p01) = (cast(p00), cast(p10), cast(p11), cast(p01));
-    vec![p00, p10, p11, p00, p11, p01]
+    let bl = cast(corners[0]);
+    let br = cast(corners[1]);
+    let full_tl = cast(corners[3]);
+
+    // Up direction = (bl → full_tl) normalized, then scale to a single
+    // line. Replaces the full-block top corners so MText with N lines
+    // still emits a single-line rect.
+    let (ux, uy, uz) = (full_tl[0] - bl[0], full_tl[1] - bl[1], full_tl[2] - bl[2]);
+    let ulen = (ux * ux + uy * uy + uz * uz).sqrt();
+    if ulen < 1e-9 {
+        return vec![];
+    }
+    let (nx, ny, nz) = (ux / ulen, uy / ulen, uz / ulen);
+    let tl = [bl[0] + nx * line_h, bl[1] + ny * line_h, bl[2] + nz * line_h];
+    let tr = [br[0] + nx * line_h, br[1] + ny * line_h, br[2] + nz * line_h];
+
+    vec![bl, br, tr, bl, tr, tl]
 }
 
 fn entity_aabb(e: &acadrust::EntityType, world_offset: [f64; 3]) -> [f32; 4] {

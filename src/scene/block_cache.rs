@@ -627,11 +627,13 @@ pub fn expand_insert(
     Some(batches.finalize(&name, selected))
 }
 
-/// Emit a greeked rectangle for a text LocalWire — same color, OBB-sized
-/// fill (rotated to match the entity), no per-glyph stroke geometry.
-/// Mirrors the top-level text greek in scene/mod.rs (including the 0.45
-/// dim pre-boost the face3d pipeline applies to fill_tris). Falls back to
-/// the axis-aligned `local_aabb` when no OBB was precomputed.
+/// Emit a greeked filled rect (2 triangles) for a text LocalWire. Stays in
+/// the text's own color — the face3d pipeline skips its 0.45 dim for wires
+/// whose `points` are empty, so the rect lands at full intensity. Clamped
+/// to a single line's height so multi-line MText doesn't blow the box up
+/// to the full block. Mirrors `text_greek_obb_tris` in scene/mod.rs.
+/// Falls back to the axis-aligned `local_aabb` when no OBB was cached;
+/// xref fade still applies via the shared color resolution.
 fn emit_greeked_text(
     lw: &LocalWire,
     local_aabb: [f32; 4],
@@ -642,35 +644,57 @@ fn emit_greeked_text(
 ) {
     let [ox, oy, oz] = ctx.world_offset;
     let [lo_x, lo_y, lo_z] = defn_lo;
-    let tris: [[f32; 3]; 6] = if let Some(obb) = lw.text_obb_local {
-        // Re-add the defn's `local_offset` in f64 before composing with
-        // `accum_xform` (the OBB corners are stored in offset frame f32 so
-        // they don't lose precision for distant text). Then subtract host
-        // `world_offset` so the fill_tris share the batch's f32 space.
-        let xf = |p: [f32; 3]| -> [f32; 3] {
-            let w = accum_xform.apply(Vector3::new(
-                p[0] as f64 + lo_x,
-                p[1] as f64 + lo_y,
-                p[2] as f64 + lo_z,
-            ));
-            [(w.x - ox) as f32, (w.y - oy) as f32, (w.z - oz) as f32]
-        };
-        let p00 = xf(obb[0]);
-        let p10 = xf(obb[1]);
-        let p11 = xf(obb[2]);
-        let p01 = xf(obb[3]);
-        [p00, p10, p11, p00, p11, p01]
+    // Re-add the defn's `local_offset` in f64 before composing with
+    // `accum_xform` so the rect corners share the batch's f32 space
+    // without losing precision for distant text.
+    let xf = |p: [f32; 3]| -> [f32; 3] {
+        let w = accum_xform.apply(Vector3::new(
+            p[0] as f64 + lo_x,
+            p[1] as f64 + lo_y,
+            p[2] as f64 + lo_z,
+        ));
+        [(w.x - ox) as f32, (w.y - oy) as f32, (w.z - oz) as f32]
+    };
+
+    let corners: Option<[[f32; 3]; 4]> = if let (Some(obb), Some(h_local)) =
+        (lw.text_obb_local, lw.text_height_local)
+    {
+        if h_local <= 0.0 {
+            None
+        } else {
+            // OBB[3] - OBB[0] = up direction in local frame, full-block
+            // height for MText; normalize and rescale to a single line.
+            let dx = obb[3][0] - obb[0][0];
+            let dy = obb[3][1] - obb[0][1];
+            let dz = obb[3][2] - obb[0][2];
+            let dlen = (dx * dx + dy * dy + dz * dz).sqrt();
+            if dlen < 1e-9 {
+                None
+            } else {
+                let nx = dx / dlen * h_local;
+                let ny = dy / dlen * h_local;
+                let nz = dz / dlen * h_local;
+                let bl = obb[0];
+                let br = obb[1];
+                let tl = [bl[0] + nx, bl[1] + ny, bl[2] + nz];
+                let tr = [br[0] + nx, br[1] + ny, br[2] + nz];
+                Some([xf(bl), xf(br), xf(tr), xf(tl)])
+            }
+        }
     } else {
+        // OBB missing — fall back to the axis-aligned local AABB. Already
+        // a tight per-entity rect (no multi-line block to clamp).
         let [x0, y0, x1, y1] = local_aabb;
         let z = 0.0_f32;
-        [
-            [x0, y0, z],
-            [x1, y0, z],
-            [x1, y1, z],
-            [x0, y0, z],
-            [x1, y1, z],
-            [x0, y1, z],
-        ]
+        Some([
+            xf([x0, y0, z]),
+            xf([x1, y0, z]),
+            xf([x1, y1, z]),
+            xf([x0, y1, z]),
+        ])
+    };
+    let Some([bl, br, tr, tl]) = corners else {
+        return;
     };
 
     let final_color = if ctx.selected {
@@ -680,29 +704,19 @@ fn emit_greeked_text(
     } else {
         lw.color
     };
-    // Apply the same xref fade as `emit_wire` BEFORE the face3d 0.45 boost,
-    // so the final on-screen color (boost × 0.45 dim) lands at the faded value.
     let final_color = if ctx.is_xref && !ctx.selected {
         fade_toward_bg(final_color, ctx.bg_color)
     } else {
         final_color
     };
-    let boost = 1.0 / 0.45_f32;
-    let [r, g, b, a] = final_color;
-    let greek_color = [
-        (r * boost).min(1.0),
-        (g * boost).min(1.0),
-        (b * boost).min(1.0),
-        a,
-    ];
 
-    let key = style_key(greek_color, 0.0, [0.0; 8], 1.0, lw.aci, true);
+    let key = style_key(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true, true);
     let entry = out
         .by_style
         .entry(key)
-        .or_insert_with(|| BatchEntry::new(greek_color, 0.0, [0.0; 8], 1.0, lw.aci, true));
-    for p in tris {
-        entry.fill_tris.push(p);
+        .or_insert_with(|| BatchEntry::new(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true, true));
+
+    for p in [bl, br, tr, bl, tr, tl] {
         if p[0] < entry.min_x {
             entry.min_x = p[0];
         }
@@ -715,6 +729,7 @@ fn emit_greeked_text(
         if p[1] > entry.max_y {
             entry.max_y = p[1];
         }
+        entry.fill_tris.push(p);
     }
 }
 
@@ -767,11 +782,11 @@ fn emit_text_baseline(
         final_color
     };
 
-    let key = style_key(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true);
+    let key = style_key(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true, false);
     let entry = out
         .by_style
         .entry(key)
-        .or_insert_with(|| BatchEntry::new(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true));
+        .or_insert_with(|| BatchEntry::new(final_color, 0.0, [0.0; 8], 1.0, lw.aci, true, false));
 
     let needs_sep = !entry.points.is_empty()
         && !entry.points.last().map(|p| p[0].is_nan()).unwrap_or(false);
@@ -844,6 +859,11 @@ struct StyleKey {
     line_weight_px: u32,
     aci: u8,
     plinegen: bool,
+    /// Marks batches that emit only `fill_tris` with no wire `points`. The
+    /// face3d pipeline uses `wire.points.is_empty()` as the "skip dim"
+    /// discriminator, so greek fills must stay in their own batches even
+    /// when their color/style would otherwise collide with regular wires.
+    is_fill_only: bool,
 }
 
 #[derive(Default, Debug)]
@@ -880,7 +900,20 @@ struct Batches {
 }
 
 impl BatchEntry {
-    fn new(color: [f32; 4], pat_len: f32, pat: [f32; 8], lw_px: f32, aci: u8, plinegen: bool) -> Self {
+    fn new(
+        color: [f32; 4],
+        pat_len: f32,
+        pat: [f32; 8],
+        lw_px: f32,
+        aci: u8,
+        plinegen: bool,
+        _is_fill_only: bool,
+    ) -> Self {
+        // `is_fill_only` is part of the StyleKey hash so greek fills never
+        // share a batch with regular wires (otherwise the finalized
+        // WireModel would have both `points` and `fill_tris`, defeating
+        // the face3d-dim discriminator). It isn't stored on the entry
+        // itself — the empty `points` field is enough at finalize time.
         Self {
             color,
             pattern_length: pat_len,
@@ -937,6 +970,7 @@ fn style_key(
     lw_px: f32,
     aci: u8,
     plinegen: bool,
+    is_fill_only: bool,
 ) -> StyleKey {
     StyleKey {
         color: [
@@ -959,6 +993,7 @@ fn style_key(
         line_weight_px: lw_px.to_bits(),
         aci,
         plinegen,
+        is_fill_only,
     }
 }
 
@@ -1164,6 +1199,7 @@ fn emit_wire(
         final_lw_px,
         lw.aci,
         lw.plinegen,
+        false,
     );
 
     // If the open batch for this style would exceed wgpu's per-buffer limit
@@ -1183,6 +1219,7 @@ fn emit_wire(
             final_lw_px,
             lw.aci,
             lw.plinegen,
+            false,
         )
     });
 

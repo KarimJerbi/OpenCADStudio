@@ -909,45 +909,49 @@ pub fn tessellate_multileader(
                 });
             }
         } else if lod_mode == 1 {
-            // Greeked rect — tight text bbox (no frame padding).
-            let block_top = v_offset + height;
-            let block_bottom = v_offset - (n_lines - 1.0) * line_h;
-            let block_left = -max_line_w * h_anchor;
-            let block_right = max_line_w * (1.0 - h_anchor);
-            let c00 = to_wcs(block_left, block_bottom);
-            let c10 = to_wcs(block_right, block_bottom);
-            let c11 = to_wcs(block_right, block_top);
-            let c01 = to_wcs(block_left, block_top);
-            // Pre-boost the color so the face3d 0.45 fill_tris dim lands at
-            // the original text color (matches scene/mod.rs greek path).
-            let boost = 1.0 / 0.45_f32;
-            let [r, g, b, a] = text_color;
-            let greek_color = [
-                (r * boost).min(1.0),
-                (g * boost).min(1.0),
-                (b * boost).min(1.0),
-                a,
-            ];
-            wires.push(WireModel {
-                name: name.clone(),
-                points: vec![],
-                color: greek_color,
-                selected,
-                aci: 0,
-                pattern_length: 0.0,
-                pattern: [0.0; 8],
-                line_weight_px: 1.0,
-                snap_pts: vec![(
-                    Vec3::new(local_ins_x, local_ins_y, z),
-                    SnapHint::Node,
-                )],
-                tangent_geoms: vec![],
-                key_vertices: vec![],
-                aabb: WireModel::UNBOUNDED_AABB,
-                plinegen: true,
-                vp_scissor: None,
-                fill_tris: vec![c00, c10, c11, c00, c11, c01],
-            });
+            // One filled rect per line — keeps the visual "text lives here
+            // per row" hint that multi-line MText carries, in the text's
+            // own color. Empty `points` opts out of the face3d 0.45 dim so
+            // the fill renders at full intensity.
+            let mut greek_tris: Vec<[f32; 3]> = Vec::with_capacity(lines.len() * 6);
+            for (i, _) in lines.iter().enumerate() {
+                let li = i as f32;
+                let line_y_bottom = -li * line_h + v_offset;
+                let line_y_top = line_y_bottom + height;
+                let line_w = line_widths[i];
+                if line_w <= 0.0 {
+                    continue;
+                }
+                let left = -line_w * h_anchor;
+                let right = line_w * (1.0 - h_anchor);
+                let bl = to_wcs(left, line_y_bottom);
+                let br = to_wcs(right, line_y_bottom);
+                let tr = to_wcs(right, line_y_top);
+                let tl = to_wcs(left, line_y_top);
+                greek_tris.extend_from_slice(&[bl, br, tr, bl, tr, tl]);
+            }
+            if !greek_tris.is_empty() {
+                wires.push(WireModel {
+                    name: name.clone(),
+                    points: vec![],
+                    color: text_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: 0.0,
+                    pattern: [0.0; 8],
+                    line_weight_px: 1.0,
+                    snap_pts: vec![(
+                        Vec3::new(local_ins_x, local_ins_y, z),
+                        SnapHint::Node,
+                    )],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris: greek_tris,
+                });
+            }
         } else {
             // Build per-line stroke points in WCS.
             let mut text_points: Vec<[f32; 3]> = Vec::new();

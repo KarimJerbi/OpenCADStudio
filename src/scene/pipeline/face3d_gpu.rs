@@ -85,13 +85,22 @@ impl Face3DGpu {
             vertices.push(v(3));
         }
 
-        // PolyfaceMesh / PolygonMesh pre-triangulated fills.
+        // PolyfaceMesh / PolygonMesh / unlit fills (text greek, MultiLeader
+        // background). Wires whose `points` are empty carry pure 2-D fills
+        // that should render at their literal color — applying the 0.45
+        // AO-style dim to them would wash out user-picked colors. Wires
+        // with both fill_tris and points (mesh edges + faces) keep the dim
+        // so PolyfaceMesh / PolygonMesh still look 3-D-shaded.
         for wire in all_wires {
             if wire.fill_tris.is_empty() {
                 continue;
             }
             let [r, g, b, a] = wire.color;
-            let fill_color = [r * 0.45, g * 0.45, b * 0.45, a];
+            let fill_color = if wire.points.is_empty() {
+                [r, g, b, a]
+            } else {
+                [r * 0.45, g * 0.45, b * 0.45, a]
+            };
             for &position in &wire.fill_tris {
                 vertices.push(Face3DVertex {
                     position,
