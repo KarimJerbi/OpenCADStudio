@@ -12,18 +12,6 @@ Current pipeline order:
 
 ---
 
-## Phase 1 — Viewport Bounding-Box Culling
-
-**Goal:** Skip CPU upload and draw calls for entities outside the camera view.
-
-### 1.4 Scissor Rects (Partial — Hatch/Image still pending)
-
-Viewport scissoring for wires already exists (`wire_pixel_scissors` / `WireModel.vp_scissor`).
-Extend same logic to hatch and image passes so paper-space viewport content is clipped at the
-GPU stage instead of overdrawn.
-
----
-
 ## Phase 2 — Spatial Acceleration Structure
 
 **Goal:** O(log n) visibility queries instead of O(n) linear scan.
@@ -57,41 +45,6 @@ let candidates = scene.quadtree.query_rect(view_aabb);
 ```
 
 **Estimated gain:** near-constant frame cost regardless of total entity count when zoomed in.
-
----
-
-## Phase 3 — Level of Detail
-
-**Goal:** Reduce geometric complexity when entities are small or far away.
-
-### 3.3 Hatch LOD — Density Reduction
-
-At low zoom, hatch line spacing appears smaller than 1px. Options:
-
-- **Solid fill substitution:** replace hatch pattern with solid color below a density threshold.
-- **Skip hatch entirely:** at very low zoom, hatches are not readable; skip the hatch pass.
-
-Threshold: `hatch_spacing_px = hatch_spacing_world * px_per_unit`. If `< 2.0`, use solid fill.
-
-### 3.4 Mesh LOD — Tessellation Resolution
-
-`truck_tess.rs` / `solid3d_tess.rs` tessellate ACIS solids at a fixed tolerance. Switch to
-multiple precomputed LOD meshes:
-
-```rust
-pub struct MeshModel {
-    pub lod: [Option<GpuMesh>; 3],  // [high, mid, low]
-}
-```
-
-| LOD | Tolerance | Use when projected diagonal |
-|-----|-----------|------------------------------|
-| 0   | 0.01 mm   | > 200 px                     |
-| 1   | 0.5 mm    | 50–200 px                    |
-| 2   | 5.0 mm    | < 50 px                      |
-
-Build LOD 0 eagerly; build LOD 1 & 2 lazily in a background thread (already have
-async tessellation pattern from `truck_tess.rs`).
 
 ---
 
@@ -136,10 +89,7 @@ Relevant only for perspective (3D) mode with many overlapping solids.
 ## Implementation Order
 
 ```
-Phase 1.4  Scissor for hatch/image          low complexity
 Phase 2.1  Quadtree for 2D                  medium complexity, scales 2D docs
-Phase 3.3  Hatch LOD                        low complexity
-Phase 3.4  Mesh LOD                         high complexity, background thread
 Phase 2.2  Octree for 3D                    medium, needed for dense 3D
 Phase 4.1  Indirect draw + GPU cull         high complexity, defer
 Phase 4.2  Hi-Z occlusion                   high complexity, 3D only, last
@@ -151,10 +101,6 @@ Phase 4.2  Hi-Z occlusion                   high complexity, 3D only, last
 
 | File | Change |
 |------|--------|
-| `src/scene/mesh_model.rs` | Add `Aabb3`, LOD mesh array |
-| `src/scene/hatch_model.rs` | Add `Aabb2` field |
-| `src/scene/image_model.rs` | Add `Aabb2` field |
-| `src/scene/truck_tess.rs` | Multi-resolution mesh tessellation |
 | `src/scene/mod.rs` | Quadtree/octree; LOD epoch tracking |
 | `src/scene/pipeline/mod.rs` | Cull hatch/image entities before upload loops |
 | `src/shaders/cull.wgsl` | New — Phase 4 compute culling shader |
@@ -164,7 +110,6 @@ Phase 4.2  Hi-Z occlusion                   high complexity, 3D only, last
 ## Success Metrics
 
 - **Phase 2 target:** Pan/zoom frame cost O(visible) not O(total).
-- **Phase 3 target:** Complex solid scene at far zoom → mesh triangle count < 10% of full detail.
 - **Phase 4 target:** GPU-cull overhead < 0.5 ms for 1M entity scene.
 
 ---
