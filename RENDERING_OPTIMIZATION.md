@@ -16,66 +16,11 @@ Current pipeline order:
 
 **Goal:** Skip CPU upload and draw calls for entities outside the camera view.
 
-### 1.1 Entity AABB
+### 1.4 Scissor Rects (Partial — Hatch/Image still pending)
 
-Compute axis-aligned bounding boxes during tessellation and store alongside each model.
-
-```rust
-// Attach to WireModel, MeshModel, HatchModel, ImageModel
-pub struct Aabb2 {
-    pub min: DVec2,
-    pub max: DVec2,
-}
-
-pub struct Aabb3 {
-    pub min: DVec3,
-    pub max: DVec3,
-}
-```
-
-- `WireModel` / `HatchModel` → `Aabb2` (XY plane for 2D; full 3D AABB for 3D wires)
-- `MeshModel` → `Aabb3`
-- `ImageModel` → `Aabb2` from insertion point + extents
-
-Compute once at tessellation time (`scene/tessellate.rs`), store in the model structs, invalidate
-with the geometry epoch.
-
-### 1.2 Camera Frustum / Viewport Rectangle
-
-Extract view bounds from `camera.rs` each frame:
-
-- **Orthographic (2D):** viewport rectangle in world space — a simple `Aabb2` test suffices.
-- **Perspective (3D):** extract 6 frustum planes from the view-projection matrix.
-
-```rust
-pub enum ViewVolume {
-    Ortho(Aabb2),
-    Frustum([Vec4; 6]),  // plane equations
-}
-```
-
-### 1.3 CPU-Side Cull Before Upload
-
-In `pipeline/mod.rs`, before collecting wire/hatch/mesh draw calls:
-
-```rust
-fn is_visible(aabb: &Aabb2, view: &ViewVolume) -> bool {
-    match view {
-        ViewVolume::Ortho(rect) => aabb_overlap_2d(aabb, rect),
-        ViewVolume::Frustum(planes) => aabb_inside_frustum(aabb, planes),
-    }
-}
-```
-
-Filter entity lists before the upload loop. Skip `queue.write_buffer` entirely for invisible
-entities — saves both CPU and GPU bus bandwidth.
-
-### 1.4 Scissor Rects (Already Partial)
-
-Viewport scissoring for wires already exists (`wire_pixel_scissors`). Extend same logic to
-hatch and image passes.
-
-**Estimated gain:** 50–90% draw call reduction for typical workflows (zoomed in on one region).
+Viewport scissoring for wires already exists (`wire_pixel_scissors` / `WireModel.vp_scissor`).
+Extend same logic to hatch and image passes so paper-space viewport content is clipped at the
+GPU stage instead of overdrawn.
 
 ---
 
@@ -118,18 +63,6 @@ let candidates = scene.quadtree.query_rect(view_aabb);
 ## Phase 3 — Level of Detail
 
 **Goal:** Reduce geometric complexity when entities are small or far away.
-
-### 3.1 Screen-Space Size Filter (Sub-Pixel Cull)
-
-Before drawing, compute projected pixel size of entity AABB diagonal. Skip entities whose
-projected size is below a threshold (e.g. < 0.5 px).
-
-```rust
-let screen_px = project_size(aabb, camera);
-if screen_px < MIN_VISIBLE_PX { continue; }
-```
-
-Applies to all entity types. Effectively free — just a float comparison after AABB cull.
 
 ### 3.2 Wire LOD — Curve Segment Reduction
 
@@ -185,11 +118,6 @@ pub struct MeshModel {
 Build LOD 0 eagerly; build LOD 1 & 2 lazily in a background thread (already have
 async tessellation pattern from `truck_tess.rs`).
 
-### 3.5 Text & Dimension Simplification
-
-At low zoom, dimension text and annotation geometry become unreadable. Replace with
-simplified bounding-box proxies or skip entirely below a legibility threshold.
-
 ---
 
 ## Phase 4 — GPU-Side Culling (Advanced)
@@ -233,16 +161,12 @@ Relevant only for perspective (3D) mode with many overlapping solids.
 ## Implementation Order
 
 ```
-Phase 1.1  Entity AABB computation          low risk, high impact
-Phase 1.2  ViewVolume extraction            low risk
-Phase 1.3  CPU cull before upload           immediate draw call reduction
+Phase 1.4  Scissor for hatch/image          low complexity
 Phase 2.1  Quadtree for 2D                  medium complexity, scales 2D docs
-Phase 3.1  Sub-pixel cull                   trivial, free perf
 Phase 3.2  Wire curve LOD                   medium, affects tessellation cache
 Phase 3.3  Hatch LOD                        low complexity
 Phase 3.4  Mesh LOD                         high complexity, background thread
 Phase 2.2  Octree for 3D                    medium, needed for dense 3D
-Phase 3.5  Text/dim simplification          low complexity
 Phase 4.1  Indirect draw + GPU cull         high complexity, defer
 Phase 4.2  Hi-Z occlusion                   high complexity, 3D only, last
 ```
@@ -253,25 +177,22 @@ Phase 4.2  Hi-Z occlusion                   high complexity, 3D only, last
 
 | File | Change |
 |------|--------|
-| `src/scene/wire_model.rs` | Add `Aabb2` field to `WireModel` |
 | `src/scene/mesh_model.rs` | Add `Aabb3`, LOD mesh array |
 | `src/scene/hatch_model.rs` | Add `Aabb2` field |
 | `src/scene/image_model.rs` | Add `Aabb2` field |
-| `src/scene/tessellate.rs` | Compute AABB during tessellation; adaptive arc segments |
+| `src/scene/tessellate.rs` | Adaptive arc segments |
 | `src/scene/truck_tess.rs` | Multi-resolution mesh tessellation |
-| `src/scene/camera.rs` | Expose `ViewVolume` extraction |
 | `src/scene/mod.rs` | Quadtree/octree; LOD epoch tracking |
-| `src/scene/pipeline/mod.rs` | Cull entities before upload loops |
+| `src/scene/pipeline/mod.rs` | Cull hatch/image entities before upload loops |
 | `src/shaders/cull.wgsl` | New — Phase 4 compute culling shader |
 
 ---
 
 ## Success Metrics
 
-- **Phase 1 target:** Large drawing (100k wires), zoomed to 5% view → render time drops
-  proportional to visible fraction.
 - **Phase 2 target:** Pan/zoom frame cost O(visible) not O(total).
 - **Phase 3 target:** Complex solid scene at far zoom → mesh triangle count < 10% of full detail.
+- **Phase 4 target:** GPU-cull overhead < 0.5 ms for 1M entity scene.
 
 ---
 
@@ -293,9 +214,10 @@ common in civil/infrastructure drawings — the user shouldn't have to see them
 as crosses.
 
 **Proper fixes that would let us drop this guard:**
-1. Per-block tessellation cache — tessellate a block once, then per-Insert
-   apply the transform to cached wire vertices. Helps when the same block is
-   inserted multiple times; doesn't fully solve single-Insert huge blocks.
+1. ~~Per-block tessellation cache~~ — **LANDED** (`def72e4`): block defns are
+   tessellated once and per-Insert reuses the cached wires via
+   `block_cache::expand_insert`. The guard now only fires on the legacy
+   fallback path; consider lowering or removing it.
 2. Lazy / background Insert tessellation — show marker first, fill in detail
    on a background thread, redraw when ready.
 3. Per-sub-entity hardening — find why a single sub can hang tessellation
@@ -303,11 +225,12 @@ as crosses.
    root cause; combine with sub-count budget per frame instead of a hard cap.
 4. xref attach metadata respected — DWG carries an "unloaded" state for xref
    blocks; honour it instead of always inlining xref content on open.
+   (Attempted in `e88a946`, reverted in `0996b75` — the on-disk bit was
+   unreliable as a Loaded/Unloaded signal.)
 
-When any of (1)–(3) lands, delete the `INSERT_SUB_LIMIT` block in
+When any of (2)–(3) lands, delete the `INSERT_SUB_LIMIT` block in
 `tessellate_entity` (search for `INSERT_SUB_LIMIT`).
 
 Related companion fix in `src/app/update.rs`: after `resolve_xrefs`, a second
 `purge_corrupt_entities` pass runs against the newly inlined xref content.
 That one is not a hack — it should stay even after the Insert guard goes.
-- **Phase 4 target:** GPU-cull overhead < 0.5 ms for 1M entity scene.
