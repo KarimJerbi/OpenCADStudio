@@ -1142,8 +1142,20 @@ impl Scene {
 
         // P: epoch-cached reverse map replaces O(B) block_records scan.
         let map = self.entity_block_map();
-        map.get(&entity_handle)
-            .map_or(true, |&owner| owner == block_handle)
+        if let Some(&owner) = map.get(&entity_handle) {
+            return owner == block_handle;
+        }
+        // Map miss. Permissive only when NO BlockRecord enumerated its
+        // entity_handles — that's a legacy DXF that omits 330 group codes
+        // everywhere, where dropping unknown-owner entities would empty
+        // model space. When at least one block did enumerate, the file is
+        // capable of declaring ownership, so an unknown-owner entity is
+        // an orphan (typically a block-defn entity whose owner was lost on
+        // round-trip) and must not leak into the queried block.
+        if map.is_empty() {
+            return true;
+        }
+        false
     }
 
     /// Build (and epoch-cache) a reverse map: entity_handle → block_record_handle,
