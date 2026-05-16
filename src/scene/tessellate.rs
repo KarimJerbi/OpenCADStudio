@@ -1191,14 +1191,82 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                 for edge in &path.edges {
                     match edge {
                         acadrust::entities::BoundaryEdge::Polyline(poly) => {
+                            // Hatch-boundary polyline vertices encode bulge in
+                            // `Vector3.z`; straight segments emit just the
+                            // start vertex, bulged segments tessellate the arc
+                            // between v0 → v1.
                             let start_idx = pts.len();
-                            for v in &poly.vertices {
-                                let p = to_wcs(v.x, v.y);
+                            let verts = &poly.vertices;
+                            let count = verts.len();
+                            let seg_count = if poly.is_closed {
+                                count
+                            } else {
+                                count.saturating_sub(1)
+                            };
+                            if count > 0 && pts.len() != start_idx {
+                                pts.push([f32::NAN; 3]);
+                            }
+                            for i in 0..seg_count {
+                                let v0 = &verts[i];
+                                let v1 = &verts[(i + 1) % count];
+                                let bulge = v0.z;
+                                if bulge.abs() < 1e-9 {
+                                    let p = to_wcs(v0.x, v0.y);
+                                    pts.push(p);
+                                    key_verts.push(p);
+                                    continue;
+                                }
+                                let theta = 4.0 * bulge.atan();
+                                let dx = v1.x - v0.x;
+                                let dy = v1.y - v0.y;
+                                let d = (dx * dx + dy * dy).sqrt();
+                                if d < 1e-12 {
+                                    let p = to_wcs(v0.x, v0.y);
+                                    pts.push(p);
+                                    key_verts.push(p);
+                                    continue;
+                                }
+                                let r = (d * 0.5) / (theta * 0.5).sin().abs();
+                                let mx = (v0.x + v1.x) * 0.5;
+                                let my = (v0.y + v1.y) * 0.5;
+                                let px = -dy / d;
+                                let py = dx / d;
+                                let sign = if bulge > 0.0 { 1.0_f64 } else { -1.0_f64 };
+                                let center_offset = r * (theta * 0.5).cos();
+                                let cx = mx + sign * px * center_offset;
+                                let cy = my + sign * py * center_offset;
+                                let a0 = (v0.y - cy).atan2(v0.x - cx);
+                                let a1 = (v1.y - cy).atan2(v1.x - cx);
+                                let mut sweep = a1 - a0;
+                                const TAU: f64 = std::f64::consts::TAU;
+                                if bulge > 0.0 {
+                                    if sweep <= 0.0 { sweep += TAU; }
+                                } else if sweep >= 0.0 { sweep -= TAU; }
+                                if sweep.abs() < 1e-9 {
+                                    sweep = if bulge > 0.0 { TAU } else { -TAU };
+                                }
+                                let segs = arc_segments(sweep.abs());
+                                for j in 0..segs {
+                                    let a = a0 + sweep * (j as f64 / segs as f64);
+                                    let p = to_wcs(cx + r * a.cos(), cy + r * a.sin());
+                                    pts.push(p);
+                                    if j == 0 {
+                                        key_verts.push(p);
+                                    }
+                                }
+                            }
+                            // Close the loop visually for closed polylines by
+                            // returning to the first emitted point.
+                            if poly.is_closed {
+                                if let Some(first) = pts.get(start_idx).cloned() {
+                                    if first[0].is_finite() {
+                                        pts.push(first);
+                                    }
+                                }
+                            } else if let Some(last) = verts.last() {
+                                let p = to_wcs(last.x, last.y);
                                 pts.push(p);
                                 key_verts.push(p);
-                            }
-                            if let Some(first) = pts.get(start_idx).cloned() {
-                                pts.push(first);
                             }
                         }
                         acadrust::entities::BoundaryEdge::Line(ln) => {
