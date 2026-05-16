@@ -190,6 +190,13 @@ impl H7CAD {
         if Some(window_id) == self.about_window {
             return crate::ui::about::view_window();
         }
+        if Some(window_id) == self.update_notice_window {
+            let latest = self
+                .update_notice_version
+                .as_deref()
+                .unwrap_or("?");
+            return crate::ui::update_notice::view_window(latest);
+        }
         if Some(window_id) == self.unsaved_dialog_window {
             let tab_name = match &self.pending_close {
                 Some(super::PendingClose::Tab(idx)) => self

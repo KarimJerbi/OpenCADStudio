@@ -10,6 +10,7 @@ mod patterns;
 mod scene;
 mod snap;
 mod ui;
+mod update_check;
 
 fn main() -> iced::Result {
     app::run()

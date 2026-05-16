@@ -18,6 +18,7 @@ printpdf = "0.9.1"
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
 rayon = "1"
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

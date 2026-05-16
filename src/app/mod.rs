@@ -98,6 +98,12 @@ pub(super) struct H7CAD {
     dimstyle_window: Option<window::Id>,
     shortcuts_window: Option<window::Id>,
     about_window: Option<window::Id>,
+    /// New-release notification window — opened on startup when the
+    /// GitHub releases API reports a newer version than this build.
+    update_notice_window: Option<window::Id>,
+    /// Tag of the latest available release (without the leading "v"),
+    /// e.g. `"0.3.0"`. `None` when up-to-date or check hasn't returned.
+    update_notice_version: Option<String>,
     /// In-memory clipboard: cloned entities waiting to be pasted.
     clipboard: Vec<acadrust::EntityType>,
     /// Centroid of the clipboard entities (XZ plane, Y-up).
@@ -529,6 +535,14 @@ pub enum Message {
     OsWindowClosed(window::Id),
     /// No-op — used as a fallback when a TabEvent has no host mapping.
     Noop,
+    /// GitHub releases API returned a result. `Some(version)` means a
+    /// newer release exists; we open the update-notice window.
+    UpdateCheckResult(Option<String>),
+    /// User dismissed the update-notice window.
+    UpdateNoticeClose,
+    /// User clicked the "Open release page" button — opens the GitHub
+    /// release URL in the OS default browser and closes the notice.
+    UpdateNoticeOpenRelease,
     // ── Page Setup ────────────────────────────────────────────────────────
     /// Open the Page Setup panel for the current layout.
     PageSetupOpen,
@@ -713,6 +727,8 @@ impl H7CAD {
             dimstyle_window: None,
             shortcuts_window: None,
             about_window: None,
+            update_notice_window: None,
+            update_notice_version: None,
             clipboard: Vec::new(),
             clipboard_centroid: glam::Vec3::ZERO,
             layout_context_menu: None,
@@ -810,8 +826,12 @@ impl H7CAD {
         });
         let mut s = state;
         s.main_window = Some(id);
-        let task = open_task.map(|_| Message::Noop);
-        (s, task)
+        let open_main = open_task.map(|_| Message::Noop);
+        let check_update = Task::perform(
+            crate::update_check::check_for_update(),
+            Message::UpdateCheckResult,
+        );
+        (s, Task::batch([open_main, check_update]))
     }
 }
 
@@ -850,6 +870,9 @@ pub fn run() -> iced::Result {
             }
             if Some(window_id) == state.about_window {
                 return "About H7CAD".into();
+            }
+            if Some(window_id) == state.update_notice_window {
+                return "Update Available".into();
             }
             if Some(window_id) == state.unsaved_dialog_window {
                 return "Unsaved Changes".into();

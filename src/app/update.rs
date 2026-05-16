@@ -974,6 +974,9 @@ impl H7CAD {
                 if self.about_window == Some(id) {
                     self.about_window = None;
                 }
+                if self.update_notice_window == Some(id) {
+                    self.update_notice_window = None;
+                }
                 Task::none()
             }
 
@@ -3531,6 +3534,37 @@ impl H7CAD {
             }
             Message::PageSetupClose => {
                 if let Some(id) = self.page_setup_window.take() {
+                    window::close(id)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::UpdateCheckResult(latest) => {
+                let Some(version) = latest else {
+                    return Task::none();
+                };
+                self.update_notice_version = Some(version);
+                if let Some(id) = self.update_notice_window {
+                    return window::gain_focus(id);
+                }
+                let (id, task) = window::open(window::Settings {
+                    size: iced::Size::new(480.0, 240.0),
+                    resizable: false,
+                    ..Default::default()
+                });
+                self.update_notice_window = Some(id);
+                task.map(|_| Message::Noop)
+            }
+            Message::UpdateNoticeClose => {
+                if let Some(id) = self.update_notice_window.take() {
+                    window::close(id)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::UpdateNoticeOpenRelease => {
+                let _ = open::that(crate::update_check::RELEASES_PAGE);
+                if let Some(id) = self.update_notice_window.take() {
                     window::close(id)
                 } else {
                     Task::none()
