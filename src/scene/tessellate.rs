@@ -42,16 +42,44 @@ pub(super) fn arc_signed_span(start: f64, end: f64, ccw: bool) -> (f64, f64) {
     (sa, ea - sa)
 }
 
-/// Segment count for an arc targeting ~0.1% chord-height error.
-/// Floors at 8 so very small arcs don't degenerate into triangles; cap
-/// of 256 keeps pathological full-circle inputs bounded.
-pub(super) fn arc_segments(span_abs: f64) -> u32 {
-    if span_abs < 1e-9 {
+/// Segment count for an arc, targeting `chord_tol_world` chord-height
+/// error in world units. Floor 8, cap 512.
+///
+/// Two production callers:
+/// - hatch fill polygon (built at load / on edit) passes a radius-
+///   relative tol via [`fill_chord_tol`] — ~0.1% radius, zoom-free so
+///   the polygon stays sharp at extreme zoom-in without re-tessellation.
+/// - hatch wire outline (re-tessellated every frame inside the render
+///   scope) passes a zoom-adaptive tol via [`wire_chord_tol`] — pulls
+///   from the per-frame override set by `Scene::wires_for_block` so
+///   far-out arcs collapse to a handful of segments.
+pub(super) fn arc_segments(radius: f64, span_abs: f64, chord_tol_world: f64) -> u32 {
+    if span_abs < 1e-9 || radius < 1e-9 {
         return 1;
     }
-    // 2 * acos(1 - 0.001) ≈ 0.0894 rad ≈ 5.12°
-    const MAX_STEP: f64 = 0.0894;
-    ((span_abs / MAX_STEP).ceil() as u32).clamp(8, 256)
+    let tol = chord_tol_world.max(1e-9).min(radius * 0.99);
+    // θ where r * (1 - cos(θ/2)) = tol  →  θ = 2 * acos(1 - tol/r).
+    let max_step = (2.0 * (1.0 - tol / radius).acos()).max(1e-6);
+    ((span_abs / max_step).ceil() as u32).clamp(8, 512)
+}
+
+/// Chord tolerance for the load-time fill polygon: 0.1% of radius,
+/// floor 1 µm so degenerate radii still produce a workable count.
+pub(super) fn fill_chord_tol(radius: f64) -> f64 {
+    (radius * 0.001).max(1e-6)
+}
+
+/// Chord tolerance for the per-frame wire outline: pulls the active
+/// `truck_tess::set_curve_tol_override` value (Scene sets it to
+/// `world_per_pixel × 0.5` so curves stay at ~half-pixel chord error at
+/// the current zoom). When no override is active (snap / hit-test
+/// passes, load-time builds), falls back to [`fill_chord_tol`] so we
+/// never under-sample.
+pub(super) fn wire_chord_tol(radius: f64) -> f64 {
+    match crate::scene::truck_tess::active_curve_tol() {
+        Some(t) => t.min(fill_chord_tol(radius)).max(1e-9),
+        None => fill_chord_tol(radius),
+    }
 }
 
 // ── Colour helper ──────────────────────────────────────────────────────────
@@ -1245,7 +1273,7 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                                 if sweep.abs() < 1e-9 {
                                     sweep = if bulge > 0.0 { TAU } else { -TAU };
                                 }
-                                let segs = arc_segments(sweep.abs());
+                                let segs = arc_segments(r, sweep.abs(), wire_chord_tol(r));
                                 for j in 0..segs {
                                     let a = a0 + sweep * (j as f64 / segs as f64);
                                     let p = to_wcs(cx + r * a.cos(), cy + r * a.sin());
@@ -1283,7 +1311,7 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                         acadrust::entities::BoundaryEdge::CircularArc(arc) => {
                             let (sa, span) =
                                 arc_signed_span(arc.start_angle, arc.end_angle, arc.counter_clockwise);
-                            let segs = arc_segments(span.abs());
+                            let segs = arc_segments(arc.radius, span.abs(), wire_chord_tol(arc.radius));
                             if !pts.is_empty() {
                                 pts.push([f32::NAN; 3]);
                             }
@@ -1314,7 +1342,7 @@ fn legacy_geometry(entity: &EntityType, world_offset: [f64; 3]) -> Geometry {
                                 .atan2(ell.major_axis_endpoint.x);
                             let (sa, span) =
                                 arc_signed_span(ell.start_angle, ell.end_angle, ell.counter_clockwise);
-                            let segs = arc_segments(span.abs());
+                            let segs = arc_segments(r_maj, span.abs(), wire_chord_tol(r_maj));
                             if !pts.is_empty() {
                                 pts.push([f32::NAN; 3]);
                             }

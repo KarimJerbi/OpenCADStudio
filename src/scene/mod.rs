@@ -2492,9 +2492,12 @@ impl Scene {
                                         -std::f32::consts::TAU
                                     };
                                 }
-                                let segs = ((sweep.abs() / std::f32::consts::TAU) * 16.0)
-                                    .ceil()
-                                    .max(4.0) as u32;
+                                let r64 = r as f64;
+                                let segs = tessellate::arc_segments(
+                                    r64,
+                                    sweep.abs() as f64,
+                                    tessellate::fill_chord_tol(r64),
+                                );
                                 for j in 0..segs {
                                     let a = a0 + sweep * (j as f32 / segs as f32);
                                     boundary.push(to_xy(
@@ -2520,7 +2523,11 @@ impl Scene {
                             arc.end_angle,
                             arc.counter_clockwise,
                         );
-                        let segs = tessellate::arc_segments(span.abs());
+                        let segs = tessellate::arc_segments(
+                            arc.radius,
+                            span.abs(),
+                            tessellate::fill_chord_tol(arc.radius),
+                        );
                         for i in 0..=segs {
                             let t = sa + span * (i as f64 / segs as f64);
                             boundary.push(to_xy(
@@ -2543,7 +2550,11 @@ impl Scene {
                             ell.end_angle,
                             ell.counter_clockwise,
                         );
-                        let segs = tessellate::arc_segments(span.abs());
+                        let segs = tessellate::arc_segments(
+                            r_maj,
+                            span.abs(),
+                            tessellate::fill_chord_tol(r_maj),
+                        );
                         let (cr, sr) = (rot.cos(), rot.sin());
                         for i in 0..=segs {
                             let t = sa + span * (i as f64 / segs as f64);

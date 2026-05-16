@@ -42,12 +42,25 @@ pub fn set_curve_tol_override(tol: Option<f64>) {
 
 /// Resolve the active curve tolerance. Clamped to the floor `CURVE_TOL` so
 /// extreme zoom-in never under-samples below the existing baseline quality.
-fn current_curve_tol() -> f64 {
+pub(crate) fn current_curve_tol() -> f64 {
     let bits = CURVE_TOL_BITS.load(Ordering::Relaxed);
     if bits == 0 {
         CURVE_TOL
     } else {
         f64::from_bits(bits).max(CURVE_TOL)
+    }
+}
+
+/// Returns `Some(tol)` only when a Scene-driven per-frame override is
+/// active (i.e. we're tessellating inside a render frame, not at load
+/// time or in a snap / hit-test pass). Hatch boundary outlines use this
+/// to apply zoom-adaptive sampling.
+pub(crate) fn active_curve_tol() -> Option<f64> {
+    let bits = CURVE_TOL_BITS.load(Ordering::Relaxed);
+    if bits == 0 {
+        None
+    } else {
+        Some(f64::from_bits(bits).max(CURVE_TOL))
     }
 }
 
