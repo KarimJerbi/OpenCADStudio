@@ -408,14 +408,14 @@ pub struct Scene {
     /// Maps block_handle → (entity_handle.value() → sort_handle.value()).
     /// Replaces the O(objects) linear scan inside `wires_for_block()` with an O(1) lookup.
     sort_cache: RefCell<Option<(u64, HashMap<Handle, HashMap<u64, u64>>)>>,
-    /// Cached hatch fill models, keyed by (geometry_epoch, camera_generation).
-    /// The camera term is needed because `synced_hatch_models` now view-culls
-    /// via the quadtree — a key that ignored camera would return stale culled
-    /// lists across pan/zoom.
-    hatch_cache: RefCell<Option<((u64, u64), Arc<Vec<HatchModel>>)>>,
-    /// Cached wipeout fill models, keyed by (geometry_epoch, camera_generation).
-    /// Same reasoning as `hatch_cache`.
-    wipeout_cache: RefCell<Option<((u64, u64), Arc<Vec<HatchModel>>)>>,
+    /// Cached hatch fill models, keyed by geometry_epoch. View culling
+    /// is handled at draw time via `hatch_skip_flags` in the pipeline,
+    /// not at build time — that lets the GPU buffer stay stable across
+    /// pan/zoom while still skipping out-of-view hatches.
+    hatch_cache: RefCell<Option<(u64, Arc<Vec<HatchModel>>)>>,
+    /// Cached wipeout fill models, keyed by geometry_epoch. Same
+    /// reasoning as `hatch_cache`.
+    wipeout_cache: RefCell<Option<(u64, Arc<Vec<HatchModel>>)>>,
     /// Cached image models, keyed by geometry_epoch. Images do their own
     /// per-frame culling in the GPU pipeline (vp_scissor); no camera key
     /// needed here.
@@ -1061,32 +1061,30 @@ impl Scene {
     }
 
     pub(super) fn hatch_models_arc(&self) -> Arc<Vec<HatchModel>> {
-        let key = (self.geometry_epoch, self.camera_generation);
         {
             let cache = self.hatch_cache.borrow();
-            if let Some((cached_key, ref arc)) = *cache {
-                if cached_key == key {
+            if let Some((cached_epoch, ref arc)) = *cache {
+                if cached_epoch == self.geometry_epoch {
                     return Arc::clone(arc);
                 }
             }
         }
         let arc = Arc::new(self.synced_hatch_models());
-        *self.hatch_cache.borrow_mut() = Some((key, Arc::clone(&arc)));
+        *self.hatch_cache.borrow_mut() = Some((self.geometry_epoch, Arc::clone(&arc)));
         arc
     }
 
     pub(super) fn wipeout_models_arc(&self) -> Arc<Vec<HatchModel>> {
-        let key = (self.geometry_epoch, self.camera_generation);
         {
             let cache = self.wipeout_cache.borrow();
-            if let Some((cached_key, ref arc)) = *cache {
-                if cached_key == key {
+            if let Some((cached_epoch, ref arc)) = *cache {
+                if cached_epoch == self.geometry_epoch {
                     return Arc::clone(arc);
                 }
             }
         }
         let arc = Arc::new(self.wipeout_models());
-        *self.wipeout_cache.borrow_mut() = Some((key, Arc::clone(&arc)));
+        *self.wipeout_cache.borrow_mut() = Some((self.geometry_epoch, Arc::clone(&arc)));
         arc
     }
 
@@ -2482,33 +2480,16 @@ impl Scene {
                 .unwrap_or(false)
         };
 
-        // Phase 2.1 — narrow the per-hatch visibility scan to candidates
-        // the quadtree says intersect the view. The map below still does
-        // the heavy lifting (model clone + render_style + selection tint)
-        // so cutting the pre-filter from O(N_hatches) → O(visible_hatches)
-        // is the main win.
-        let view_candidates: Option<std::collections::HashSet<Handle>> =
-            self.view_world_aabb().map(|local_view| {
-                let [ox, oy, _] = self.world_offset;
-                let view_wcs: [f64; 4] = [
-                    local_view[0] as f64 + ox,
-                    local_view[1] as f64 + oy,
-                    local_view[2] as f64 + ox,
-                    local_view[3] as f64 + oy,
-                ];
-                let tree = self.entity_index();
-                tree.query_rect(view_wcs).into_iter().collect()
-            });
-
+        // synced_hatch_models is cached on geometry_epoch and the GPU
+        // upload is keyed on geometry_epoch only (see render.rs — hatch
+        // buffers are "static"). Don't view-cull here; the per-frame
+        // skip flag in compute_hatch_lod handles frustum + sub-pixel
+        // culling at draw time, which keeps the GPU upload set stable
+        // across pan/zoom.
         let mut models: Vec<HatchModel> = self
             .hatches
             .iter()
             .filter(|(&handle, _)| {
-                if let Some(set) = view_candidates.as_ref() {
-                    if !set.contains(&handle) {
-                        return false;
-                    }
-                }
                 let Some(entity) = self.document.get_entity(handle) else {
                     return true;
                 };
@@ -2593,11 +2574,6 @@ impl Scene {
             if fills.is_empty() {
                 continue;
             }
-            if let Some(set) = view_candidates.as_ref() {
-                if !set.contains(&common.handle) {
-                    continue;
-                }
-            }
             if common.invisible || layer_hidden(&common.layer) {
                 continue;
             }
@@ -2643,29 +2619,17 @@ impl Scene {
         } else {
             self.world_offset
         };
-        // Phase 2.1 — quadtree pre-filter for wipeouts in Model layout.
-        let view_candidates: Option<std::collections::HashSet<Handle>> =
-            self.view_world_aabb().map(|local_view| {
-                let [ox, oy, _] = self.world_offset;
-                let view_wcs: [f64; 4] = [
-                    local_view[0] as f64 + ox,
-                    local_view[1] as f64 + oy,
-                    local_view[2] as f64 + ox,
-                    local_view[3] as f64 + oy,
-                ];
-                let tree = self.entity_index();
-                tree.query_rect(view_wcs).into_iter().collect()
-            });
+        // No per-frame view-cull here: GPU wipeout buffer upload is
+        // gated on geometry_epoch only (see render.rs), so any cull at
+        // build time would freeze the visible subset at the geometry
+        // epoch boundary and never re-evaluate as the user pans. The
+        // pipeline's `wipeout_skip_flags` (compute_wipeout_lod) does
+        // the per-frame skip at draw time instead.
         let mut models = Vec::new();
         for entity in self.document.entities() {
             let EntityType::Wipeout(wo) = entity else {
                 continue;
             };
-            if let Some(set) = view_candidates.as_ref() {
-                if !set.contains(&wo.common.handle) {
-                    continue;
-                }
-            }
             if entity.common().invisible {
                 continue;
             }

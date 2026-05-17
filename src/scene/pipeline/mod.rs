@@ -65,6 +65,10 @@ pub struct Pipeline {
     hatch_skip_flags: Vec<bool>,
     /// Wipeout fills — rendered after wires in a separate pass.
     gpu_wipeouts: Vec<HatchGpu>,
+    /// Per-wipeout draw-time skip flag (Phase 2.3 frustum cull). `true`
+    /// when the wipeout's projected AABB sits entirely outside the
+    /// viewport rect. Recomputed by `compute_wipeout_lod`.
+    wipeout_skip_flags: Vec<bool>,
     /// Pixel scissor rects [x, y, w, h] for viewport-clipped wipeouts. Recomputed each frame.
     wipeout_pixel_scissors: Vec<Option<[u32; 4]>>,
     gpu_images: Vec<ImageGpu>,
@@ -622,6 +626,7 @@ impl Pipeline {
             hatch_pixel_scissors: vec![],
             hatch_skip_flags: vec![],
             gpu_wipeouts: vec![],
+            wipeout_skip_flags: vec![],
             wipeout_pixel_scissors: vec![],
             gpu_images: vec![],
             image_pixel_scissors: vec![],
@@ -676,7 +681,11 @@ impl Pipeline {
         self.hatch_skip_flags = self
             .gpu_hatches
             .iter()
-            .map(|h| aabb_below_pixel(h.world_aabb, view_proj, clip_w, clip_h, 2.0))
+            .map(|h| {
+                // Phase 3.3 sub-pixel LOD skip OR Phase 2.3 frustum skip.
+                aabb_below_pixel(h.world_aabb, view_proj, clip_w, clip_h, 2.0)
+                    || aabb_offscreen(h.world_aabb, view_proj, clip_w, clip_h)
+            })
             .collect();
     }
 
@@ -686,6 +695,18 @@ impl Pipeline {
             .gpu_wipeouts
             .iter()
             .map(|h| project_scissor(h.vp_scissor, view_proj, clip_w, clip_h))
+            .collect();
+    }
+
+    /// Per-frame wipeout frustum-skip flag (Phase 2.3). Mirrors
+    /// `compute_hatch_lod`'s frustum branch. No sub-pixel skip:
+    /// wipeouts mask, so dropping a sub-pixel one wouldn't be wrong
+    /// but also wouldn't pay off — they're usually few.
+    pub fn compute_wipeout_lod(&mut self, view_proj: glam::Mat4, clip_w: u32, clip_h: u32) {
+        self.wipeout_skip_flags = self
+            .gpu_wipeouts
+            .iter()
+            .map(|h| aabb_offscreen(h.world_aabb, view_proj, clip_w, clip_h))
             .collect();
     }
 
@@ -1098,6 +1119,9 @@ impl Pipeline {
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             let mut scissor_active = false;
             for (i, wipeout) in self.gpu_wipeouts.iter().enumerate() {
+                if self.wipeout_skip_flags.get(i).copied().unwrap_or(false) {
+                    continue;
+                }
                 match self.wipeout_pixel_scissors.get(i) {
                     Some(Some([x, y, w, h])) => {
                         pass.set_scissor_rect(*x, *y, *w, *h);
