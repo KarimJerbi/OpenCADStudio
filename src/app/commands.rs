@@ -2493,7 +2493,11 @@ impl H7CAD {
                                         vp.center.clone(),
                                         vp.width,
                                         vp.height,
-                                        vp.custom_scale,
+                                        crate::scene::vp_effective_scale(
+                                            vp.custom_scale,
+                                            vp.view_height,
+                                            vp.height,
+                                        ),
                                         vp.status.is_on,
                                         vp.status.locked,
                                     ))

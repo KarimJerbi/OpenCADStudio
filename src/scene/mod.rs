@@ -70,6 +70,24 @@ use std::sync::Arc;
 /// GPU Pipeline to skip re-uploading geometry when switching tabs.
 static GEOMETRY_EPOCH: AtomicU64 = AtomicU64::new(1);
 
+/// Resolve a viewport's paper-to-model scale ratio from its two
+/// DXF-derived sources.
+///
+/// `view_height` (model-space view extent) is the canonical source — it
+/// is what AutoCAD actually uses to draw, and what we keep in sync on
+/// every write. `custom_scale` is consulted only when `view_height` is
+/// missing or zero (some third-party exporters omit it).
+#[inline]
+pub fn vp_effective_scale(custom_scale: f64, view_height: f64, vp_height: f64) -> f64 {
+    if view_height.abs() > 1e-9 {
+        return vp_height / view_height;
+    }
+    if custom_scale.abs() > 1e-9 {
+        return custom_scale;
+    }
+    1.0
+}
+
 /// Pre-built entity caches returned by [`build_derived_caches`].
 /// Produced in the file-load background task so the UI thread only assigns.
 #[derive(Debug, Clone)]
@@ -839,14 +857,11 @@ impl Scene {
         self.document.entities().find_map(|e| {
             if let EntityType::Viewport(vp) = e {
                 if Self::is_content_viewport(vp) && vp.common.owner_handle == layout_block {
-                    let scale = if vp.custom_scale.abs() > 1e-9 {
-                        vp.custom_scale
-                    } else if vp.view_height.abs() > 1e-9 {
-                        vp.height / vp.view_height
-                    } else {
-                        1.0
-                    };
-                    return Some(scale);
+                    return Some(vp_effective_scale(
+                        vp.custom_scale,
+                        vp.view_height,
+                        vp.height,
+                    ));
                 }
             }
             None
@@ -1821,12 +1836,18 @@ impl Scene {
                 effective_view_center = (self.world_offset[0], self.world_offset[1]);
             }
 
-            let scale = if effective_view_height.abs() > 1e-9 {
+            // When the saved view did not overlap the model cluster we just
+            // forced `effective_view_height` to a fit value above — that
+            // override must win regardless of the configured priority,
+            // otherwise broken files render blank under custom_scale-first.
+            let scale = if !saved_overlaps {
                 vp.height as f32 / effective_view_height
-            } else if vp.custom_scale.abs() > 1e-9 {
-                vp.custom_scale as f32
             } else {
-                1.0
+                vp_effective_scale(
+                    vp.custom_scale,
+                    effective_view_height as f64,
+                    vp.height,
+                ) as f32
             };
 
             let pcx = vp.center.x as f32;
@@ -1994,13 +2015,8 @@ impl Scene {
             Some(acadrust::EntityType::Viewport(vp)) => vp,
             _ => return paper_pt,
         };
-        let scale = if vp.custom_scale.abs() > 1e-9 {
-            vp.custom_scale as f32
-        } else if vp.view_height.abs() > 1e-9 {
-            (vp.height / vp.view_height) as f32
-        } else {
-            1.0
-        };
+        let scale =
+            vp_effective_scale(vp.custom_scale, vp.view_height, vp.height) as f32;
         if scale.abs() < 1e-9 {
             return paper_pt;
         }
@@ -2083,13 +2099,8 @@ impl Scene {
 
             if let Some(cp) = cursor_paper {
                 // Compute the model-space point under the cursor before zoom.
-                let scale_before = if vp.custom_scale.abs() > 1e-9 {
-                    vp.custom_scale as f32
-                } else if vp.view_height.abs() > 1e-9 {
-                    (vp.height / vp.view_height) as f32
-                } else {
-                    1.0
-                };
+                let scale_before =
+                    vp_effective_scale(vp.custom_scale, vp.view_height, vp.height) as f32;
                 let cx = vp.center.x as f32;
                 let cy = vp.center.y as f32;
                 let tx = vp.view_target.x as f32;
@@ -4327,13 +4338,8 @@ impl Scene {
         let (frozen, vp_anno_scale) = match self.document.get_entity(vp_handle) {
             Some(EntityType::Viewport(vp)) => {
                 let f: HSet<Handle> = vp.frozen_layers.iter().cloned().collect();
-                let vp_scale = if vp.custom_scale.abs() > 1e-9 {
-                    vp.custom_scale
-                } else if vp.view_height.abs() > 1e-9 {
-                    vp.height / vp.view_height
-                } else {
-                    1.0
-                };
+                let vp_scale =
+                    vp_effective_scale(vp.custom_scale, vp.view_height, vp.height);
                 let anno = if vp_scale > 1e-9 {
                     (1.0 / vp_scale) as f32
                 } else {

@@ -120,17 +120,20 @@ pub fn tessellate(
     let name = handle.value().to_string();
 
     // Determine effective annotation scale for this entity.
-    // AutoCAD marks annotative objects with "AcAnnoPO" xdata (R2007+).
-    // If no xdata at all: old file without annotation system → treat as annotative.
-    // If xdata present but no "AcAnnoPO": R2007+ file, entity is non-annotative → no scaling.
+    //
+    // AutoCAD's R2007+ "annotative" system marks objects via extension-
+    // dictionary records or "AcAnnoPO" / "AcAnnotativeData" xdata. Only
+    // entities so marked should be auto-scaled by the viewport's
+    // paper-scale; everything else is treated as manually pre-scaled
+    // (old DXF/DWG convention with $DIMSCALE and oversized text).
+    //
+    // Default: NOT annotative (anno_scale = 1.0). Opt-in via explicit
+    // xdata marker. Files that mark every entity annotative are rare; the
+    // pre-R2007 manual-scale convention is far more common in field data.
     let anno_scale = {
         let xdata = &entity.common().extended_data;
-        let is_annotative = if xdata.is_empty() {
-            // Old DXF / no annotation metadata — treat as annotative.
-            true
-        } else {
-            xdata.get_record("AcAnnoPO").is_some()
-        };
+        let is_annotative = xdata.get_record("AcAnnoPO").is_some()
+            || xdata.get_record("AcAnnotativeData").is_some();
         if is_annotative {
             anno_scale
         } else {
@@ -465,22 +468,33 @@ pub fn tessellate_dimension(
     };
     let name = handle.value().to_string();
     let style_name = &dim.base().style_name;
-    let (arrow_size, dimexo, dimexe) = document
-        .dim_styles
-        .iter()
-        .find(|s| {
-            s.name.eq_ignore_ascii_case(style_name)
-                || (style_name.trim().is_empty() && s.name.eq_ignore_ascii_case("Standard"))
-        })
+    let style = document.dim_styles.iter().find(|s| {
+        s.name.eq_ignore_ascii_case(style_name)
+            || (style_name.trim().is_empty() && s.name.eq_ignore_ascii_case("Standard"))
+    });
+
+    // DIMSCALE rule:
+    //   dimstyle.dimscale > 0  →  that's the *final* multiplier; ignore anno_scale.
+    //   dimstyle.dimscale == 0 →  annotative: use anno_scale (= 1/vp_scale in viewports).
+    let dim_scale = style
         .map(|s| {
-            let scale = (if s.dimscale > 1e-6 { s.dimscale } else { 1.0 }) * anno_scale as f64;
+            if s.dimscale > 1e-6 {
+                s.dimscale
+            } else {
+                anno_scale as f64
+            }
+        })
+        .unwrap_or(1.0);
+    let (arrow_size, dimexo, dimexe, dim_txt) = style
+        .map(|s| {
             (
-                ((s.dimasz * scale) as f32).max(0.001),
-                (s.dimexo * scale) as f32,
-                (s.dimexe * scale) as f32,
+                ((s.dimasz * dim_scale) as f32).max(0.001),
+                (s.dimexo * dim_scale) as f32,
+                (s.dimexe * dim_scale) as f32,
+                s.dimtxt * dim_scale,
             )
         })
-        .unwrap_or((0.12, 0.0, 0.0));
+        .unwrap_or((0.12, 0.0, 0.0, 2.5));
     let points = dimension_geometry(dim, arrow_size, dimexo, dimexe, world_offset);
     let key_vertices = points
         .iter()
@@ -508,7 +522,7 @@ pub fn tessellate_dimension(
         fill_tris: vec![],
     }];
 
-    if let Some(text) = dimension_text_entity(dim) {
+    if let Some(text) = dimension_text_entity(dim, dim_txt) {
         let mut wire = tessellate(
             document,
             handle,
@@ -519,7 +533,9 @@ pub fn tessellate_dimension(
             [0.0; 8],
             line_weight_px,
             world_offset,
-            anno_scale,
+            // dim text already baked dim_scale into its height — don't
+            // let the inner tessellate re-apply anno_scale.
+            1.0,
         );
         wire.name = name;
         wires.push(wire);
@@ -1688,7 +1704,7 @@ fn dimension_snap_pts(dim: &Dimension, world_offset: [f64; 3]) -> Vec<(Vec3, Sna
     }
 }
 
-fn dimension_text_entity(dim: &Dimension) -> Option<Text> {
+fn dimension_text_entity(dim: &Dimension, text_height: f64) -> Option<Text> {
     let value = dimension_text_value(dim)?;
     // Use f64 position directly to avoid f32 round-trip precision loss at large
     // coordinates (e.g. Turkish UTM ~4,000,000 m). tessellate() will apply
@@ -1701,7 +1717,7 @@ fn dimension_text_entity(dim: &Dimension) -> Option<Text> {
         dimension_text_natural_rotation(dim)
     };
     let mut text = Text::with_value(value, pos_f64)
-        .with_height(dimension_text_height(dim))
+        .with_height(text_height)
         .with_rotation(rotation);
     text.style = base.style_name.clone();
     text.common = base.common.clone();
@@ -1764,15 +1780,6 @@ fn dimension_text_position(dim: &Dimension, world_offset: [f64; 3]) -> Vec3 {
         Dimension::Angular2Ln(d) => lv(d.dimension_arc),
         Dimension::Angular3Pt(d) => lv(d.definition_point),
         Dimension::Ordinate(d) => lv(d.leader_endpoint),
-    }
-}
-
-fn dimension_text_height(dim: &Dimension) -> f64 {
-    let scale = (dim.measurement().abs() * 0.12).clamp(0.25, 2.0);
-    if scale.is_finite() {
-        scale
-    } else {
-        0.25
     }
 }
 

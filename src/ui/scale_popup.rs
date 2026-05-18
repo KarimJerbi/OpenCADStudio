@@ -27,7 +27,7 @@ const COMMON_SCALES: &[(&str, f32, f64)] = &[
 ///
 /// - `is_model`: true = model space (dispatches SetAnnotationScale), false = paper space (SetViewportScale).
 /// - `current_anno_scale`: current annotation_scale from Scene (used to highlight active row in model space).
-/// - `viewport_scale`: current vp.custom_scale (used to highlight in paper space).
+/// - `viewport_scale`: current effective vp scale, view_height-first (used to highlight in paper space).
 pub fn scale_popup_overlay(
     is_model: bool,
     current_anno_scale: f32,

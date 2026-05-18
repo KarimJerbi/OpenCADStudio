@@ -105,7 +105,12 @@ fn grips(vp: &Viewport) -> Vec<GripDef> {
 
 fn properties(vp: &Viewport) -> PropSection {
     let scale_opts: Vec<String> = STANDARD_SCALES.iter().map(|(s, _)| s.to_string()).collect();
-    let current_scale_label = scale_label(vp.custom_scale);
+    let effective_scale = crate::scene::vp_effective_scale(
+        vp.custom_scale,
+        vp.view_height,
+        vp.height,
+    );
+    let current_scale_label = scale_label(effective_scale);
 
     let view_opts: Vec<String> = STD_VIEWS.iter().map(|s| s.to_string()).collect();
     let current_view = viewport_view_label(vp);
@@ -124,8 +129,8 @@ fn properties(vp: &Viewport) -> PropSection {
             edit("Center Z", "center_z", vp.center.z),
             edit("Width", "vp_w", vp.width),
             edit("Height", "vp_h", vp.height),
-            // Numeric scale entry.
-            edit("Scale (num)", "vscale", vp.custom_scale),
+            // Numeric scale entry (derived from view_height; writes both).
+            edit("Scale (num)", "vscale", effective_scale),
             // Standard scale picker.
             Property {
                 label: "Scale".into(),
