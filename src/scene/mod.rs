@@ -4778,6 +4778,27 @@ fn tessellate_entity(
                 is_xref,
                 bg_color,
             ) {
+                // Per-INSERT attribute values. The block defn carries the
+                // AttributeDefinitions (templates) which expand_insert skips;
+                // the AttributeEntity instances live on the Insert itself in
+                // WCS and need their own tessellation so the user sees the
+                // values they actually filled in. See #20.
+                append_insert_attribute_wires(
+                    &mut wires,
+                    document,
+                    ins,
+                    h,
+                    sel,
+                    ins_color,
+                    ins_pat_len,
+                    ins_pat,
+                    ins_lw_px,
+                    bg_color,
+                    is_xref,
+                    pslt_factor,
+                    anno_scale,
+                    world_offset,
+                );
                 wires.push(marker);
                 return wires;
             }
@@ -4832,6 +4853,22 @@ fn tessellate_entity(
                 vec![wire]
             })
             .collect();
+        append_insert_attribute_wires(
+            &mut wires,
+            document,
+            ins,
+            h,
+            sel,
+            ins_color,
+            ins_pat_len,
+            ins_pat,
+            ins_lw_px,
+            bg_color,
+            is_xref,
+            pslt_factor,
+            anno_scale,
+            world_offset,
+        );
         wires.push(marker);
         return wires;
     }
@@ -5087,6 +5124,72 @@ pub(crate) fn text_obb_corners_native(
         rot_pt(x1, y1),
         rot_pt(x0, y1),
     ])
+}
+
+/// Tessellate each visible AttributeEntity attached to an Insert and append
+/// the resulting wires. AttributeEntity positions are already in WCS — the
+/// INSERT only stamps the geometry once, attribute text sits at the world
+/// position recorded on each ATTRIB. See #20.
+#[allow(clippy::too_many_arguments)]
+fn append_insert_attribute_wires(
+    wires: &mut Vec<WireModel>,
+    document: &acadrust::CadDocument,
+    ins: &acadrust::entities::Insert,
+    insert_handle: Handle,
+    sel: bool,
+    ins_color: [f32; 4],
+    ins_pat_len: f32,
+    ins_pat: [f32; 8],
+    ins_lw_px: f32,
+    bg_color: [f32; 4],
+    is_xref: bool,
+    pslt_factor: f32,
+    anno_scale: f32,
+    world_offset: [f64; 3],
+) {
+    if ins.attributes.is_empty() {
+        return;
+    }
+    for attr in &ins.attributes {
+        if attr.common.invisible || attr.flags.invisible {
+            continue;
+        }
+        let attr_entity = EntityType::AttributeEntity(attr.clone());
+        let (sub_color, sub_plen, sub_pat, sub_lw_px, sub_aci) =
+            render::render_style_for_block_sub(
+                document,
+                &attr_entity,
+                ins_color,
+                ins_pat_len,
+                ins_pat,
+                ins_lw_px,
+            );
+        let sub_color = render::adapt_to_bg(sub_color, bg_color);
+        let sub_color = if is_xref && !sel {
+            block_cache::fade_toward_bg(sub_color, bg_color)
+        } else {
+            sub_color
+        };
+        let sub_aabb = entity_aabb(&attr_entity, world_offset);
+        let mut wire = tessellate::tessellate(
+            document,
+            insert_handle,
+            &attr_entity,
+            sel,
+            sub_color,
+            sub_plen * pslt_factor,
+            sub_pat.map(|v| v * pslt_factor),
+            sub_lw_px,
+            world_offset,
+            anno_scale,
+        );
+        // Use the INSERT's handle so selection / picking groups attribute
+        // text with the parent insert instead of treating it as a stray text.
+        wire.name = insert_handle.value().to_string();
+        wire.aci = sub_aci;
+        wire.aabb = sub_aabb;
+        wires.push(wire);
+    }
 }
 
 /// NaN-separated baseline segments — one per visible wrap line — for a
