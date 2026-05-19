@@ -598,7 +598,26 @@ pub fn tessellate_dimension(
         // entity, which the current text struct can't carry. Tracked: read
         // and ignore so the file round-trips on save.
         let _ = s.dimtxtdirection;
+        // DIMARCSYM only applies to arc-length dims; DIMJOGANG only to
+        // jogged-radius dims. We don't ship those Dimension variants yet,
+        // so the values are read for round-trip but not drawn.
+        let _ = (s.dimarcsym, s.dimjogang);
+        // DIMUNIT is the obsolete pre-R2000 linear unit format; DIMLUNIT
+        // supersedes it. Read but not honoured.
+        let _ = s.dimunit;
     }
+    // Dimension entity fields that the render path doesn't yet use but are
+    // preserved on save:
+    //   - base.insertion_point: legacy anchor reference; render uses
+    //     text_middle_point + dim-line geometry instead.
+    //   - base.block_name: AutoCAD-style "*D..." anonymous block name for
+    //     the dim graphics — we re-tessellate so don't need it.
+    //   - base.version: DXF format marker (metadata only).
+    let _ = (
+        dim.base().insertion_point,
+        &dim.base().block_name,
+        dim.base().version,
+    );
 
     // Per-spec colours: DIMCLRD (dim/arrows), DIMCLRE (ext), DIMCLRT (text).
     // 0=ByBlock and 256=ByLayer fall through to entity_color.
@@ -767,7 +786,10 @@ pub fn tessellate_dimension(
         }
     }
 
-    if let Some(text) = dimension_text_entity(dim, dim_txt, style) {
+    if let Some(text) = dimension_text_entity(dim, dim_txt, style, document) {
+        // Tolerance Text rendered separately so DIMTFAC scales its height
+        // and DIMTOLJ aligns it vertically against the primary text.
+        let tol_entity = dimension_tolerance_entity(dim, style, &text, dim_txt);
         let mut wire = tessellate(
             document,
             handle,
@@ -782,8 +804,25 @@ pub fn tessellate_dimension(
             // let the inner tessellate re-apply anno_scale.
             1.0,
         );
-        wire.name = name;
+        wire.name = name.clone();
         wires.push(wire);
+
+        if let Some(tol_text) = tol_entity {
+            let mut tol_wire = tessellate(
+                document,
+                handle,
+                &EntityType::Text(tol_text),
+                selected,
+                text_color,
+                0.0,
+                [0.0; 8],
+                line_weight_px,
+                world_offset,
+                1.0,
+            );
+            tol_wire.name = name;
+            wires.push(tol_wire);
+        }
     }
 
     wires
@@ -2049,7 +2088,16 @@ fn dimension_geometry(
             let def = lv(d.definition_point);
             let axis = normalized_or(second - first, Vec3::X);
             append_linear_dimension(
-                &mut g, first, second, def, axis, arrow1, arrow2, params, suppress,
+                &mut g,
+                first,
+                second,
+                def,
+                axis,
+                arrow1,
+                arrow2,
+                params,
+                suppress,
+                d.ext_line_rotation as f32,
             );
         }
         Dimension::Linear(d) => {
@@ -2067,6 +2115,7 @@ fn dimension_geometry(
                 arrow2,
                 params,
                 suppress,
+                d.ext_line_rotation as f32,
             );
         }
         Dimension::Radius(d) => {
@@ -2074,7 +2123,15 @@ fn dimension_geometry(
             let point = lv(d.definition_point);
             let text = dimension_text_position(dim, world_offset);
             add_segment(&mut g.dim_lines, center, point);
-            add_segment(&mut g.dim_lines, point, text);
+            // Honour leader_length: extend from the arrow tip past it
+            // toward the text by that distance along (text - point).
+            let leader_dir = normalized_or(text - point, Vec3::X);
+            let leader = if d.leader_length.abs() > 1e-9 {
+                point + leader_dir * (d.leader_length as f32)
+            } else {
+                text
+            };
+            add_segment(&mut g.dim_lines, point, leader);
             append_arrow(&mut g, point, normalized_or(center - point, Vec3::X), arrow1);
             let radius = (point - center).length();
             append_center_mark(&mut g, center, params.dimcen, radius);
@@ -2085,6 +2142,16 @@ fn dimension_geometry(
             add_segment(&mut g.dim_lines, p1, p2);
             append_arrow(&mut g, p1, normalized_or(p2 - p1, Vec3::X), arrow1);
             append_arrow(&mut g, p2, normalized_or(p1 - p2, Vec3::X), arrow2);
+            // DIMETER leader: continue past p2 toward the text.
+            if d.leader_length.abs() > 1e-9 {
+                let text = dimension_text_position(dim, world_offset);
+                let leader_dir = normalized_or(text - p2, p2 - p1);
+                add_segment(
+                    &mut g.dim_lines,
+                    p2,
+                    p2 + leader_dir * (d.leader_length as f32),
+                );
+            }
             let radius = (p2 - p1).length() * 0.5;
             append_center_mark(&mut g, (p1 + p2) * 0.5, params.dimcen, radius);
         }
@@ -2136,6 +2203,7 @@ fn append_linear_dimension(
     arrow2: &ArrowKind,
     params: DimLineParams,
     suppress: SuppressFlags,
+    ext_line_rotation: f32,
 ) {
     let perp = Vec3::new(-axis.y, axis.x, 0.0);
     let dim_line_pos = def.dot(perp);
@@ -2146,22 +2214,35 @@ fn append_linear_dimension(
     let sign1 = if offset1 >= 0.0 { 1.0_f32 } else { -1.0 };
     let sign2 = if offset2 >= 0.0 { 1.0_f32 } else { -1.0 };
 
+    // ext_line_rotation (DIMEDIT "Oblique"): rotate the extension lines by
+    // this angle relative to perpendicular. The ext line still starts at
+    // the def point; only the direction differs.
+    let ext_dir = if ext_line_rotation.abs() > 1e-6 {
+        let c = ext_line_rotation.cos();
+        let s = ext_line_rotation.sin();
+        // Rotate `perp` by ext_line_rotation around Z.
+        Vec3::new(perp.x * c - perp.y * s, perp.x * s + perp.y * c, 0.0)
+    } else {
+        perp
+    };
+
     // DIMFXLON / DIMFXL: fixed extension-line length from the dim line back
     // toward (but not past) the definition point. Otherwise grow from the
     // def point with DIMEXO gap, extending DIMEXE past the dim line.
+    // When oblique, lengths are measured along ext_dir instead of perp.
     let (ext1_start, ext1_end, ext2_start, ext2_end) = if params.dimfxlon {
         let fxl = params.dimfxl.max(0.0);
-        let s1 = d1 - perp * (sign1 * fxl);
-        let e1 = d1 + perp * (sign1 * params.dimexe);
-        let s2 = d2 - perp * (sign2 * fxl);
-        let e2 = d2 + perp * (sign2 * params.dimexe);
+        let s1 = d1 - ext_dir * (sign1 * fxl);
+        let e1 = d1 + ext_dir * (sign1 * params.dimexe);
+        let s2 = d2 - ext_dir * (sign2 * fxl);
+        let e2 = d2 + ext_dir * (sign2 * params.dimexe);
         (s1, e1, s2, e2)
     } else {
         (
-            first + perp * (sign1 * params.dimexo),
-            d1 + perp * (sign1 * params.dimexe),
-            second + perp * (sign2 * params.dimexo),
-            d2 + perp * (sign2 * params.dimexe),
+            first + ext_dir * (sign1 * params.dimexo),
+            d1 + ext_dir * (sign1 * params.dimexe),
+            second + ext_dir * (sign2 * params.dimexo),
+            d2 + ext_dir * (sign2 * params.dimexe),
         )
     };
     if !suppress.ext1 {
@@ -2465,6 +2546,7 @@ fn dimension_text_entity(
     dim: &Dimension,
     text_height: f64,
     style: Option<&DimStyle>,
+    document: &CadDocument,
 ) -> Option<Text> {
     let value = dimension_text_value(dim, style)?;
     // Use f64 position directly to avoid f32 round-trip precision loss at large
@@ -2474,11 +2556,16 @@ fn dimension_text_entity(
     let base = dim.base();
 
     // DIMTIH/DIMTOH: when set, text is forced horizontal (rotation = 0)
-    // regardless of the dim line angle. Honour explicit base.text_rotation first.
+    // regardless of the dim line angle. Honour explicit base.text_rotation
+    // first, then horizontal_direction override, then DIMTIH/DIMTOH.
     let dimtih = style.map(|s| s.dimtih).unwrap_or(false);
     let dimtoh = style.map(|s| s.dimtoh).unwrap_or(false);
     let rotation = if base.text_rotation.abs() > 1e-9 {
         base.text_rotation
+    } else if base.horizontal_direction.abs() > 1e-9 {
+        // horizontal_direction is the in-plane reading direction the writer
+        // baked in (used for vertical / oblique dims).
+        base.horizontal_direction
     } else if dimtih || dimtoh {
         0.0
     } else {
@@ -2488,19 +2575,66 @@ fn dimension_text_entity(
     let mut text = Text::with_value(value, pos_f64)
         .with_height(text_height)
         .with_rotation(rotation);
-    // Prefer the dim style's text style (DIMTXSTY) over the dim's own style_name
-    // (which is the *dim style* name, not the text style).
-    if let Some(s) = style {
-        if !s.dimtxsty.trim().is_empty() {
-            text.style = s.dimtxsty.clone();
-        } else {
-            text.style = base.style_name.clone();
-        }
-    } else {
-        text.style = base.style_name.clone();
-    }
+
+    // Text style resolution priority:
+    //   1. DIMTXSTY by handle (most reliable; survives rename)
+    //   2. DIMTXSTY by name
+    //   3. dim's own style_name (rare fallback)
+    text.style = style
+        .and_then(|s| {
+            if !s.dimtxsty_handle.is_null() {
+                document
+                    .text_styles
+                    .iter()
+                    .find(|ts| ts.handle == s.dimtxsty_handle)
+                    .map(|ts| ts.name.clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            style
+                .map(|s| s.dimtxsty.clone())
+                .filter(|n| !n.trim().is_empty())
+        })
+        .unwrap_or_else(|| base.style_name.clone());
+
+    // Map AttachmentPointType (1..9 grid) to Text horizontal + vertical
+    // alignments. 1=TopLeft … 9=BottomRight (column-major).
+    let (ha, va) = attachment_to_text_align(base.attachment_point);
+    text.horizontal_alignment = ha;
+    text.vertical_alignment = va;
+    // line_spacing_factor controls multi-line text spacing in MText. Our
+    // synthetic Text is single-line so this is a no-op, but pass through
+    // for completeness.
+    let _ = base.line_spacing_factor;
+    // normal would rotate the dim plane out of XY. The local 2D pipeline
+    // assumes XY, so non-XY normals are read but not applied here.
+    let _ = base.normal;
+
     text.common = base.common.clone();
     Some(text)
+}
+
+fn attachment_to_text_align(
+    attach: acadrust::entities::dimension::AttachmentPointType,
+) -> (
+    acadrust::entities::text::TextHorizontalAlignment,
+    acadrust::entities::text::TextVerticalAlignment,
+) {
+    use acadrust::entities::dimension::AttachmentPointType as A;
+    use acadrust::entities::text::{TextHorizontalAlignment as H, TextVerticalAlignment as V};
+    match attach {
+        A::TopLeft => (H::Left, V::Top),
+        A::TopCenter => (H::Center, V::Top),
+        A::TopRight => (H::Right, V::Top),
+        A::MiddleLeft => (H::Left, V::Middle),
+        A::MiddleCenter => (H::Center, V::Middle),
+        A::MiddleRight => (H::Right, V::Middle),
+        A::BottomLeft => (H::Left, V::Bottom),
+        A::BottomCenter => (H::Center, V::Bottom),
+        A::BottomRight => (H::Right, V::Bottom),
+    }
 }
 
 fn dimension_text_natural_rotation(dim: &Dimension) -> f64 {
@@ -2525,12 +2659,29 @@ fn dimension_text_natural_rotation(dim: &Dimension) -> f64 {
 }
 
 fn dimension_text_value(dim: &Dimension, style: Option<&DimStyle>) -> Option<String> {
+    let (main, tol) = dimension_text_parts(dim, style)?;
+    // Tolerance is appended inline for callers (e.g. fill rect width) that
+    // don't render a separate tolerance entity. The visual pipeline that
+    // does emit a separate tolerance text re-derives the parts itself.
+    match tol {
+        Some(t) => Some(format!("{} {}", main, t)),
+        None => Some(main),
+    }
+}
+
+/// Returns (primary_text, tolerance_suffix). The tolerance is emitted as a
+/// separate Text entity so DIMTFAC can scale its height and DIMTOLJ can
+/// align it vertically against the primary value.
+fn dimension_text_parts(
+    dim: &Dimension,
+    style: Option<&DimStyle>,
+) -> Option<(String, Option<String>)> {
     let base = dim.base();
     let is_angular = matches!(dim, Dimension::Angular2Ln(_) | Dimension::Angular3Pt(_));
 
     // Auto-generated body (the value AutoCAD would emit if the user did not
     // override it). Built first so user_text "<>" substitution can re-use it.
-    let primary = if is_angular {
+    let primary_raw = if is_angular {
         format_angular_value(dim.measurement(), style)
     } else {
         let v = format_linear_value(dim.measurement(), style);
@@ -2541,13 +2692,13 @@ fn dimension_text_value(dim: &Dimension, style: Option<&DimStyle>) -> Option<Str
         }
     };
 
-    // Tolerances / limits — applied to the primary value before DIMPOST wraps.
-    let primary = apply_tolerance(primary, dim.measurement(), style, is_angular);
-    // DIMPOST: "<>" template (prefix/suffix wrap).
-    let primary = apply_dimpost(&primary, style);
+    // Build tolerance / limits suffix separately so the caller can render
+    // it as its own Text entity at DIMTFAC × DIMTXT height.
+    let tolerance_suffix = build_tolerance_suffix(dim.measurement(), style, is_angular);
+    let primary = apply_dimpost(&primary_raw, style);
 
     // Alternate units appended in brackets when DIMALT is on (linear only).
-    let composed = if !is_angular {
+    let primary = if !is_angular {
         match alternate_units_text(dim.measurement(), style) {
             Some(alt) => format!("{} [{}]", primary, alt),
             None => primary,
@@ -2562,24 +2713,20 @@ fn dimension_text_value(dim: &Dimension, style: Option<&DimStyle>) -> Option<Str
         if user_text.is_empty() || user_text.trim().is_empty() {
             return None;
         }
-        return Some(user_text.replace("<>", &composed));
+        return Some((user_text.replace("<>", &primary), tolerance_suffix));
     }
     if !base.text.trim().is_empty() {
-        return Some(base.text.replace("<>", &composed));
+        return Some((base.text.replace("<>", &primary), tolerance_suffix));
     }
-    Some(composed)
+    Some((primary, tolerance_suffix))
 }
 
-/// Append tolerance text per DIMTOL / DIMLIM:
-///   DIMLIM  true  → replace value with "high/low" limits stacked
-///   DIMTOL  true  → "value +tp/-tm" (or "value±t" when tp==tm)
-fn apply_tolerance(
-    value: String,
+fn build_tolerance_suffix(
     measurement: f64,
     style: Option<&DimStyle>,
     is_angular: bool,
-) -> String {
-    let Some(s) = style else { return value };
+) -> Option<String> {
+    let s = style?;
     let dimtdec = s.dimtdec.max(0) as usize;
     let dimtzin = s.dimtzin;
     let fmt = |v: f64| -> String {
@@ -2587,31 +2734,25 @@ fn apply_tolerance(
         apply_linear_zero_suppression(&raw, dimtzin)
     };
     if s.dimlim {
-        // Replace value entirely with high/low limits.
         let high = measurement + s.dimtp;
         let low = measurement - s.dimtm;
-        return format!("{}/{}", fmt(high), fmt(low));
+        return Some(format!("{}/{}", fmt(high), fmt(low)));
     }
     if s.dimtol {
         let unit = if is_angular { "°" } else { "" };
         if (s.dimtp - s.dimtm).abs() < 1e-12 && s.dimtp.abs() > 1e-12 {
-            return format!("{}±{}{}", value, fmt(s.dimtp), unit);
+            return Some(format!("±{}{}", fmt(s.dimtp), unit));
         }
         if s.dimtp.abs() > 1e-12 || s.dimtm.abs() > 1e-12 {
-            return format!(
-                "{} +{}{} / -{}{}",
-                value,
-                fmt(s.dimtp),
-                unit,
-                fmt(s.dimtm),
-                unit
-            );
+            return Some(format!("+{}{} / -{}{}", fmt(s.dimtp), unit, fmt(s.dimtm), unit));
         }
     }
-    value
+    None
 }
 
 /// Build the bracketed alternate-units suffix when DIMALT is enabled.
+/// When DIMTOL is also on, the bracketed text includes the tolerance
+/// component formatted with DIMALTTD / DIMALTTZ.
 fn alternate_units_text(measurement: f64, style: Option<&DimStyle>) -> Option<String> {
     let s = style?;
     if !s.dimalt {
@@ -2625,15 +2766,88 @@ fn alternate_units_text(measurement: f64, style: Option<&DimStyle>) -> Option<St
     let raw = format_with_unit(v, s.dimaltu, dec, s.dimfrac);
     let suppressed = apply_linear_zero_suppression(&raw, s.dimaltz);
     let sep_swapped = swap_decimal_sep(&suppressed, s.dimdsep);
+    // Alt-unit tolerance suffix using DIMALTTD / DIMALTTZ.
+    let alt_value = if s.dimtol {
+        let alttdec = s.dimalttd.max(0) as usize;
+        let alttzin = s.dimalttz;
+        let fmt = |x: f64| -> String {
+            let raw = format!("{:.*}", alttdec, x * s.dimaltf);
+            swap_decimal_sep(&apply_linear_zero_suppression(&raw, alttzin), s.dimdsep)
+        };
+        if (s.dimtp - s.dimtm).abs() < 1e-12 && s.dimtp.abs() > 1e-12 {
+            format!("{}±{}", sep_swapped, fmt(s.dimtp))
+        } else if s.dimtp.abs() > 1e-12 || s.dimtm.abs() > 1e-12 {
+            format!("{} +{} / -{}", sep_swapped, fmt(s.dimtp), fmt(s.dimtm))
+        } else {
+            sep_swapped
+        }
+    } else if s.dimlim {
+        let alttdec = s.dimalttd.max(0) as usize;
+        let alttzin = s.dimalttz;
+        let fmt = |x: f64| -> String {
+            let raw = format!("{:.*}", alttdec, x * s.dimaltf);
+            swap_decimal_sep(&apply_linear_zero_suppression(&raw, alttzin), s.dimdsep)
+        };
+        format!("{}/{}", fmt(measurement + s.dimtp), fmt(measurement - s.dimtm))
+    } else {
+        sep_swapped
+    };
     // DIMAPOST wraps the alt value (same "<>" convention as DIMPOST).
     let wrapped = if s.dimapost.is_empty() {
-        sep_swapped
+        alt_value
     } else if s.dimapost.contains("<>") {
-        s.dimapost.replace("<>", &sep_swapped)
+        s.dimapost.replace("<>", &alt_value)
     } else {
-        format!("{}{}", sep_swapped, s.dimapost)
+        format!("{}{}", alt_value, s.dimapost)
     };
     Some(wrapped)
+}
+
+/// Build the secondary tolerance Text entity at `DIMTXT × DIMTFAC` height,
+/// positioned to the right of the primary text and vertically aligned per
+/// `DIMTOLJ` (0=bottom, 1=middle, 2=top). Returns None when DIMTOL/DIMLIM
+/// produce no tolerance string (e.g. both DIMTP and DIMTM are zero).
+fn dimension_tolerance_entity(
+    dim: &Dimension,
+    style: Option<&DimStyle>,
+    primary: &Text,
+    primary_height: f64,
+) -> Option<Text> {
+    let s = style?;
+    let is_angular = matches!(dim, Dimension::Angular2Ln(_) | Dimension::Angular3Pt(_));
+    let tol = build_tolerance_suffix(dim.measurement(), style, is_angular)?;
+    let dimtfac = if s.dimtfac.abs() < 1e-12 {
+        1.0
+    } else {
+        s.dimtfac
+    };
+    let tol_height = primary_height * dimtfac;
+
+    // Approximate widths from glyph counts (~0.6 × cell size per char).
+    let primary_w = primary.value.chars().count() as f64 * primary_height * 0.6;
+    let tol_w = tol.chars().count() as f64 * tol_height * 0.6;
+    let gap = primary_height * 0.2;
+    let dx_local = primary_w * 0.5 + tol_w * 0.5 + gap;
+    let dy_local = match s.dimtolj {
+        0 => -primary_height * 0.5 + tol_height * 0.5, // bottom-aligned with primary baseline
+        2 => primary_height * 0.5 - tol_height * 0.5,  // top-aligned with primary top
+        _ => 0.0,                                       // centred (default for ±)
+    };
+    let rot = primary.rotation;
+    let (sr, cr) = rot.sin_cos();
+    let pos = Vector3::new(
+        primary.insertion_point.x + dx_local * cr - dy_local * sr,
+        primary.insertion_point.y + dx_local * sr + dy_local * cr,
+        primary.insertion_point.z,
+    );
+    let mut t = Text::with_value(tol, pos)
+        .with_height(tol_height)
+        .with_rotation(rot);
+    t.style = primary.style.clone();
+    t.common = primary.common.clone();
+    t.horizontal_alignment = acadrust::entities::text::TextHorizontalAlignment::Center;
+    t.vertical_alignment = acadrust::entities::text::TextVerticalAlignment::Middle;
+    Some(t)
 }
 
 /// Wrap a measured value with the style's DIMPOST prefix/suffix template.
