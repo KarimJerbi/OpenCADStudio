@@ -482,23 +482,46 @@ pub fn tessellate_dimension(
         })
         .unwrap_or(1.0);
 
-    let (dimasz_raw, dimexo, dimexe, dim_txt, dimtsz_raw, dimsah, dimse1, dimse2, dimsd1, dimsd2) =
-        style
-            .map(|s| {
-                (
-                    s.dimasz * dim_scale,
-                    (s.dimexo * dim_scale) as f32,
-                    (s.dimexe * dim_scale) as f32,
-                    s.dimtxt * dim_scale,
-                    s.dimtsz * dim_scale,
-                    s.dimsah,
-                    s.dimse1,
-                    s.dimse2,
-                    s.dimsd1,
-                    s.dimsd2,
-                )
-            })
-            .unwrap_or((0.18, 0.0, 0.0, 2.5, 0.0, false, false, false, false, false));
+    let (
+        dimasz_raw,
+        dimexo,
+        dimexe,
+        dim_txt,
+        dimtsz_raw,
+        dimsah,
+        dimse1,
+        dimse2,
+        dimsd1,
+        dimsd2,
+        dimdle,
+        dimfxl,
+        dimfxlon,
+        dimsoxd,
+        dimcen,
+    ) = style
+        .map(|s| {
+            (
+                s.dimasz * dim_scale,
+                (s.dimexo * dim_scale) as f32,
+                (s.dimexe * dim_scale) as f32,
+                s.dimtxt * dim_scale,
+                s.dimtsz * dim_scale,
+                s.dimsah,
+                s.dimse1,
+                s.dimse2,
+                s.dimsd1,
+                s.dimsd2,
+                (s.dimdle * dim_scale) as f32,
+                (s.dimfxl * dim_scale) as f32,
+                s.dimfxlon,
+                s.dimsoxd,
+                (s.dimcen * dim_scale) as f32,
+            )
+        })
+        .unwrap_or((
+            0.18, 0.0, 0.0, 2.5, 0.0, false, false, false, false, false, 0.0, 1.0, false, false,
+            0.09,
+        ));
 
     // Arrow selection precedence:
     //   1. DIMTSZ>0 → oblique tick (overrides DIMBLK*).
@@ -534,8 +557,16 @@ pub fn tessellate_dimension(
         dim,
         &arrow1,
         &arrow2,
-        dimexo,
-        dimexe,
+        DimLineParams {
+            dimexo,
+            dimexe,
+            dimdle,
+            dimfxl,
+            dimfxlon,
+            dimsoxd,
+            dimcen,
+            ticks: dimtsz_raw > 1e-9,
+        },
         SuppressFlags {
             ext1: dimse1,
             ext2: dimse2,
@@ -583,26 +614,84 @@ pub fn tessellate_dimension(
         line_weight_px,
     );
 
+    // DIMLTEX (dim line) / DIMLTEX1 (ext1) / DIMLTEX2 (ext2) — linetype
+    // handles → pattern. Looked up in document.line_types by handle.
+    let lt_scale = document.header.linetype_scale as f32 * dim.base().common.linetype_scale as f32;
+    let (dim_pat_len, dim_pat) = style
+        .map(|s| resolve_pattern_by_handle(document, s.dimltex_handle, lt_scale))
+        .unwrap_or((0.0, [0.0; 8]));
+    let (ext1_pat_len, ext1_pat) = style
+        .map(|s| resolve_pattern_by_handle(document, s.dimltex1_handle, lt_scale))
+        .unwrap_or((0.0, [0.0; 8]));
+    let (ext2_pat_len, ext2_pat) = style
+        .map(|s| resolve_pattern_by_handle(document, s.dimltex2_handle, lt_scale))
+        .unwrap_or((0.0, [0.0; 8]));
+
     let mut wires = Vec::new();
 
     if !geom.ext_lines.is_empty() {
-        wires.push(WireModel {
-            name: name.clone(),
-            points: geom.ext_lines,
-            color: ext_color,
-            selected,
-            aci: 0,
-            pattern_length: 0.0,
-            pattern: [0.0; 8],
-            line_weight_px: lw_ext,
-            snap_pts: vec![],
-            tangent_geoms: vec![],
-            key_vertices: vec![],
-            aabb: WireModel::UNBOUNDED_AABB,
-            plinegen: true,
-            vp_scissor: None,
-            fill_tris: vec![],
-        });
+        // If ext1 and ext2 have different linetypes, split into two wires so
+        // each can carry its own pattern. Otherwise emit as a single wire.
+        let split = ext1_pat_len != ext2_pat_len || ext1_pat != ext2_pat;
+        if split {
+            let (ext1, ext2) = split_ext_lines(&geom.ext_lines);
+            if !ext1.is_empty() {
+                wires.push(WireModel {
+                    name: name.clone(),
+                    points: ext1,
+                    color: ext_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: ext1_pat_len,
+                    pattern: ext1_pat,
+                    line_weight_px: lw_ext,
+                    snap_pts: vec![],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris: vec![],
+                });
+            }
+            if !ext2.is_empty() {
+                wires.push(WireModel {
+                    name: name.clone(),
+                    points: ext2,
+                    color: ext_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: ext2_pat_len,
+                    pattern: ext2_pat,
+                    line_weight_px: lw_ext,
+                    snap_pts: vec![],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris: vec![],
+                });
+            }
+        } else {
+            wires.push(WireModel {
+                name: name.clone(),
+                points: geom.ext_lines,
+                color: ext_color,
+                selected,
+                aci: 0,
+                pattern_length: ext1_pat_len,
+                pattern: ext1_pat,
+                line_weight_px: lw_ext,
+                snap_pts: vec![],
+                tangent_geoms: vec![],
+                key_vertices: vec![],
+                aabb: WireModel::UNBOUNDED_AABB,
+                plinegen: true,
+                vp_scissor: None,
+                fill_tris: vec![],
+            });
+        }
     }
 
     wires.push(WireModel {
@@ -611,8 +700,8 @@ pub fn tessellate_dimension(
         color: dim_color,
         selected,
         aci: 0,
-        pattern_length: 0.0,
-        pattern: [0.0; 8],
+        pattern_length: dim_pat_len,
+        pattern: dim_pat,
         line_weight_px: lw_dim,
         snap_pts,
         tangent_geoms: vec![],
@@ -622,6 +711,37 @@ pub fn tessellate_dimension(
         vp_scissor: None,
         fill_tris: geom.arrow_fill,
     });
+
+    // DIMTFILL: 0=none, 1=drawing background (transparent → skip), 2=DIMTFILLCLR.
+    if let Some(s) = style {
+        if s.dimtfill == 2 {
+            if let Some(rect) = text_fill_rect(dim, style, dim_txt, world_offset) {
+                let fill_color = if selected {
+                    WireModel::SELECTED
+                } else {
+                    let c = AcadColor::from_index(s.dimtfillclr);
+                    aci_to_rgba(&c)
+                };
+                wires.push(WireModel {
+                    name: name.clone(),
+                    points: vec![],
+                    color: fill_color,
+                    selected,
+                    aci: 0,
+                    pattern_length: 0.0,
+                    pattern: [0.0; 8],
+                    line_weight_px: 1.0,
+                    snap_pts: vec![],
+                    tangent_geoms: vec![],
+                    key_vertices: vec![],
+                    aabb: WireModel::UNBOUNDED_AABB,
+                    plinegen: true,
+                    vp_scissor: None,
+                    fill_tris: rect,
+                });
+            }
+        }
+    }
 
     if let Some(text) = dimension_text_entity(dim, dim_txt, style) {
         let mut wire = tessellate(
@@ -664,6 +784,96 @@ fn resolve_dim_lineweight_px(code: i16, fallback_px: f32) -> f32 {
     // i16 value 0..=211 represents 1/100 mm.
     let mm = code as f32 / 100.0;
     (mm * MM_TO_PX).max(1.0)
+}
+
+/// Look up a linetype in the document's line_types table by handle and
+/// resolve it to a (pattern_length, pattern) pair compatible with WireModel.
+fn resolve_pattern_by_handle(
+    doc: &CadDocument,
+    handle: acadrust::types::Handle,
+    scale: f32,
+) -> (f32, [f32; 8]) {
+    if handle.is_null() {
+        return (0.0, [0.0; 8]);
+    }
+    let name = doc
+        .line_types
+        .iter()
+        .find(|lt| lt.handle == handle)
+        .map(|lt| lt.name.clone());
+    match name {
+        Some(n) => crate::scene::render::resolve_pattern(&doc.line_types, &n, scale),
+        None => (0.0, [0.0; 8]),
+    }
+}
+
+/// Split the combined ext-lines point list (NaN-separated segment pairs)
+/// into "first" / "second" halves. `append_linear_dimension` writes ext1
+/// before ext2, so the first segment is ext1 and the second is ext2.
+fn split_ext_lines(points: &[[f32; 3]]) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
+    let mut groups: Vec<Vec<[f32; 3]>> = Vec::new();
+    let mut current: Vec<[f32; 3]> = Vec::new();
+    for &p in points {
+        if p[0].is_nan() {
+            if !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(p);
+        }
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    let mut iter = groups.into_iter();
+    let first = iter.next().unwrap_or_default();
+    let rest: Vec<[f32; 3]> = iter.flatten().collect();
+    (first, rest)
+}
+
+/// Build a rectangle of filled triangles sitting under the dim text, used
+/// when DIMTFILL = 2 (explicit fill colour). The rect width is estimated
+/// from the formatted text length × character-cell width; an absolutely
+/// correct box would need full text metrics from the font cache.
+fn text_fill_rect(
+    dim: &Dimension,
+    style: Option<&DimStyle>,
+    text_height: f64,
+    world_offset: [f64; 3],
+) -> Option<Vec<[f32; 3]>> {
+    let value = dimension_text_value(dim, style)?;
+    if value.is_empty() {
+        return None;
+    }
+    let pos = dimension_text_pos_f64(dim, style, text_height);
+    let dimgap = style.map(|s| s.dimgap).unwrap_or(0.0).max(0.0);
+    // ~0.6 × text_height per character; matches average glyph aspect for
+    // the bundled stick fonts. Inflate by 1 DIMGAP on each side.
+    let approx_w =
+        value.chars().count() as f64 * text_height * 0.6 + dimgap * 2.0;
+    let approx_h = text_height + dimgap * 2.0;
+    let rot = if dim.base().text_rotation.abs() > 1e-9 {
+        dim.base().text_rotation
+    } else {
+        dimension_text_natural_rotation(dim)
+    };
+    let (sr, cr) = rot.sin_cos();
+    let hx = approx_w * 0.5;
+    let hy = approx_h * 0.5;
+    let [ox, oy, oz] = world_offset;
+    let cx = (pos.x - ox) as f32;
+    let cy = (pos.y - oy) as f32;
+    let cz = (pos.z - oz) as f32;
+    let corner = |dx: f64, dy: f64| -> [f32; 3] {
+        let lx = dx * cr - dy * sr;
+        let ly = dx * sr + dy * cr;
+        [cx + lx as f32, cy + ly as f32, cz]
+    };
+    let p1 = corner(-hx, -hy);
+    let p2 = corner(hx, -hy);
+    let p3 = corner(hx, hy);
+    let p4 = corner(-hx, hy);
+    Some(vec![p1, p2, p3, p1, p3, p4])
 }
 
 #[derive(Clone, Copy)]
@@ -781,6 +991,18 @@ struct SuppressFlags {
     ext2: bool,
     dim1: bool,
     dim2: bool,
+}
+
+#[derive(Clone, Copy)]
+struct DimLineParams {
+    dimexo: f32,
+    dimexe: f32,
+    dimdle: f32,
+    dimfxl: f32,
+    dimfxlon: bool,
+    dimsoxd: bool,
+    dimcen: f32,
+    ticks: bool,
 }
 
 struct DimGeom {
@@ -1720,8 +1942,7 @@ fn dimension_geometry(
     dim: &Dimension,
     arrow1: &ArrowKind,
     arrow2: &ArrowKind,
-    dimexo: f32,
-    dimexe: f32,
+    params: DimLineParams,
     suppress: SuppressFlags,
     world_offset: [f64; 3],
 ) -> DimGeom {
@@ -1734,7 +1955,7 @@ fn dimension_geometry(
             let def = lv(d.definition_point);
             let axis = normalized_or(second - first, Vec3::X);
             append_linear_dimension(
-                &mut g, first, second, def, axis, arrow1, arrow2, dimexo, dimexe, suppress,
+                &mut g, first, second, def, axis, arrow1, arrow2, params, suppress,
             );
         }
         Dimension::Linear(d) => {
@@ -1750,8 +1971,7 @@ fn dimension_geometry(
                 normalized_or(axis, Vec3::X),
                 arrow1,
                 arrow2,
-                dimexo,
-                dimexe,
+                params,
                 suppress,
             );
         }
@@ -1762,6 +1982,8 @@ fn dimension_geometry(
             add_segment(&mut g.dim_lines, center, point);
             add_segment(&mut g.dim_lines, point, text);
             append_arrow(&mut g, point, normalized_or(center - point, Vec3::X), arrow1);
+            let radius = (point - center).length();
+            append_center_mark(&mut g, center, params.dimcen, radius);
         }
         Dimension::Diameter(d) => {
             let p1 = lv(d.angle_vertex);
@@ -1769,6 +1991,8 @@ fn dimension_geometry(
             add_segment(&mut g.dim_lines, p1, p2);
             append_arrow(&mut g, p1, normalized_or(p2 - p1, Vec3::X), arrow1);
             append_arrow(&mut g, p2, normalized_or(p1 - p2, Vec3::X), arrow2);
+            let radius = (p2 - p1).length() * 0.5;
+            append_center_mark(&mut g, (p1 + p2) * 0.5, params.dimcen, radius);
         }
         Dimension::Angular2Ln(d) => {
             append_angular_dimension(
@@ -1816,8 +2040,7 @@ fn append_linear_dimension(
     axis: Vec3,
     arrow1: &ArrowKind,
     arrow2: &ArrowKind,
-    dimexo: f32,
-    dimexe: f32,
+    params: DimLineParams,
     suppress: SuppressFlags,
 ) {
     let perp = Vec3::new(-axis.y, axis.x, 0.0);
@@ -1828,23 +2051,98 @@ fn append_linear_dimension(
     let d2 = second + perp * offset2;
     let sign1 = if offset1 >= 0.0 { 1.0_f32 } else { -1.0 };
     let sign2 = if offset2 >= 0.0 { 1.0_f32 } else { -1.0 };
-    let ext1_start = first + perp * (sign1 * dimexo);
-    let ext1_end = d1 + perp * (sign1 * dimexe);
-    let ext2_start = second + perp * (sign2 * dimexo);
-    let ext2_end = d2 + perp * (sign2 * dimexe);
+
+    // DIMFXLON / DIMFXL: fixed extension-line length from the dim line back
+    // toward (but not past) the definition point. Otherwise grow from the
+    // def point with DIMEXO gap, extending DIMEXE past the dim line.
+    let (ext1_start, ext1_end, ext2_start, ext2_end) = if params.dimfxlon {
+        let fxl = params.dimfxl.max(0.0);
+        let s1 = d1 - perp * (sign1 * fxl);
+        let e1 = d1 + perp * (sign1 * params.dimexe);
+        let s2 = d2 - perp * (sign2 * fxl);
+        let e2 = d2 + perp * (sign2 * params.dimexe);
+        (s1, e1, s2, e2)
+    } else {
+        (
+            first + perp * (sign1 * params.dimexo),
+            d1 + perp * (sign1 * params.dimexe),
+            second + perp * (sign2 * params.dimexo),
+            d2 + perp * (sign2 * params.dimexe),
+        )
+    };
     if !suppress.ext1 {
         add_segment(&mut g.ext_lines, ext1_start, ext1_end);
     }
     if !suppress.ext2 {
         add_segment(&mut g.ext_lines, ext2_start, ext2_end);
     }
+
+    // DIMDLE: dim line overshoots the ext line by `dimdle` at each end,
+    // but only when ticks are in use (DIMTSZ > 0). With arrowheads this
+    // is ignored, matching AutoCAD.
+    let dle = if params.ticks { params.dimdle } else { 0.0 };
+    let dir_d1_to_d2 = normalized_or(d2 - d1, axis);
+    let d1_out = d1 - dir_d1_to_d2 * dle;
+    let d2_out = d2 + dir_d1_to_d2 * dle;
     // DIMSD1/DIMSD2: when *both* set, omit the dim line entirely. AutoCAD
     // splits at text otherwise — without that pivot info, leave as-is.
+    let _ = params.dimsoxd; // DIMSOXD: only meaningful when text is auto-placed
+                            // outside the ext lines; we honour the saved
+                            // text_middle_point so this is a no-op for files.
     if !(suppress.dim1 && suppress.dim2) {
-        add_segment(&mut g.dim_lines, d1, d2);
+        add_segment(&mut g.dim_lines, d1_out, d2_out);
     }
     append_arrow(g, d1, normalized_or(d2 - d1, axis), arrow1);
     append_arrow(g, d2, normalized_or(d1 - d2, -axis), arrow2);
+}
+
+/// Draw a center mark for radius/diameter dimensions.
+///   DIMCEN > 0 → small "+" of half-length |DIMCEN| at the centre.
+///   DIMCEN < 0 → small "+" *plus* four line segments extending from the
+///                circle (radius - |DIMCEN|) outward to (radius + |DIMCEN|).
+///   DIMCEN = 0 → no mark.
+fn append_center_mark(g: &mut DimGeom, center: Vec3, dimcen: f32, radius: f32) {
+    let mag = dimcen.abs();
+    if mag <= 1e-6 {
+        return;
+    }
+    // Small "+" at the centre.
+    let h = mag;
+    add_segment(
+        &mut g.dim_lines,
+        Vec3::new(center.x - h, center.y, center.z),
+        Vec3::new(center.x + h, center.y, center.z),
+    );
+    add_segment(
+        &mut g.dim_lines,
+        Vec3::new(center.x, center.y - h, center.z),
+        Vec3::new(center.x, center.y + h, center.z),
+    );
+    if dimcen < 0.0 && radius > mag + 1e-6 {
+        let inner = (radius - mag).max(0.0);
+        let outer = radius + mag;
+        // Four short radial strokes spanning the circle edge.
+        add_segment(
+            &mut g.dim_lines,
+            Vec3::new(center.x + inner, center.y, center.z),
+            Vec3::new(center.x + outer, center.y, center.z),
+        );
+        add_segment(
+            &mut g.dim_lines,
+            Vec3::new(center.x - inner, center.y, center.z),
+            Vec3::new(center.x - outer, center.y, center.z),
+        );
+        add_segment(
+            &mut g.dim_lines,
+            Vec3::new(center.x, center.y + inner, center.z),
+            Vec3::new(center.x, center.y + outer, center.z),
+        );
+        add_segment(
+            &mut g.dim_lines,
+            Vec3::new(center.x, center.y - inner, center.z),
+            Vec3::new(center.x, center.y - outer, center.z),
+        );
+    }
 }
 
 fn append_angular_dimension(
@@ -2134,40 +2432,113 @@ fn dimension_text_natural_rotation(dim: &Dimension) -> f64 {
 
 fn dimension_text_value(dim: &Dimension, style: Option<&DimStyle>) -> Option<String> {
     let base = dim.base();
+    let is_angular = matches!(dim, Dimension::Angular2Ln(_) | Dimension::Angular3Pt(_));
 
     // Auto-generated body (the value AutoCAD would emit if the user did not
     // override it). Built first so user_text "<>" substitution can re-use it.
-    let measured = match dim {
-        Dimension::Angular2Ln(_) | Dimension::Angular3Pt(_) => {
-            format_angular_value(dim.measurement(), style)
+    let primary = if is_angular {
+        format_angular_value(dim.measurement(), style)
+    } else {
+        let v = format_linear_value(dim.measurement(), style);
+        match dim {
+            Dimension::Radius(_) => format!("R{}", v),
+            Dimension::Diameter(_) => format!("Ø{}", v),
+            _ => v,
         }
-        Dimension::Radius(_) => {
-            // R prefix is part of the conventional radial marker; DIMPOST wraps it.
-            format!("R{}", format_linear_value(dim.measurement(), style))
-        }
-        Dimension::Diameter(_) => {
-            format!("Ø{}", format_linear_value(dim.measurement(), style))
-        }
-        _ => format_linear_value(dim.measurement(), style),
     };
 
-    let wrapped = apply_dimpost(&measured, style);
+    // Tolerances / limits — applied to the primary value before DIMPOST wraps.
+    let primary = apply_tolerance(primary, dim.measurement(), style, is_angular);
+    // DIMPOST: "<>" template (prefix/suffix wrap).
+    let primary = apply_dimpost(&primary, style);
+
+    // Alternate units appended in brackets when DIMALT is on (linear only).
+    let composed = if !is_angular {
+        match alternate_units_text(dim.measurement(), style) {
+            Some(alt) => format!("{} [{}]", primary, alt),
+            None => primary,
+        }
+    } else {
+        primary
+    };
 
     // Explicit user override (mtext-style "user_text") wins, but "<>" inside
     // it substitutes the measured value. " " (single space) suppresses text.
     if let Some(user_text) = &base.user_text {
-        let trimmed = user_text;
-        if trimmed.is_empty() {
+        if user_text.is_empty() || user_text.trim().is_empty() {
             return None;
         }
-        if trimmed.trim().is_empty() {
-            return None;
-        }
-        return Some(trimmed.replace("<>", &measured));
+        return Some(user_text.replace("<>", &composed));
     }
     if !base.text.trim().is_empty() {
-        return Some(base.text.replace("<>", &measured));
+        return Some(base.text.replace("<>", &composed));
     }
+    Some(composed)
+}
+
+/// Append tolerance text per DIMTOL / DIMLIM:
+///   DIMLIM  true  → replace value with "high/low" limits stacked
+///   DIMTOL  true  → "value +tp/-tm" (or "value±t" when tp==tm)
+fn apply_tolerance(
+    value: String,
+    measurement: f64,
+    style: Option<&DimStyle>,
+    is_angular: bool,
+) -> String {
+    let Some(s) = style else { return value };
+    let dimtdec = s.dimtdec.max(0) as usize;
+    let dimtzin = s.dimtzin;
+    let fmt = |v: f64| -> String {
+        let raw = format!("{:.*}", dimtdec, v);
+        apply_linear_zero_suppression(&raw, dimtzin)
+    };
+    if s.dimlim {
+        // Replace value entirely with high/low limits.
+        let high = measurement + s.dimtp;
+        let low = measurement - s.dimtm;
+        return format!("{}/{}", fmt(high), fmt(low));
+    }
+    if s.dimtol {
+        let unit = if is_angular { "°" } else { "" };
+        if (s.dimtp - s.dimtm).abs() < 1e-12 && s.dimtp.abs() > 1e-12 {
+            return format!("{}±{}{}", value, fmt(s.dimtp), unit);
+        }
+        if s.dimtp.abs() > 1e-12 || s.dimtm.abs() > 1e-12 {
+            return format!(
+                "{} +{}{} / -{}{}",
+                value,
+                fmt(s.dimtp),
+                unit,
+                fmt(s.dimtm),
+                unit
+            );
+        }
+    }
+    value
+}
+
+/// Build the bracketed alternate-units suffix when DIMALT is enabled.
+fn alternate_units_text(measurement: f64, style: Option<&DimStyle>) -> Option<String> {
+    let s = style?;
+    if !s.dimalt {
+        return None;
+    }
+    let mut v = measurement * s.dimaltf;
+    if s.dimaltrnd > 1e-12 {
+        v = (v / s.dimaltrnd).round() * s.dimaltrnd;
+    }
+    let dec = s.dimaltd.max(0) as usize;
+    let raw = format_with_unit(v, s.dimaltu, dec, s.dimfrac);
+    let suppressed = apply_linear_zero_suppression(&raw, s.dimaltz);
+    let sep_swapped = swap_decimal_sep(&suppressed, s.dimdsep);
+    // DIMAPOST wraps the alt value (same "<>" convention as DIMPOST).
+    let wrapped = if s.dimapost.is_empty() {
+        sep_swapped
+    } else if s.dimapost.contains("<>") {
+        s.dimapost.replace("<>", &sep_swapped)
+    } else {
+        format!("{}{}", sep_swapped, s.dimapost)
+    };
     Some(wrapped)
 }
 
@@ -2185,11 +2556,15 @@ fn apply_dimpost(value: &str, style: Option<&DimStyle>) -> String {
     }
 }
 
-/// Format a linear measurement honouring DIMLFAC, DIMRND, DIMDEC, DIMZIN, DIMDSEP.
+/// Format a linear measurement honouring DIMLFAC, DIMRND, DIMDEC, DIMZIN, DIMDSEP, DIMLUNIT.
 fn format_linear_value(measurement: f64, style: Option<&DimStyle>) -> String {
-    let (dec, zin, lfac, rnd, dsep) = style
-        .map(|s| (s.dimdec, s.dimzin, s.dimlfac, s.dimrnd, s.dimdsep))
-        .unwrap_or((4, 8, 1.0, 0.0, 46));
+    let (dec, zin, lfac, rnd, dsep, lunit, frac) = style
+        .map(|s| {
+            (
+                s.dimdec, s.dimzin, s.dimlfac, s.dimrnd, s.dimdsep, s.dimlunit, s.dimfrac,
+            )
+        })
+        .unwrap_or((4, 8, 1.0, 0.0, 46, 2, 0));
 
     let lfac = if lfac.abs() < 1e-12 { 1.0 } else { lfac };
     let mut v = measurement * lfac;
@@ -2197,9 +2572,91 @@ fn format_linear_value(measurement: f64, style: Option<&DimStyle>) -> String {
         v = (v / rnd).round() * rnd;
     }
     let dec = dec.max(0) as usize;
-    let raw = format!("{:.*}", dec, v);
+    let raw = format_with_unit(v, lunit, dec, frac);
     let suppressed = apply_linear_zero_suppression(&raw, zin);
     swap_decimal_sep(&suppressed, dsep)
+}
+
+/// Dispatch on DIMLUNIT / DIMALTU.
+///   1 = Scientific
+///   2 = Decimal (default)
+///   3 = Engineering   (feet + decimal inches; 1 unit = 1 inch)
+///   4 = Architectural (feet + fractional inches)
+///   5 = Fractional    (integer + fractional inches)
+///   6 = Windows desktop → falls back to Decimal
+/// `dimfrac` controls denominator power for arch/fractional output (0/1/2);
+/// rendered inline as "n/d" (stacked glyphs require MText support).
+fn format_with_unit(value: f64, unit: i16, dec: usize, dimfrac: i16) -> String {
+    match unit {
+        1 => format!("{:.*e}", dec, value),
+        3 => format_engineering(value, dec),
+        4 => format_architectural(value, dimfrac),
+        5 => format_fractional(value, dimfrac),
+        _ => format!("{:.*}", dec, value),
+    }
+}
+
+fn format_engineering(inches: f64, dec: usize) -> String {
+    let sign = if inches < 0.0 { "-" } else { "" };
+    let abs = inches.abs();
+    let feet = (abs / 12.0).trunc();
+    let rem_in = abs - feet * 12.0;
+    format!("{}{:.0}'-{:.*}\"", sign, feet, dec, rem_in)
+}
+
+fn format_architectural(inches: f64, dimfrac: i16) -> String {
+    let sign = if inches < 0.0 { "-" } else { "" };
+    let abs = inches.abs();
+    let feet = (abs / 12.0).trunc();
+    let rem_in_total = abs - feet * 12.0;
+    let whole = rem_in_total.trunc();
+    let frac = rem_in_total - whole;
+    let frac_str = fraction_string(frac, dimfrac);
+    if frac_str.is_empty() {
+        format!("{}{:.0}'-{:.0}\"", sign, feet, whole)
+    } else {
+        format!("{}{:.0}'-{:.0} {}\"", sign, feet, whole, frac_str)
+    }
+}
+
+fn format_fractional(value: f64, dimfrac: i16) -> String {
+    let sign = if value < 0.0 { "-" } else { "" };
+    let abs = value.abs();
+    let whole = abs.trunc();
+    let frac = abs - whole;
+    let frac_str = fraction_string(frac, dimfrac);
+    if frac_str.is_empty() {
+        format!("{}{:.0}", sign, whole)
+    } else if whole == 0.0 {
+        format!("{}{}", sign, frac_str)
+    } else {
+        format!("{}{:.0} {}", sign, whole, frac_str)
+    }
+}
+
+fn fraction_string(frac: f64, dimfrac: i16) -> String {
+    // DIMFRAC denominator: AutoCAD encodes this on DIMSTYLE via DIMLUNIT
+    // pairing — the value we accept is the *power-of-2* exponent (1..=6 ish).
+    // Pick a sensible cap so the printed fraction stays readable.
+    let exp = (dimfrac.clamp(0, 8) as u32).max(2) + 2; // 2..=10 → 4..=1024
+    let denom = 1u64 << exp;
+    let numer = (frac * denom as f64).round() as i64;
+    if numer <= 0 {
+        return String::new();
+    }
+    let mut n = numer as u64;
+    let mut d = denom;
+    while n % 2 == 0 && d % 2 == 0 {
+        n /= 2;
+        d /= 2;
+    }
+    if n == 0 {
+        String::new()
+    } else if d == 1 {
+        format!("{}", n) // whole-number overflow back to caller
+    } else {
+        format!("{}/{}", n, d)
+    }
 }
 
 /// Format an angular measurement (input in degrees as Dimension::measurement
@@ -2395,21 +2852,30 @@ fn dimension_text_pos_f64(
     //         3=JIS. We honour 0 and 1; 2/3 fall back to "above".
     let dimtad = style.map(|s| s.dimtad).unwrap_or(1);
     let dimgap = style.map(|s| s.dimgap).unwrap_or(0.0);
-    if dimtad == 0 {
-        return mid;
-    }
-    // Need a perpendicular vector inside the drawing plane for the offset.
-    let (axis_x, axis_y, perp_sign) = match dim {
+    // DIMJUST horizontal placement on the dim line (only meaningful for
+    // linear/aligned dims). 0=centred, 1=near first ext, 2=near second ext,
+    // 3=above first ext (perpendicular text), 4=above second ext.
+    let dimjust = style.map(|s| s.dimjust).unwrap_or(0);
+    // DIMTVP vertical-position multiplier (units of dimtxt). Only honoured
+    // when DIMTAD == 0; offsets text perpendicular to the dim line.
+    let dimtvp = style.map(|s| s.dimtvp).unwrap_or(0.0);
+
+    // Need axis + perp_sign (toward "above").
+    let (axis_x, axis_y, perp_sign, p1, p2) = match dim {
         Dimension::Linear(d) => {
             let ax = d.rotation.cos();
             let ay = d.rotation.sin();
-            // The sign-of-offset side (perp pointing FROM defpoints TOWARD dim line,
-            // and past it = "above").
             let px = -ay;
             let py = ax;
             let off = (d.definition_point.x - d.first_point.x) * px
                 + (d.definition_point.y - d.first_point.y) * py;
-            (ax, ay, if off >= 0.0 { 1.0 } else { -1.0 })
+            (
+                ax,
+                ay,
+                if off >= 0.0 { 1.0 } else { -1.0 },
+                d.first_point,
+                d.second_point,
+            )
         }
         Dimension::Aligned(d) => {
             let dx = d.second_point.x - d.first_point.x;
@@ -2421,16 +2887,53 @@ fn dimension_text_pos_f64(
             let py = ax;
             let off = (d.definition_point.x - d.first_point.x) * px
                 + (d.definition_point.y - d.first_point.y) * py;
-            (ax, ay, if off >= 0.0 { 1.0 } else { -1.0 })
+            (
+                ax,
+                ay,
+                if off >= 0.0 { 1.0 } else { -1.0 },
+                d.first_point,
+                d.second_point,
+            )
         }
-        _ => (1.0, 0.0, 1.0),
+        _ => {
+            // Non-linear: only DIMTAD offset applies; no horizontal shift along axis.
+            let off_perp = if dimtad == 0 {
+                dimtvp * text_height
+            } else {
+                text_height * 0.5 + dimgap
+            };
+            return Vector3::new(mid.x, mid.y + off_perp * perp_sign_default(), mid.z);
+        }
     };
-    let offset = (text_height * 0.5 + dimgap) * perp_sign;
+
+    // Horizontal slide along the dim axis to honour DIMJUST. Slide endpoints
+    // are the dim-line endpoints (projection of p1/p2 onto the dim line),
+    // approximated here as the def-points themselves (we don't have axis-
+    // projected d1/d2 here without more plumbing).
+    let along_offset = match dimjust {
+        1 => (p1.x - mid.x) * axis_x + (p1.y - mid.y) * axis_y,
+        2 => (p2.x - mid.x) * axis_x + (p2.y - mid.y) * axis_y,
+        3 => (p1.x - mid.x) * axis_x + (p1.y - mid.y) * axis_y,
+        4 => (p2.x - mid.x) * axis_x + (p2.y - mid.y) * axis_y,
+        _ => 0.0,
+    };
+
+    // Perpendicular offset: DIMTAD 0 → DIMTVP * dimtxt, else above-line gap.
+    let perp_offset = if dimtad == 0 {
+        dimtvp * text_height * perp_sign
+    } else {
+        (text_height * 0.5 + dimgap) * perp_sign
+    };
+
     Vector3::new(
-        mid.x + (-axis_y) * offset,
-        mid.y + (axis_x) * offset,
+        mid.x + axis_x * along_offset + (-axis_y) * perp_offset,
+        mid.y + axis_y * along_offset + (axis_x) * perp_offset,
         mid.z,
     )
+}
+
+fn perp_sign_default() -> f64 {
+    1.0
 }
 
 fn normalized_or(v: Vec3, fallback: Vec3) -> Vec3 {
