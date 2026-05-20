@@ -184,6 +184,12 @@ impl H7CAD {
                     .layers
                     .sync_with_viewports(&doc_layers, vp_info);
                 self.sync_ribbon_layers();
+                // Reset the Home-ribbon Color / Linetype / Lineweight chips
+                // to the newly opened document's CECOLOR / CELTYPE / CELWEIGHT
+                // defaults (or to ByLayer when the file leaves them empty).
+                // Without this they stick to whatever the prior tab had
+                // selected — see #21.
+                self.sync_ribbon_from_selection();
                 self.tabs[i].scene.restore_saved_camera();
                 self.tabs[i].last_synced_camera_gen = self.tabs[i].scene.camera_generation;
                 self.tabs[i].dirty = false;
@@ -727,6 +733,10 @@ impl H7CAD {
                 self.tabs.push(new_tab);
                 self.active_tab = self.tabs.len() - 1;
                 self.sync_ribbon_layers();
+                // #21: reset ribbon Color / Linetype / Lineweight to the
+                // fresh tab's defaults (ByLayer) instead of inheriting the
+                // previous tab's last selection.
+                self.sync_ribbon_from_selection();
                 Task::none()
             }
 
@@ -734,6 +744,11 @@ impl H7CAD {
                 if idx < self.tabs.len() {
                     self.active_tab = idx;
                     self.sync_ribbon_layers();
+                    // #21: also re-seed ribbon Color / Linetype / Lineweight
+                    // from the newly active tab so they reflect that doc's
+                    // CECOLOR / CELTYPE / CELWEIGHT (or its current selection
+                    // if there is one), not the prior tab's choice.
+                    self.sync_ribbon_from_selection();
                 }
                 Task::none()
             }
@@ -753,6 +768,11 @@ impl H7CAD {
                         self.active_tab = self.tabs.len() - 1;
                     }
                 }
+                // The active tab is now either a brand-new blank or a
+                // different existing tab; in both cases the ribbon needs
+                // to track that doc's defaults / selection. #21.
+                self.sync_ribbon_layers();
+                self.sync_ribbon_from_selection();
                 Task::none()
             }
 
@@ -2587,9 +2607,21 @@ impl H7CAD {
                 self.ribbon.close_dropdown();
                 let handles = self.property_target_handles(i);
                 if handles.is_empty() {
-                    // No selection — change the creation default.
+                    // No selection — change the creation default. Persist
+                    // into the tab's header (CLAYER) so it survives a tab
+                    // switch and rides the next save. #21.
+                    let handle = self.tabs[i]
+                        .scene
+                        .document
+                        .layers
+                        .get(&layer)
+                        .map(|l| l.handle)
+                        .unwrap_or(acadrust::types::Handle::NULL);
+                    self.tabs[i].scene.document.header.current_layer_name = layer.clone();
+                    self.tabs[i].scene.document.header.current_layer_handle = handle;
                     self.tabs[i].active_layer = layer.clone();
                     self.tabs[i].layers.current_layer = layer.clone();
+                    self.tabs[i].dirty = true;
                     self.ribbon.active_layer = layer;
                 } else {
                     // Apply to selection; leave the creation default alone
@@ -2613,6 +2645,11 @@ impl H7CAD {
                 self.ribbon.close_dropdown();
                 let handles = self.property_target_handles(i);
                 if handles.is_empty() {
+                    // Persist the new default into the tab's header so it
+                    // round-trips through tab switches and writes back on
+                    // save (CECOLOR). #21.
+                    self.tabs[i].scene.document.header.current_entity_color = color;
+                    self.tabs[i].dirty = true;
                     self.ribbon.active_color = color;
                 } else {
                     self.push_undo_snapshot(i, "CHPROP");
@@ -2636,6 +2673,20 @@ impl H7CAD {
                 self.ribbon.close_dropdown();
                 let handles = self.property_target_handles(i);
                 if handles.is_empty() {
+                    // Persist into the tab's header (CELTYPE). Resolve to a
+                    // handle when the name matches a line_types entry so the
+                    // handle-based lookup stays in sync. #21.
+                    let handle = self.tabs[i]
+                        .scene
+                        .document
+                        .line_types
+                        .iter()
+                        .find(|x| x.name.eq_ignore_ascii_case(&lt))
+                        .map(|x| x.handle)
+                        .unwrap_or(acadrust::types::Handle::NULL);
+                    self.tabs[i].scene.document.header.current_linetype_name = lt.clone();
+                    self.tabs[i].scene.document.header.current_linetype_handle = handle;
+                    self.tabs[i].dirty = true;
                     self.ribbon.active_linetype = lt;
                 } else {
                     self.push_undo_snapshot(i, "CHPROP");
@@ -2655,6 +2706,9 @@ impl H7CAD {
                 self.ribbon.close_dropdown();
                 let handles = self.property_target_handles(i);
                 if handles.is_empty() {
+                    // Persist into the tab's header (CELWEIGHT). #21.
+                    self.tabs[i].scene.document.header.current_line_weight = lw.value();
+                    self.tabs[i].dirty = true;
                     self.ribbon.active_lineweight = lw;
                 } else {
                     self.push_undo_snapshot(i, "CHPROP");
@@ -3421,6 +3475,12 @@ impl H7CAD {
                                 self.active_tab = self.tabs.len() - 1;
                             }
                         }
+                        // The active tab is now a fresh blank or a
+                        // different existing tab; sync ribbon chips so
+                        // they don't keep showing the discarded tab's
+                        // last selection. #21.
+                        self.sync_ribbon_layers();
+                        self.sync_ribbon_from_selection();
                         return close_win;
                     }
                     Some(super::PendingClose::Quit) => {
