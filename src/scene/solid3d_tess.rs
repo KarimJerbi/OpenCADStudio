@@ -120,11 +120,13 @@ fn tessellate_sat_lods(
     sat: &SatDocument,
     name: String,
     color: [f32; 4],
+    facet_res: f64,
 ) -> Option<MeshLodSet> {
     let configs = LodConfig::all();
     let mut lods: Vec<MeshModel> = Vec::with_capacity(3);
     for lod in configs {
-        if let Some(m) = tessellate_sat(sat, name.clone(), color, lod) {
+        let scaled = scale_lod(lod, facet_res);
+        if let Some(m) = tessellate_sat(sat, name.clone(), color, scaled) {
             lods.push(m);
         }
     }
@@ -133,6 +135,18 @@ fn tessellate_sat_lods(
     }
     let world_aabb = mesh_aabb(&lods[0]);
     Some(MeshLodSet { lods, world_aabb })
+}
+
+/// Scale a LOD's segment counts by FACETRES (clamped to AutoCAD's
+/// documented [0.01, 10.0] range). 1.0 is the unchanged baseline.
+fn scale_lod(base: LodConfig, facet_res: f64) -> LodConfig {
+    let m = (facet_res.clamp(0.01, 10.0) as f32).max(0.01);
+    let scale = |v: usize| ((v as f32) * m).round().max(4.0) as usize;
+    LodConfig {
+        circ_segs: scale(base.circ_segs),
+        grid_u: scale(base.grid_u),
+        grid_v: scale(base.grid_v),
+    }
 }
 
 /// World-XY AABB of the mesh — used by the render-pipeline LOD selector
@@ -169,39 +183,40 @@ fn parse_acis(
 }
 
 /// Tessellate a `Region` entity (2D planar ACIS body) at all three LOD levels.
-pub fn tessellate_region(region: &Region, color: [f32; 4]) -> Option<MeshLodSet> {
+pub fn tessellate_region(region: &Region, color: [f32; 4], facet_res: f64) -> Option<MeshLodSet> {
     let sat = parse_acis(
         || region.parse_sat(),
         region.acis_data.is_binary,
         &region.acis_data.sab_data,
     )?;
     let name = region.common.handle.value().to_string();
-    tessellate_sat_lods(&sat, name, color)
+    tessellate_sat_lods(&sat, name, color, facet_res)
 }
 
 /// Tessellate a `Body` entity (3D ACIS body) at all three LOD levels.
-pub fn tessellate_body(body: &Body, color: [f32; 4]) -> Option<MeshLodSet> {
+pub fn tessellate_body(body: &Body, color: [f32; 4], facet_res: f64) -> Option<MeshLodSet> {
     let sat = parse_acis(
         || body.parse_sat(),
         body.acis_data.is_binary,
         &body.acis_data.sab_data,
     )?;
     let name = body.common.handle.value().to_string();
-    tessellate_sat_lods(&sat, name, color)
+    tessellate_sat_lods(&sat, name, color, facet_res)
 }
 
 /// Tessellate a `Solid3D` entity at all three LOD levels.
 ///
 /// Returns `None` when the entity has no parseable SAT data or produces no
 /// triangles (e.g. the solid uses only unsupported surface types).
-pub fn tessellate_solid3d(solid: &Solid3D, color: [f32; 4]) -> Option<MeshLodSet> {
+/// `facet_res` mirrors the header FACETRES variable (0.01–10.0).
+pub fn tessellate_solid3d(solid: &Solid3D, color: [f32; 4], facet_res: f64) -> Option<MeshLodSet> {
     let sat = parse_acis(
         || solid.parse_sat(),
         solid.acis_data.is_binary,
         &solid.acis_data.sab_data,
     )?;
     let name = solid.common.handle.value().to_string();
-    tessellate_sat_lods(&sat, name, color)
+    tessellate_sat_lods(&sat, name, color, facet_res)
 }
 
 // ── Topology helpers ──────────────────────────────────────────────────────────

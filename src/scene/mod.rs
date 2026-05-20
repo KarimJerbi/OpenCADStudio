@@ -203,16 +203,19 @@ pub fn build_derived_caches(doc: &CadDocument) -> DerivedCaches {
         })
         .collect();
 
-    // meshes (parallel tessellation)
+    // meshes (parallel tessellation). FACETRES (header.facet_resolution)
+    // scales the per-LOD segment counts so users with finer drawings get
+    // smoother solids; clamped to AutoCAD's [0.01, 10.0] range inside.
+    let facet_res = doc.header.facet_resolution;
     let meshes: HashMap<Handle, MeshLodSet> = mesh_handles
         .par_iter()
         .filter_map(|&handle| {
             let e = doc.get_entity(handle)?;
             let color = tessellate::aci_to_rgba(&e.common().color);
             let model = match e {
-                EntityType::Solid3D(s) => solid3d_tess::tessellate_solid3d(s, color),
-                EntityType::Region(r) => solid3d_tess::tessellate_region(r, color),
-                EntityType::Body(b) => solid3d_tess::tessellate_body(b, color),
+                EntityType::Solid3D(s) => solid3d_tess::tessellate_solid3d(s, color, facet_res),
+                EntityType::Region(r) => solid3d_tess::tessellate_region(r, color, facet_res),
+                EntityType::Body(b) => solid3d_tess::tessellate_body(b, color, facet_res),
                 _ => None,
             };
             model.map(|m| (handle, m))
@@ -2372,18 +2375,19 @@ impl Scene {
         } else {
             None
         };
+        let facet_res = self.document.header.facet_resolution;
         let mesh_seed = match &entity {
             EntityType::Solid3D(s3d) => {
                 let color = self.render_style(&entity).0;
-                solid3d_tess::tessellate_solid3d(s3d, color)
+                solid3d_tess::tessellate_solid3d(s3d, color, facet_res)
             }
             EntityType::Region(r) => {
                 let color = self.render_style(&entity).0;
-                solid3d_tess::tessellate_region(r, color)
+                solid3d_tess::tessellate_region(r, color, facet_res)
             }
             EntityType::Body(b) => {
                 let color = self.render_style(&entity).0;
-                solid3d_tess::tessellate_body(b, color)
+                solid3d_tess::tessellate_body(b, color, facet_res)
             }
             _ => None,
         };
@@ -3216,13 +3220,16 @@ impl Scene {
             .collect();
 
         use rayon::prelude::*;
+        let facet_res = self.document.header.facet_resolution;
         self.meshes = entries
             .into_par_iter()
             .filter_map(|(handle, entity, color)| {
                 let model = match &entity {
-                    EntityType::Solid3D(s) => solid3d_tess::tessellate_solid3d(s, color),
-                    EntityType::Region(r) => solid3d_tess::tessellate_region(r, color),
-                    EntityType::Body(b) => solid3d_tess::tessellate_body(b, color),
+                    EntityType::Solid3D(s) => {
+                        solid3d_tess::tessellate_solid3d(s, color, facet_res)
+                    }
+                    EntityType::Region(r) => solid3d_tess::tessellate_region(r, color, facet_res),
+                    EntityType::Body(b) => solid3d_tess::tessellate_body(b, color, facet_res),
                     _ => None,
                 };
                 model.map(|m| (handle, m))
