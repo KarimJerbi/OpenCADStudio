@@ -5036,12 +5036,15 @@ fn tessellate_entity(
                         aabb,
                     )];
                 }
-                // Greek text renders as fill_tris only; hit_test's AABB
-                // fallback handles window / crossing selection. #19.
+                // Greek text renders via the face3d fill batch, which colours
+                // each tri with `wire.color`. Bake the selected colour in so
+                // a selected text stays highlighted across the LOD boundary.
+                // hit_test's AABB fallback handles window / crossing. #19.
+                let fill_color = if sel { WireModel::SELECTED } else { entity_color };
                 return vec![WireModel {
                     name: h.value().to_string(),
                     points: vec![],
-                    color: entity_color,
+                    color: fill_color,
                     selected: sel,
                     aci,
                     pattern_length: 0.0,
