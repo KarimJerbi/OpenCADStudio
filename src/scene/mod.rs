@@ -4693,15 +4693,29 @@ fn tessellate_entity(
                         }
                     }
                     if let Some(wpp) = world_per_pixel {
-                        let w = (ab[2] - ab[0]).abs();
-                        let h = (ab[3] - ab[1]).abs();
+                        let w_px = (ab[2] - ab[0]).abs();
+                        let h_px = (ab[3] - ab[1]).abs();
                         // Keep in sync with `block_cache::MIN_PIXEL_SIZE`.
                         // Text/MText have their own LOD ladder below
                         // (baseline-line / greek / full) and must reach it
                         // even when projected size is sub-5 px.
                         let is_text = matches!(e, EntityType::Text(_) | EntityType::MText(_));
-                        if !is_text && w.max(h) / wpp < 5.0 {
-                            return vec![];
+                        if !is_text && w_px.max(h_px) / wpp < 5.0 {
+                            // Sub-pixel entity: emit a stub instead of
+                            // nothing. Stays visible as a 1-pixel speck,
+                            // tracks its `selected` highlight across zoom
+                            // levels, and remains hit-test'able via the
+                            // AABB. See #19.
+                            let (entity_color, _, _, _, aci_idx) =
+                                render::render_style_for(document, e);
+                            let entity_color = render::adapt_to_bg(entity_color, bg_color);
+                            return vec![lod_stub_wire(
+                                h.value().to_string(),
+                                entity_color,
+                                sel,
+                                aci_idx,
+                                ab,
+                            )];
                         }
                     }
                 }
@@ -4982,7 +4996,16 @@ fn tessellate_entity(
                 let dy = pts[1][1] - pts[0][1];
                 let len_px = (dx * dx + dy * dy).sqrt() / wpp;
                 if len_px < 2.0 {
-                    return vec![];
+                    // Text projects to under 2 px — fall back to the
+                    // generic LOD stub so the entity stays visible /
+                    // selectable. #19.
+                    return vec![lod_stub_wire(
+                        h.value().to_string(),
+                        entity_color,
+                        sel,
+                        aci,
+                        aabb,
+                    )];
                 }
                 return vec![WireModel {
                     name: h.value().to_string(),
@@ -5005,8 +5028,16 @@ fn tessellate_entity(
             if h_px < 5.0 && aabb != WireModel::UNBOUNDED_AABB {
                 let fill_tris = text_greek_obb_tris(e, anno_scale, world_offset, n_lines);
                 if fill_tris.is_empty() {
-                    return vec![];
+                    return vec![lod_stub_wire(
+                        h.value().to_string(),
+                        entity_color,
+                        sel,
+                        aci,
+                        aabb,
+                    )];
                 }
+                // Greek text renders as fill_tris only; hit_test's AABB
+                // fallback handles window / crossing selection. #19.
                 return vec![WireModel {
                     name: h.value().to_string(),
                     points: vec![],
@@ -5198,6 +5229,42 @@ pub(crate) fn text_obb_corners_native(
         rot_pt(x1, y1),
         rot_pt(x0, y1),
     ])
+}
+
+/// Build a "low-LOD stub" wire for an entity that would otherwise be culled
+/// to nothing — the entity's AABB diagonal as a 2-point segment, plus the
+/// AABB itself so window / crossing selection picks the entity up. The
+/// stored `selected` flag tracks across zoom levels so highlight visuals
+/// don't disappear when the LOD level changes. See #19.
+fn lod_stub_wire(
+    name: String,
+    color: [f32; 4],
+    selected: bool,
+    aci: u8,
+    aabb: [f32; 4],
+) -> WireModel {
+    let [ax, ay, bx, by] = aabb;
+    let cx = (ax + bx) * 0.5;
+    let cy = (ay + by) * 0.5;
+    WireModel {
+        name,
+        // Diagonal: projects to 1-5 px at the LOD threshold so the entity
+        // shows as a tiny mark.
+        points: vec![[ax, ay, 0.0], [bx, by, 0.0]],
+        color,
+        selected,
+        aci,
+        pattern_length: 0.0,
+        pattern: [0.0; 8],
+        line_weight_px: 1.0,
+        snap_pts: vec![],
+        tangent_geoms: vec![],
+        key_vertices: vec![[cx, cy, 0.0]],
+        aabb,
+        plinegen: true,
+        vp_scissor: None,
+        fill_tris: vec![],
+    }
 }
 
 /// Tessellate each visible AttributeEntity attached to an Insert and append

@@ -94,15 +94,31 @@ pub fn box_hit<'a>(
     wires
         .iter()
         .filter_map(|wire| {
-            if wire.points.is_empty() {
+            // Fallback: when wire has no line geometry (e.g. greek text emits
+            // only fill_tris) treat the AABB rectangle as the hit-test shape
+            // so low-LOD text stays selectable. See #19.
+            let aabb_pts: Vec<[f32; 3]>;
+            let pts: &[[f32; 3]] = if !wire.points.is_empty() {
+                &wire.points
+            } else if wire.aabb != WireModel::UNBOUNDED_AABB {
+                let [ax, ay, bx, by] = wire.aabb;
+                aabb_pts = vec![
+                    [ax, ay, 0.0],
+                    [bx, ay, 0.0],
+                    [bx, by, 0.0],
+                    [ax, by, 0.0],
+                    [ax, ay, 0.0],
+                ];
+                &aabb_pts
+            } else {
                 return None;
-            }
+            };
 
             let mut hit = false;
             let mut all_inside = true;
             let mut prev: Option<Point> = None;
 
-            for &[px, py, pz] in &wire.points {
+            for &[px, py, pz] in pts {
                 if px.is_nan() {
                     prev = None;
                     continue;
@@ -164,15 +180,32 @@ pub fn poly_hit<'a>(
     wires
         .iter()
         .filter_map(|wire| {
-            if wire.points.is_empty() {
+            // Same AABB fallback as `box_hit`: when a wire has no line
+            // geometry (e.g. greek-LOD text emits only fill_tris) treat the
+            // AABB rectangle as the hit-test shape so low-LOD text stays
+            // selectable. See #19.
+            let aabb_pts: Vec<[f32; 3]>;
+            let pts: &[[f32; 3]] = if !wire.points.is_empty() {
+                &wire.points
+            } else if wire.aabb != WireModel::UNBOUNDED_AABB {
+                let [ax, ay, bx, by] = wire.aabb;
+                aabb_pts = vec![
+                    [ax, ay, 0.0],
+                    [bx, ay, 0.0],
+                    [bx, by, 0.0],
+                    [ax, by, 0.0],
+                    [ax, ay, 0.0],
+                ];
+                &aabb_pts
+            } else {
                 return None;
-            }
+            };
 
             let mut hit = false;
             let mut all_inside = true;
             let mut prev: Option<Point> = None;
 
-            for &[px, py, pz] in &wire.points {
+            for &[px, py, pz] in pts {
                 if px.is_nan() {
                     prev = None;
                     continue;
