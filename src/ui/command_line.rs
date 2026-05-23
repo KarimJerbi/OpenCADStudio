@@ -1,4 +1,4 @@
-//! H7CAD-style command line — bottom panel with input and history
+//! OpenCADStudio-style command line — bottom panel with input and history
 
 use crate::app::Message;
 use iced::widget::{column, container, row, text, text_input};
@@ -41,7 +41,7 @@ pub enum EntryKind {
 impl CommandLine {
     pub fn new() -> Self {
         let mut cl = Self::default();
-        cl.push_info("H7CAD ready.");
+        cl.push_info("Open CAD Studio ready.");
         cl.push_info("Type a command or use the ribbon. Open OBJ: INSERT tab.");
         cl
     }

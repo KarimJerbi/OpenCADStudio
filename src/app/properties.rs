@@ -1,11 +1,11 @@
 use super::helpers::{entity_type_key, entity_type_label, title_case_word};
-use super::{H7CAD, VARIES_LABEL};
+use super::{OpenCADStudio, VARIES_LABEL};
 use crate::linetypes;
 use crate::scene::dispatch;
 use crate::ui;
 use acadrust::{EntityType, Handle};
 
-impl H7CAD {
+impl OpenCADStudio {
     /// Rebuild the PropertiesPanel from the current entity selection.
     /// Preserves UI state (open pickers, edit buffer) across refreshes.
     pub(super) fn refresh_properties(&mut self) {

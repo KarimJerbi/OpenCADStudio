@@ -1,4 +1,4 @@
-// Circle tool — ribbon dropdown + all H7CAD circle creation methods.
+// Circle tool — ribbon dropdown + all OpenCADStudio circle creation methods.
 //
 // Methods:
 //   CIRCLE     — Center, Radius   (default)

@@ -1,4 +1,4 @@
-# H7CAD — File Open & Render Speed Roadmap
+# Open CAD Studio — File Open & Render Speed Roadmap
 
 This document lists the planned improvements for cutting **file open time**
 and **on-screen draw (render) time**. It builds on the already-landed
@@ -91,7 +91,7 @@ decode until **first render** (per-handle lazy `OnceCell`).
 ### 1.7 File-hash cache (warm re-open)
 
 When re-opening the same file (`(path, mtime, size)` key) keep a disk
-snapshot of `CadDocument` + `DerivedCaches` (e.g. `~/.cache/h7cad/`). Skip
+snapshot of `CadDocument` + `DerivedCaches` (e.g. `~/.cache/open-cad-studio/`). Skip
 DWG parse entirely. **Win:** most-recently-opened file goes from 1-2 s to
 sub-100 ms.
 
@@ -278,6 +278,6 @@ Then, measurement-guided:
 - **GPU compute culling:** for orthographic 2D CAD the CPU quadtree is
   enough. Already covered by Phase 1-4.
 - **Out-of-core entity streaming:** meaningful for 100 MB+ single files;
-  typical H7CAD files are not there yet.
+  typical Open CAD Studio files are not there yet.
 - **Multi-frame async tessellation pipeline:** if 2.3 progressive render
   works cleanly, this isn't needed.

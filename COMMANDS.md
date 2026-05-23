@@ -1,6 +1,6 @@
-# H7CAD — Command Reference
+# Open CAD Studio — Command Reference
 
-Status of every standard CAD command in H7CAD:
+Status of every standard CAD command in Open CAD Studio:
 
 - ✅ **Implemented** — fully working
 - 🔶 **Partial** — command is accepted but logic is a stub

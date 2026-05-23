@@ -1,4 +1,4 @@
-//! Application menu — H7CAD-style dropdown that opens when the H7 logo
+//! Application menu — OpenCADStudio-style dropdown that opens when the OCS logo
 //! button is clicked. Overlays the entire viewport as a floating panel.
 //!
 //! Layout:
@@ -235,7 +235,7 @@ impl AppMenu {
         let bottom = container(
             row![
                 iced::widget::Space::new().width(Length::Fill),
-                button(text("Exit H7CAD").size(11).color(Color::WHITE))
+                button(text("Exit Open CAD Studio").size(11).color(Color::WHITE))
                     .on_press(Message::Command("EXIT".into()))
                     .style(|_: &Theme, status| button::Style {
                         background: Some(Background::Color(match status {
@@ -299,7 +299,7 @@ impl AppMenu {
         // Backdrop — clicking outside closes the menu.
         let backdrop = button(
             container(panel)
-                // Offset so the panel sits just below the ribbon H7 button.
+                // Offset so the panel sits just below the ribbon OCS button.
                 .padding(iced::Padding {
                     top: 56.0,
                     left: 0.0,
@@ -521,7 +521,7 @@ fn recents_file_path() -> Option<PathBuf> {
         p
     };
     let mut p = base;
-    p.push("H7CAD");
+    p.push("OpenCADStudio");
     Some(p.join("recent.txt"))
 }
 

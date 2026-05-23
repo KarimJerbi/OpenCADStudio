@@ -7,9 +7,9 @@
 // `None` when up to date / on network failure / on parse error.
 
 const RELEASES_API: &str =
-    "https://api.github.com/repos/HakanSeven12/H7CAD/releases/latest";
+    "https://api.github.com/repos/HakanSeven12/open-cad-studio/releases/latest";
 pub const RELEASES_PAGE: &str =
-    "https://github.com/HakanSeven12/H7CAD/releases/latest";
+    "https://github.com/HakanSeven12/open-cad-studio/releases/latest";
 
 /// What `check_for_update` reports when a newer release exists.
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ fn fetch_latest_if_outdated() -> Option<UpdateInfo> {
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .get(RELEASES_API)
-        .set("User-Agent", concat!("h7cad/", env!("CARGO_PKG_VERSION")))
+        .set("User-Agent", concat!("OpenCADStudio/", env!("CARGO_PKG_VERSION")))
         .set("Accept", "application/vnd.github+json")
         .call()
         .ok()?

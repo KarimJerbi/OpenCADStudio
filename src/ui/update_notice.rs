@@ -140,7 +140,7 @@ pub fn view_window<'a>(latest: &'a str, body: &'a str) -> Element<'a, Message> {
     let header = container(
         column![
             text("New Release Available").size(20).color(ACCENT),
-            text("A newer H7CAD version is published on GitHub.")
+            text("A newer Open CAD Studio version is published on GitHub.")
                 .size(11)
                 .color(DIM),
         ]

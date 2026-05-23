@@ -9,7 +9,7 @@
 // the mesh because the ACIS data is empty.  Full ACIS generation requires
 // a separate step (out of scope here).
 //
-// Coordinate convention in H7CAD: the viewport is Y-up (OpenGL style),
+// Coordinate convention in OpenCADStudio: the viewport is Y-up (OpenGL style),
 // so screen X→DXF X, screen Z→DXF Y, screen Y→DXF Z (height).
 // truck works in standard math coordinates; we map accordingly.
 
@@ -134,7 +134,7 @@ impl CadCommand for BoxCommand {
 }
 
 fn commit_box(p1: Vec3, p2: Vec3, height: f32, color: [f32; 4]) -> CmdResult {
-    // Map H7CAD coords to truck: x→x, z→y, y→z
+    // Map OpenCADStudio coords to truck: x→x, z→y, y→z
     let x0 = p1.x.min(p2.x) as f64;
     let y0 = p1.z.min(p2.z) as f64;
     let x1 = p1.x.max(p2.x) as f64;

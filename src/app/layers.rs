@@ -1,7 +1,7 @@
-use super::H7CAD;
+use super::OpenCADStudio;
 use crate::ui;
 
-impl H7CAD {
+impl OpenCADStudio {
     pub(super) fn sync_ribbon_layers(&mut self) {
         let i = self.active_tab;
         let active = self.tabs[i].active_layer.clone();

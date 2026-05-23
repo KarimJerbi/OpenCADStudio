@@ -1,4 +1,4 @@
-// Arc tool — ribbon dropdown + all H7CAD arc creation methods.
+// Arc tool — ribbon dropdown + all OpenCADStudio arc creation methods.
 //
 // Methods:
 //   ARC     — Center, Start, End    (CSE — default)

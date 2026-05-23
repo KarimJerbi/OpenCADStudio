@@ -44,7 +44,7 @@ pub struct OpenProgress {
 
 // ── Application state ──────────────────────────────────────────────────────
 
-pub(super) struct H7CAD {
+pub(super) struct OpenCADStudio {
     start: Instant,
     tabs: Vec<DocumentTab>,
     active_tab: usize,
@@ -697,7 +697,7 @@ pub enum Message {
     ObjImportPath(Option<std::path::PathBuf>),
 }
 
-impl H7CAD {
+impl OpenCADStudio {
     fn new() -> Self {
         // Boot with only the Welcome/Start tab. The user creates drawings
         // explicitly (File → New); we never auto-spawn Drawing1.
@@ -855,9 +855,9 @@ impl H7CAD {
 use std::path::PathBuf;
 
 pub fn run() -> iced::Result {
-    iced::daemon(H7CAD::boot, H7CAD::update, H7CAD::view)
-        .subscription(H7CAD::subscription)
-        .title(|state: &H7CAD, window_id: window::Id| {
+    iced::daemon(OpenCADStudio::boot, OpenCADStudio::update, OpenCADStudio::view)
+        .subscription(OpenCADStudio::subscription)
+        .title(|state: &OpenCADStudio, window_id: window::Id| {
             if Some(window_id) == state.layer_window {
                 return "Layer Properties Manager".into();
             }
@@ -886,7 +886,7 @@ pub fn run() -> iced::Result {
                 return "Keyboard Shortcuts".into();
             }
             if Some(window_id) == state.about_window {
-                return "About H7CAD".into();
+                return "About Open CAD Studio".into();
             }
             if Some(window_id) == state.update_notice_window {
                 return "Update Available".into();
@@ -900,11 +900,11 @@ pub fn run() -> iced::Result {
             if let Some(tab) = state.tabs.get(state.active_tab) {
                 let dot = if tab.dirty { "● " } else { "" };
                 let name = tab.tab_display_name();
-                format!("{}H7CAD — {}", dot, name)
+                format!("{}Open CAD Studio — {}", dot, name)
             } else {
-                "H7CAD".to_string()
+                "Open CAD Studio".to_string()
             }
         })
-        .theme(|state: &H7CAD, _| state.active_theme.clone())
+        .theme(|state: &OpenCADStudio, _| state.active_theme.clone())
         .run()
 }

@@ -1,11 +1,11 @@
-// Hatch/Gradient/Boundary commands — H7CAD Home > Draw > Hatch dropdown.
+// Hatch/Gradient/Boundary commands — OpenCADStudio Home > Draw > Hatch dropdown.
 //
 // Commands:
 //   HATCH    — ANSI31: 45° hatch lines (pick inside or type S for manual)
 //   GRADIENT — Linear gradient fill (pick inside or type S for manual)
 //   BOUNDARY — Traces the enclosing boundary as a closed LwPolyline
 //
-// Primary workflow (matches H7CAD):
+// Primary workflow (matches OpenCADStudio):
 //   Click a point INSIDE a closed region → boundary auto-detected.
 //   Type "S" to switch to manual vertex-picking mode (HATCH/GRADIENT only).
 

@@ -1,7 +1,7 @@
 use super::helpers::{
     angle_close, ortho_constrain, parse_coord, polar_constrain, ucs_to_wcs, ucs_z_axis,
 };
-use super::{Message, H7CAD, POLY_START_DELAY_MS};
+use super::{Message, OpenCADStudio, POLY_START_DELAY_MS};
 use crate::modules::ModuleEvent;
 use crate::scene::grip::{find_hit_grip, find_hit_grip_paper, GripEdit};
 use crate::scene::object::GripApply;
@@ -31,7 +31,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-impl H7CAD {
+impl OpenCADStudio {
     pub fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
             Message::Tick(t) => {
@@ -3414,7 +3414,7 @@ impl H7CAD {
 
             Message::AboutCopyInfo => {
                 let info = format!(
-                    "H7CAD v{}\nOS: {}\nArch: {}",
+                    "Open CAD Studio v{}\nOS: {}\nArch: {}",
                     env!("CARGO_PKG_VERSION"),
                     std::env::consts::OS,
                     std::env::consts::ARCH,
@@ -4826,7 +4826,7 @@ impl H7CAD {
 
 // ── DimStyle dialog helpers ─────────────────────────────────────────────────
 
-impl H7CAD {
+impl OpenCADStudio {
     /// Populate all edit buffers from the currently selected dim style.
     fn load_dimstyle_bufs(&mut self, tab: usize) {
         let doc = &self.tabs[tab].scene.document;

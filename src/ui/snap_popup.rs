@@ -1,4 +1,4 @@
-//! H7CAD-style OSNAP dropdown popup panel.
+//! OpenCADStudio-style OSNAP dropdown popup panel.
 //!
 //! Rendered as a floating overlay above the status bar.  The popup is only
 //! inserted into the view stack when `snap_popup_open` is true.

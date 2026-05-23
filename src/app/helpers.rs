@@ -229,7 +229,7 @@ pub(super) fn title_case_word(value: &str) -> String {
 
 // ── Window icon ────────────────────────────────────────────────────────────
 
-/// Builds a 32×32 RGBA icon: red background with H7 drawn in white pixels.
+/// Builds a 32×32 RGBA icon: red background with OCS drawn in white pixels.
 pub(super) fn build_window_icon() -> Vec<u8> {
     const W: usize = 32;
     const SZ: usize = W * W * 4;
@@ -261,14 +261,21 @@ pub(super) fn build_window_icon() -> Vec<u8> {
         }
     }
 
-    // H
-    stroke(&mut px, 4, 5, 4, 26, fg);
-    stroke(&mut px, 13, 5, 13, 26, fg);
-    stroke(&mut px, 4, 15, 13, 15, fg);
-    // 7
-    stroke(&mut px, 17, 5, 27, 5, fg);
-    stroke(&mut px, 27, 5, 20, 26, fg);
-    stroke(&mut px, 20, 16, 26, 16, fg);
+    // O
+    stroke(&mut px, 3, 6, 9, 6, fg);
+    stroke(&mut px, 3, 25, 9, 25, fg);
+    stroke(&mut px, 3, 6, 3, 25, fg);
+    stroke(&mut px, 9, 6, 9, 25, fg);
+    // C
+    stroke(&mut px, 12, 6, 18, 6, fg);
+    stroke(&mut px, 12, 25, 18, 25, fg);
+    stroke(&mut px, 12, 6, 12, 25, fg);
+    // S
+    stroke(&mut px, 21, 6, 27, 6, fg);
+    stroke(&mut px, 21, 6, 21, 15, fg);
+    stroke(&mut px, 21, 15, 27, 15, fg);
+    stroke(&mut px, 27, 15, 27, 25, fg);
+    stroke(&mut px, 21, 25, 27, 25, fg);
 
     px
 }

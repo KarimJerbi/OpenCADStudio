@@ -1,4 +1,4 @@
-# H7CAD
+# Open CAD Studio
 
 <img width="1920" height="1020" alt="Ekran görüntüsü 2026-05-23 105715" src="https://github.com/user-attachments/assets/14e4287a-79d3-4bfa-a509-15726ca4f830" />
 
@@ -102,34 +102,34 @@ A CAD application for 2D drafting and 3D modeling, built with Rust. Reads and wr
 
 ### Linux (AppImage)
 
-Download `H7CAD-*-linux-x86_64.AppImage` from the [latest release](https://github.com/HakanSeven12/H7CAD/releases/latest), then:
+Download `OpenCADStudio-*-linux-x86_64.AppImage` from the [latest release](https://github.com/HakanSeven12/open-cad-studio/releases/latest), then:
 
 ```bash
-chmod +x H7CAD-*-linux-x86_64.AppImage
-./H7CAD-*-linux-x86_64.AppImage
+chmod +x OpenCADStudio-*-linux-x86_64.AppImage
+./OpenCADStudio-*-linux-x86_64.AppImage
 ```
 
 No installation required — runs directly on any modern Linux distribution.
 
 ### Windows
 
-Download `H7CAD-*-windows-x86_64.exe` from the [latest release](https://github.com/HakanSeven12/H7CAD/releases/latest) and run it directly. Windows SmartScreen may show "Windows protected your PC" because the binary is not yet code-signed — click **More info → Run anyway**.
+Download `OpenCADStudio-*-windows-x86_64.exe` from the [latest release](https://github.com/HakanSeven12/open-cad-studio/releases/latest) and run it directly. Windows SmartScreen may show "Windows protected your PC" because the binary is not yet code-signed — click **More info → Run anyway**.
 
 ### macOS (Apple Silicon)
 
-Download `H7CAD-*-macos-arm64.dmg` from the [latest release](https://github.com/HakanSeven12/H7CAD/releases/latest) — Apple Silicon (M-series) only; Intel macOS isn't built.
+Download `OpenCADStudio-*-macos-arm64.dmg` from the [latest release](https://github.com/HakanSeven12/open-cad-studio/releases/latest) — Apple Silicon (M-series) only; Intel macOS isn't built.
 
-Open the .dmg and drag `H7CAD.app` to `/Applications`. The first launch may be blocked by Gatekeeper because the app is not notarised — right-click `H7CAD.app → Open` and confirm, or run once via `xattr -dr com.apple.quarantine /Applications/H7CAD.app`.
+Open the .dmg and drag `OpenCADStudio.app` to `/Applications`. The first launch may be blocked by Gatekeeper because the app is not notarised — right-click `OpenCADStudio.app → Open` and confirm, or run once via `xattr -dr com.apple.quarantine /Applications/OpenCADStudio.app`.
 
 ### Build from Source
 
 Requirements: Rust 1.75+
 
 ```bash
-git clone https://github.com/HakanSeven12/H7CAD.git
-cd H7CAD
-cargo build --release --bin H7CAD
-./target/release/H7CAD
+git clone https://github.com/HakanSeven12/open-cad-studio.git
+cd open-cad-studio
+cargo build --release --bin OpenCADStudio
+./target/release/OpenCADStudio
 ```
 
 ## License

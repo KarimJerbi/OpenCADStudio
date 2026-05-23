@@ -15,7 +15,7 @@ target
 
 # Flatpak
 flatpak/cargo-sources.json
-flatpak/io.github.HakanSeven12.H7CAD.local.yml
+flatpak/io.github.HakanSeven12.OpenCadStudio.local.yml
 .flatpak-builder/
 build-dir/
 

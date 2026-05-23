@@ -78,7 +78,7 @@ fn build_pdf(
     rotation_deg: i32,
     plot_style: Option<&PlotStyleTable>,
 ) -> Vec<u8> {
-    let mut doc = PdfDocument::new("H7CAD Export");
+    let mut doc = PdfDocument::new("Open CAD Studio Export");
     let mut ops: Vec<Op> = Vec::new();
 
     // White page background.

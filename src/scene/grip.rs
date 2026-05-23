@@ -1,4 +1,4 @@
-//! H7CAD-style grip editing.
+//! OpenCADStudio-style grip editing.
 
 use acadrust::Handle;
 use glam::{Mat4, Vec3};
@@ -13,7 +13,7 @@ pub const GRIP_HALF_PX: f32 = 5.0;
 
 // ── Active drag state ─────────────────────────────────────────────────────
 
-/// Stored on `H7CAD` while a grip is being dragged.
+/// Stored on `OpenCADStudio` while a grip is being dragged.
 #[derive(Clone, Debug)]
 pub struct GripEdit {
     /// Handle of the entity being edited.

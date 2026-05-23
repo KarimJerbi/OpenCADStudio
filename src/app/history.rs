@@ -1,7 +1,7 @@
-use super::{document::HistorySnapshot, H7CAD};
+use super::{document::HistorySnapshot, OpenCADStudio};
 use std::collections::HashSet;
 
-impl H7CAD {
+impl OpenCADStudio {
     pub(super) fn history_label_from_active_cmd(&self, i: usize, fallback: &'static str) -> String {
         self.tabs[i]
             .active_cmd

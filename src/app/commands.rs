@@ -1,10 +1,10 @@
-use super::{Message, H7CAD};
+use super::{Message, OpenCADStudio};
 use crate::command::CadCommand;
 use crate::scene::Scene;
 use iced::Task;
 use std::path::PathBuf;
 
-impl H7CAD {
+impl OpenCADStudio {
     pub(super) fn dispatch_command(&mut self, cmd: &str) -> Task<Message> {
         let i = self.active_tab;
         // Cancel any running command before starting a new one.
@@ -2524,7 +2524,7 @@ impl H7CAD {
             }
 
             "REPORT" => {
-                let _ = open::that("https://github.com/HakanSeven12/H7CAD/issues/new");
+                let _ = open::that("https://github.com/HakanSeven12/open-cad-studio/issues/new");
                 self.command_line.push_info("Opening GitHub issue page...");
             }
 
@@ -2533,7 +2533,7 @@ impl H7CAD {
             }
 
             "CHANGELOG" => {
-                let _ = open::that("https://github.com/HakanSeven12/H7CAD/releases");
+                let _ = open::that("https://github.com/HakanSeven12/open-cad-studio/releases");
                 self.command_line.push_info("Opening release notes...");
             }
 
@@ -4831,7 +4831,7 @@ impl H7CAD {
                             }
                         }
                         "SET" => {
-                            let app = parts.get(1).copied().unwrap_or("H7CAD");
+                            let app = parts.get(1).copied().unwrap_or("OpenCADStudio");
                             let val = parts.get(2).copied().unwrap_or("");
                             self.push_undo_snapshot(i, "XDATA SET");
                             for sh in &selected_handles {

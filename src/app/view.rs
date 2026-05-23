@@ -1,7 +1,7 @@
 use super::document::DocumentTab;
 use super::helpers::grid_plane_from_camera;
 use super::history::history_dropdown_labels;
-use super::{Message, H7CAD};
+use super::{Message, OpenCADStudio};
 use crate::scene::grip::{grips_to_screen, grips_to_screen_paper};
 use crate::scene::paper_canvas::PaperCanvas;
 use crate::scene::viewport_pane::{PaperViewportPane, ViewportPane};
@@ -16,7 +16,7 @@ use iced::{keyboard, Background, Border, Color, Element, Fill, Subscription, Tas
 
 const VIEWCUBE_HIT_SIZE: f32 = VIEWCUBE_DRAW_PX;
 
-impl H7CAD {
+impl OpenCADStudio {
     pub fn view(&self, window_id: window::Id) -> Element<'_, Message> {
         // ── Floating panel windows ─────────────────────────────────────────
         if Some(window_id) == self.layer_window {
@@ -1594,7 +1594,7 @@ fn unsaved_changes_dialog_window(name: &str) -> Element<'static, Message> {
 // is the public welcome screen and stays consistent across locales.
 //
 // The page picks up the application icon's red-brown (#B03020) as a tint so
-// it visually belongs to H7CAD without overpowering the dark workspace.
+// it visually belongs to OpenCADStudio without overpowering the dark workspace.
 
 const BRAND: Color = Color { r: 0.690, g: 0.188, b: 0.125, a: 1.0 }; // #B03020
 const BRAND_DARK: Color = Color { r: 0.45, g: 0.12, b: 0.08, a: 1.0 };
@@ -1605,16 +1605,16 @@ pub(super) fn start_page_view<'a>() -> Element<'a, Message> {
     const CARD_BG: Color = Color { r: 0.12, g: 0.12, b: 0.13, a: 1.0 };
     const CARD_BORDER: Color = Color { r: 0.20, g: 0.20, b: 0.22, a: 1.0 };
 
-    // Brand-tinted "Welcome to" — the "H7CAD" word takes the accent colour
+    // Brand-tinted "Welcome to" — the "OpenCADStudio" word takes the accent colour
     // (Thunderbird-style coloured headline split).
     let headline = row![
         text("Welcome to ").size(40).color(TEXT),
-        text("H7CAD").size(40).color(BRAND),
+        text("Open CAD Studio").size(40).color(BRAND),
     ]
     .align_y(iced::Center);
 
     let subtitle = text(
-        "H7CAD is an open-source CAD viewer and editor — a gift from contributors like you. \
+        "Open CAD Studio is an open-source CAD viewer and editor — a gift from contributors like you. \
          Open a DWG/DXF file, start a new drawing, or help shape what comes next.",
     )
     .size(13)
@@ -1728,9 +1728,9 @@ pub(super) fn start_page_view<'a>() -> Element<'a, Message> {
     let cards = row![
         card_section(
             "Free and open source",
-            "H7CAD belongs to its users.",
+            "Open CAD Studio belongs to its users.",
             "Source is openly developed and distributed under a permissive licence. \
-             You are free to use, study, modify, and share H7CAD.",
+             You are free to use, study, modify, and share Open CAD Studio.",
         ),
         card_section(
             "Community driven",

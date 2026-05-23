@@ -1,4 +1,4 @@
-//! H7CAD hatch pattern catalog — loaded from `assets/patterns/H7CAD.pat`.
+//! OpenCADStudio hatch pattern catalog — loaded from `assets/patterns/OpenCADStudio.pat`.
 //!
 //! PAT line format:  `angle, x0, y0, dx, dy [, dash1, dash2, ...]`
 //!   - `angle`      line direction in degrees
@@ -8,7 +8,7 @@
 
 use std::sync::OnceLock;
 
-const PAT_SRC: &str = include_str!("../assets/patterns/H7CAD.pat");
+const PAT_SRC: &str = include_str!("../assets/patterns/OpenCADStudio.pat");
 
 // ── Public types ──────────────────────────────────────────────────────────
 

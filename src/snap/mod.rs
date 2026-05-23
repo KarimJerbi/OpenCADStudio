@@ -1,4 +1,4 @@
-//! H7CAD-style object snap (OSNAP) engine.
+//! OpenCADStudio-style object snap (OSNAP) engine.
 //!
 //! Implemented modes:
 //!   Endpoint, Midpoint, Center, Node, Quadrant, Intersection,
@@ -13,7 +13,7 @@ use crate::ui::overlay::CROSSHAIR_ARM;
 
 // ── Snap type ─────────────────────────────────────────────────────────────
 
-/// Every OSNAP mode — mirrors the H7CAD list.
+/// Every OSNAP mode — mirrors the OpenCADStudio list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SnapType {
     Endpoint,

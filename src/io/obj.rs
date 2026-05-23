@@ -27,7 +27,7 @@ pub fn parse_obj(src: &str, color: [f32; 4]) -> Option<MeshModel> {
             "v" => {
                 let vals: Vec<f32> = parts.filter_map(|s| s.parse().ok()).collect();
                 if vals.len() >= 3 {
-                    // OBJ: Y-up right-handed.  H7CAD viewport is also Y-up → keep as-is.
+                    // OBJ: Y-up right-handed.  OpenCADStudio viewport is also Y-up → keep as-is.
                     positions.push([vals[0], vals[1], vals[2]]);
                 }
             }

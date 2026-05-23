@@ -9,7 +9,7 @@
 // Zoom:      adjusts `distance` (exponential feel).
 // Snap:      directly assigns yaw+pitch encoded as a quaternion (for ViewCube).
 //
-// Coordinate convention: Z-up world space (same as the rest of H7CAD).
+// Coordinate convention: Z-up world space (same as the rest of OpenCADStudio).
 
 use glam::{vec3, Mat4, Quat, Vec3};
 use iced::{Point, Rectangle};

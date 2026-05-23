@@ -1,9 +1,9 @@
-use super::{Message, H7CAD};
+use super::{Message, OpenCADStudio};
 use crate::command::CmdResult;
 use acadrust::Handle;
 use iced::Task;
 
-impl H7CAD {
+impl OpenCADStudio {
     pub(super) fn apply_cmd_result(&mut self, result: CmdResult) -> Task<Message> {
         let i = self.active_tab;
         match result {

@@ -1,4 +1,4 @@
-//! H7CAD linetype catalog — loaded from `assets/linetypes/H7CAD.lin`.
+//! OpenCADStudio linetype catalog — loaded from `assets/linetypes/OpenCADStudio.lin`.
 //!
 //! Call [`populate_document`] to add all standard linetypes to a new document.
 //! Linetypes that already exist in the document are skipped.
@@ -68,7 +68,7 @@ pub fn complex_lt(name: &str) -> Option<&'static ComplexLt> {
         .get(&name.to_ascii_uppercase())
 }
 
-const LIN_SOURCE: &str = include_str!("../assets/linetypes/H7CAD.lin");
+const LIN_SOURCE: &str = include_str!("../assets/linetypes/OpenCADStudio.lin");
 
 // ── Pattern art extraction ────────────────────────────────────────────────
 
@@ -93,7 +93,7 @@ pub fn extract_pattern(desc: &str) -> String {
 
 // ── Public API ────────────────────────────────────────────────────────────
 
-/// Add all standard H7CAD linetypes to `doc`, skipping existing ones.
+/// Add all standard OpenCADStudio linetypes to `doc`, skipping existing ones.
 pub fn populate_document(doc: &mut CadDocument) {
     for mut lt in parse(LIN_SOURCE) {
         if !doc.line_types.contains(&lt.name) {

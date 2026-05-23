@@ -28,7 +28,7 @@ pub async fn print_wires(
     plot_style: Option<PlotStyleTable>,
 ) -> Result<String, String> {
     // ── 1. Write to a named temp file ─────────────────────────────────────
-    let tmp_path = std::env::temp_dir().join("h7cad_print.pdf");
+    let tmp_path = std::env::temp_dir().join("open_cad_studio_print.pdf");
     pdf_export::export_pdf(
         &wires,
         &hatches,

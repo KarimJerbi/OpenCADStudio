@@ -3914,7 +3914,7 @@ impl Scene {
             .document
             .views
             .iter()
-            .find(|v| v.name == "H7CAD_Camera_Model")
+            .find(|v| v.name == "OpenCADStudio_Camera_Model")
             .cloned();
         if let Some(view) = saved_view {
             return self.apply_camera_from_view_entry(&view, true);
@@ -3978,7 +3978,7 @@ impl Scene {
     /// Returns true if a valid sheet viewport was found and the camera was set.
     fn apply_sheet_viewport_camera(&mut self) -> bool {
         // Prefer our named View entry — survives DWG save without being overridden.
-        let view_name = format!("H7CAD_Camera_{}", self.current_layout);
+        let view_name = format!("OpenCADStudio_Camera_{}", self.current_layout);
         let saved_view = self
             .document
             .views
@@ -4094,7 +4094,7 @@ impl Scene {
             }
 
             // Also write to View table — survives DWG save without override.
-            self.write_camera_view_entry("H7CAD_Camera_Model", target_wcs, vd3, view_height);
+            self.write_camera_view_entry("OpenCADStudio_Camera_Model", target_wcs, vd3, view_height);
             true
         } else {
             let target_wcs = acadrust::types::Vector3 {
@@ -4102,7 +4102,7 @@ impl Scene {
                 y: cam.target.y as f64,
                 z: cam.target.z as f64,
             };
-            let view_name = format!("H7CAD_Camera_{}", self.current_layout);
+            let view_name = format!("OpenCADStudio_Camera_{}", self.current_layout);
 
             // Write back to the sheet viewport entity.
             let layout_block = self.current_layout_block_handle();

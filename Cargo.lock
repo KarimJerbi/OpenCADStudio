@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "H7CAD"
+name = "OpenCADStudio"
 version = "0.3.8"
 dependencies = [
  "acadrust",
