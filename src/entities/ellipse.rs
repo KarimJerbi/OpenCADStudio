@@ -276,3 +276,64 @@ impl Transformable for Ellipse {
         apply_transform(self, t);
     }
 }
+
+impl crate::entities::traits::MassPropsCalc for acadrust::entities::Ellipse {
+    fn mass_props(&self) -> crate::entities::traits::MassProps {
+        use std::f64::consts::{PI, TAU};
+        let e = self;
+        let a = (e.major_axis.x.powi(2) + e.major_axis.y.powi(2)).sqrt();
+        let b = a * e.minor_axis_ratio;
+        let t0 = e.start_parameter;
+        let t1 = {
+            let mut t = e.end_parameter;
+            if t <= t0 {
+                t += TAU;
+            }
+            t
+        };
+        let span = t1 - t0;
+        let is_full = (span - TAU).abs() < 1e-6;
+        let area = if is_full {
+            PI * a * b
+        } else {
+            // Sector area of ellipse approximated via 256-pt integration
+            let n = 256usize;
+            let mut s = 0.0f64;
+            for k in 0..n {
+                let t = t0 + span * (k as f64 / n as f64);
+                let tp = t0 + span * ((k + 1) as f64 / n as f64);
+                let nx = e.major_axis.x / a;
+                let ny = e.major_axis.y / a;
+                let x0 = a * t.cos() * nx - b * t.sin() * ny;
+                let y0 = a * t.cos() * ny + b * t.sin() * nx;
+                let x1 = a * tp.cos() * nx - b * tp.sin() * ny;
+                let y1 = a * tp.cos() * ny + b * tp.sin() * nx;
+                s += x0 * y1 - x1 * y0;
+            }
+            (s / 2.0).abs()
+        };
+        // Arc length via 256-pt numerical integration
+        let nx = e.major_axis.x / a.max(1e-12);
+        let ny = e.major_axis.y / a.max(1e-12);
+        let perimeter = {
+            let n = 256usize;
+            let mut len = 0.0f64;
+            for k in 0..n {
+                let t = t0 + span * (k as f64 / n as f64);
+                let tp = t0 + span * ((k + 1) as f64 / n as f64);
+                let x0 = e.center.x + a * t.cos() * nx - b * t.sin() * ny;
+                let y0 = e.center.y + a * t.cos() * ny + b * t.sin() * nx;
+                let x1 = e.center.x + a * tp.cos() * nx - b * tp.sin() * ny;
+                let y1 = e.center.y + a * tp.cos() * ny + b * tp.sin() * nx;
+                len += (x1 - x0).hypot(y1 - y0);
+            }
+            len
+        };
+        crate::entities::traits::MassProps {
+            area,
+            perimeter,
+            cx: e.center.x,
+            cy: e.center.y,
+        }
+    }
+}

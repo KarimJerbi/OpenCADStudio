@@ -244,3 +244,29 @@ impl Transformable for Arc {
         apply_transform(self, t);
     }
 }
+
+impl crate::entities::traits::MassPropsCalc for acadrust::entities::Arc {
+    fn mass_props(&self) -> crate::entities::traits::MassProps {
+        use std::f64::consts::TAU;
+        let r = self.radius;
+        let span = {
+            let s = (self.end_angle - self.start_angle).rem_euclid(TAU);
+            if s < 1e-6 {
+                TAU
+            } else {
+                s
+            }
+        };
+        // Sector area (pie slice)
+        let area = 0.5 * r * r * span;
+        let arc_len = r * span;
+        // Centroid of arc (chord midpoint direction)
+        let mid_rad = self.start_angle + span / 2.0;
+        crate::entities::traits::MassProps {
+            area,
+            perimeter: arc_len,
+            cx: self.center.x + r * mid_rad.cos(),
+            cy: self.center.y + r * mid_rad.sin(),
+        }
+    }
+}

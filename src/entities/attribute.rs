@@ -792,3 +792,28 @@ impl Transformable for AttributeEntity {
         });
     }
 }
+
+impl crate::entities::traits::TextContent for acadrust::entities::AttributeDefinition {
+    fn text_content(&self) -> Option<String> {
+        Some(self.default_value.clone())
+    }
+    fn replace_text(&mut self, search: &str, rep: &str) {
+        let search_lc = search.to_lowercase();
+        if self.default_value.to_lowercase().contains(&search_lc) {
+            self.default_value = self.default_value.replace(search, rep);
+        }
+    }
+}
+
+impl crate::entities::traits::TextContent for acadrust::entities::AttributeEntity {
+    fn text_content(&self) -> Option<String> {
+        Some(self.get_value().to_string())
+    }
+    fn replace_text(&mut self, search: &str, rep: &str) {
+        let search_lc = search.to_lowercase();
+        let cur = self.get_value().to_string();
+        if cur.to_lowercase().contains(&search_lc) {
+            self.set_value(cur.replace(search, rep));
+        }
+    }
+}

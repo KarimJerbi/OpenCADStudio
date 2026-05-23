@@ -332,3 +332,15 @@ impl Transformable for Text {
         apply_transform(self, t);
     }
 }
+
+impl crate::entities::traits::TextContent for acadrust::entities::Text {
+    fn text_content(&self) -> Option<String> {
+        Some(self.value.clone())
+    }
+    fn replace_text(&mut self, search: &str, rep: &str) {
+        let search_lc = search.to_lowercase();
+        if self.value.to_lowercase().contains(&search_lc) {
+            self.value = self.value.replace(search, rep);
+        }
+    }
+}

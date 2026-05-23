@@ -31,6 +31,30 @@ pub trait Transformable {
     fn apply_transform(&mut self, t: &EntityTransform);
 }
 
+/// Inquiry-time mass / area / perimeter properties for entities whose
+/// 2D footprint has a meaningful area or perimeter (Circle, Arc, Line,
+/// LwPolyline, Ellipse). Entities outside this set get `None` via the
+/// dispatcher.
+#[derive(Clone, Copy, Debug)]
+pub struct MassProps {
+    pub area: f64,
+    pub perimeter: f64,
+    pub cx: f64,
+    pub cy: f64,
+}
+
+pub trait MassPropsCalc {
+    fn mass_props(&self) -> MassProps;
+}
+
+/// Read / replace the visible string of text-like entities (Text, MText,
+/// AttributeDefinition, AttributeEntity). `replace` rewrites every
+/// occurrence of `search` with `rep`.
+pub trait TextContent {
+    fn text_content(&self) -> Option<String>;
+    fn replace_text(&mut self, search: &str, rep: &str);
+}
+
 pub trait EntityTypeOps {
     fn to_truck_entity(&self, document: &CadDocument) -> Option<TruckEntity>;
     fn grips(&self) -> Vec<GripDef>;
@@ -38,6 +62,9 @@ pub trait EntityTypeOps {
     fn apply_geom_prop(&mut self, field: &str, value: &str);
     fn apply_grip(&mut self, grip_id: usize, apply: GripApply);
     fn apply_transform(&mut self, t: &EntityTransform);
+    fn mass_props(&self) -> Option<MassProps>;
+    fn text_content(&self) -> Option<String>;
+    fn replace_text(&mut self, search: &str, rep: &str);
 }
 
 /// Per-dispatch-function entity-variant lists. Adding a new entity that
@@ -145,6 +172,30 @@ impl EntityTypeOps for EntityType {
                 Table, MText, Point, Spline, Text, Viewport, Dimension,
                 Leader, MultiLeader, Underlay, Shape, Ole2Frame,
             ],
+            _ => {},
+        )
+    }
+
+    fn mass_props(&self) -> Option<MassProps> {
+        dispatch!(self,
+            |e| Some(MassPropsCalc::mass_props(e)),
+            [Circle, Arc, Line, LwPolyline, Ellipse],
+            _ => None,
+        )
+    }
+
+    fn text_content(&self) -> Option<String> {
+        dispatch!(self,
+            |e| TextContent::text_content(e),
+            [Text, MText, AttributeDefinition, AttributeEntity],
+            _ => None,
+        )
+    }
+
+    fn replace_text(&mut self, search: &str, rep: &str) {
+        dispatch!(self,
+            |e| TextContent::replace_text(e, search, rep),
+            [Text, MText, AttributeDefinition, AttributeEntity],
             _ => {},
         )
     }

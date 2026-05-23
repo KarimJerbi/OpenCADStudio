@@ -181,3 +181,17 @@ impl Transformable for Line {
         apply_transform(self, t);
     }
 }
+
+impl crate::entities::traits::MassPropsCalc for acadrust::entities::Line {
+    fn mass_props(&self) -> crate::entities::traits::MassProps {
+        let dx = self.end.x - self.start.x;
+        let dy = self.end.y - self.start.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        crate::entities::traits::MassProps {
+            area: 0.0,
+            perimeter: len,
+            cx: (self.start.x + self.end.x) / 2.0,
+            cy: (self.start.y + self.end.y) / 2.0,
+        }
+    }
+}

@@ -227,3 +227,16 @@ impl Transformable for Circle {
         apply_transform(self, t);
     }
 }
+
+impl crate::entities::traits::MassPropsCalc for Circle {
+    fn mass_props(&self) -> crate::entities::traits::MassProps {
+        use std::f64::consts::{PI, TAU};
+        let r = self.radius;
+        crate::entities::traits::MassProps {
+            area: PI * r * r,
+            perimeter: TAU * r,
+            cx: self.center.x,
+            cy: self.center.y,
+        }
+    }
+}
