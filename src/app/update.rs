@@ -691,7 +691,7 @@ impl OpenCADStudio {
 
             Message::RibbonSelectTab(idx) => {
                 self.ribbon.select(idx);
-                self.focus_cmd_input()
+                Task::none()
             }
 
             Message::RibbonToolClick { tool_id, event } => {
@@ -727,7 +727,7 @@ impl OpenCADStudio {
                         return Task::done(Message::ToggleLayers);
                     }
                 }
-                self.focus_cmd_input()
+                Task::none()
             }
 
             // ── Application menu ──────────────────────────────────────────
@@ -759,7 +759,7 @@ impl OpenCADStudio {
                 // fresh tab's defaults (ByLayer) instead of inheriting the
                 // previous tab's last selection.
                 self.sync_ribbon_from_selection();
-                self.focus_cmd_input()
+                Task::none()
             }
 
             Message::TabSwitch(idx) => {
@@ -772,7 +772,7 @@ impl OpenCADStudio {
                     // if there is one), not the prior tab's choice.
                     self.sync_ribbon_from_selection();
                 }
-                self.focus_cmd_input()
+                Task::none()
             }
 
             Message::TabClose(idx) => {
@@ -920,6 +920,13 @@ impl OpenCADStudio {
                     return self.focus_cmd_input();
                 }
                 if let Some(cmd) = self.command_line.submit() {
+                    return self.dispatch_command(&cmd);
+                }
+                // Empty Enter / Space with no active command repeats the
+                // last dispatched command — same shortcut `CommandFinalize`
+                // already implements, mirrored here so the trailing-space
+                // submit path goes through it too.
+                if let Some(cmd) = self.tabs[i].last_cmd.clone() {
                     return self.dispatch_command(&cmd);
                 }
                 Task::none()
@@ -1752,15 +1759,11 @@ impl OpenCADStudio {
 
             Message::ViewportLeftPress => {
                 let i = self.active_tab;
-                // Clicking inside the viewport must not park focus on the
-                // viewport widget — typed characters need to keep flowing
-                // into the command-line input. Refocus on every exit path.
-                let refocus = self.focus_cmd_input();
                 let (p, vp_size) = {
                     let sel = self.tabs[i].scene.selection.borrow();
                     let p = match sel.last_move_pos {
                         Some(p) => p,
-                        None => return refocus,
+                        None => return Task::none(),
                     };
                     (p, sel.vp_size)
                 };
@@ -1777,7 +1780,7 @@ impl OpenCADStudio {
                     if scene::hit_test(p.x, p.y, vw, vh, cam.view_rotation_mat(), VIEWCUBE_PX)
                         .is_some()
                     {
-                        return refocus;
+                        return Task::none();
                     }
                 }
 
@@ -1813,7 +1816,7 @@ impl OpenCADStudio {
                                 origin_world: world,
                                 last_world: world,
                             });
-                            return refocus;
+                            return Task::none();
                         }
                     }
                 }
@@ -1824,7 +1827,7 @@ impl OpenCADStudio {
                 sel.left_press_pos = Some(p);
                 sel.left_press_time = Some(Instant::now());
                 sel.left_dragging = false;
-                refocus
+                Task::none()
             }
 
             Message::ViewportLeftRelease => {
@@ -2476,7 +2479,7 @@ impl OpenCADStudio {
                 ) {
                     return Task::done(Message::ViewCubeSnap(region));
                 }
-                self.focus_cmd_input()
+                Task::none()
             }
 
             Message::WindowResized(w, h) => {
