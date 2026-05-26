@@ -352,17 +352,26 @@ impl FallbackTess for Hatch {
                         // `Vector3.z`; straight segments emit just the
                         // start vertex, bulged segments tessellate the arc
                         // between v0 → v1.
-                        let start_idx = pts.len();
                         let verts = &poly.vertices;
                         let count = verts.len();
+                        if count == 0 {
+                            continue;
+                        }
+                        // Break the wire between this polyline and whatever
+                        // preceded it — without the separator the renderer
+                        // draws a ghost segment from the previous edge / path
+                        // straight to this polyline's first vertex, which
+                        // shows up as a stray boundary line between hatch
+                        // regions.
+                        if !pts.is_empty() {
+                            pts.push([f32::NAN; 3]);
+                        }
+                        let start_idx = pts.len();
                         let seg_count = if poly.is_closed {
                             count
                         } else {
                             count.saturating_sub(1)
                         };
-                        if count > 0 && pts.len() != start_idx {
-                            pts.push([f32::NAN; 3]);
-                        }
                         for i in 0..seg_count {
                             let v0 = &verts[i];
                             let v1 = &verts[(i + 1) % count];
