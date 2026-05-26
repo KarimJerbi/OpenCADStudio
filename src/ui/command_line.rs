@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use crate::app::Message;
-use iced::widget::{column, container, row, text, text_input};
+use iced::widget::{button, column, container, opaque, row, scrollable, text, text_input};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 pub const CMD_INPUT_ID: &str = "cmd_input";
@@ -28,6 +28,8 @@ pub struct CommandLine {
     recall_cursor: Option<usize>,
     /// Saved draft input before the user started navigating history.
     recall_draft: String,
+    /// When `true`, the dropdown showing the full backlog is open.
+    pub history_open: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -142,6 +144,14 @@ impl CommandLine {
             .any(|e| e.created_at.elapsed().as_secs_f32() < HISTORY_VISIBLE_SECS)
     }
 
+    pub fn toggle_history(&mut self) {
+        self.history_open = !self.history_open;
+    }
+
+    pub fn close_history(&mut self) {
+        self.history_open = false;
+    }
+
     pub fn view(&self) -> Element<'_, Message> {
         // Only the most recent entries pushed within the last few
         // seconds show on the overlay. The dropdown button keeps the
@@ -197,8 +207,75 @@ impl CommandLine {
             })
             .size(11)
             .padding([4, 6]);
-        let input_row = row![prompt, input].align_y(iced::Center);
+        // Dropdown trigger next to the input. Clicking it pops up the
+        // full backlog (everything pushed since the app started) so the
+        // user can recover anything that has already faded off the
+        // overlay.
+        let dropdown_label = if self.history_open { "▾" } else { "▸" };
+        let dropdown_btn = button(
+            text(dropdown_label)
+                .size(11)
+                .color(PROMPT_COLOR),
+        )
+        .on_press(Message::CommandHistoryToggle)
+        .style(|_: &Theme, _status| button::Style {
+            background: Some(Background::Color(INPUT_ROW_BG)),
+            text_color: Color::WHITE,
+            border: Border {
+                color: BORDER_COLOR,
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..Default::default()
+        })
+        .padding([2, 6]);
+        let input_row = row![prompt, input, dropdown_btn]
+            .spacing(4)
+            .align_y(iced::Center);
+
+        // Full backlog dropdown — appears ABOVE the input pill when
+        // open. The history `Vec` already contains every line pushed
+        // since startup; render them all (newest at the bottom) in a
+        // scrollable. `opaque` wraps the panel so mouse-wheel events
+        // inside the dropdown don't bubble through to the viewport
+        // shader behind it (otherwise scrolling the history zoomed
+        // the drawing). `anchor_bottom` keeps the newest line in view
+        // when the dropdown first opens.
+        let dropdown: Element<'_, Message> = if self.history_open {
+            let mut col = column![].spacing(0).width(Length::Fill);
+            for entry in &self.history {
+                let color = match entry.kind {
+                    EntryKind::Command => CMD_COLOR,
+                    EntryKind::Output => OUT_COLOR,
+                    EntryKind::Error => ERR_COLOR,
+                    EntryKind::Info => INFO_COLOR,
+                };
+                col = col.push(
+                    container(text(&entry.text).size(11).color(color)).padding([1, 8]),
+                );
+            }
+            let panel = container(
+                scrollable(col).anchor_bottom().width(Length::Fill),
+            )
+                .style(|_: &Theme| container::Style {
+                    background: Some(Background::Color(PANEL_BG)),
+                    border: Border {
+                        color: BORDER_COLOR,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .max_height(200.0)
+                .padding([4, 0]);
+            opaque(panel).into()
+        } else {
+            container(column![]).height(0).into()
+        };
+
         container(column![
+            dropdown,
             container(history_rows)
                 .style(|_: &Theme| container::Style {
                     background: Some(Background::Color(HISTORY_BG)),

@@ -355,6 +355,8 @@ pub enum Message {
     CommandHistoryPrev,
     /// Recall next command in history (↓ arrow key).
     CommandHistoryNext,
+    /// Toggle the dropdown listing the full command-line history.
+    CommandHistoryToggle,
     ToggleLayers,
     LayerToggleVisible(usize),
     LayerToggleLock(usize),

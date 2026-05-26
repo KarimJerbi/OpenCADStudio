@@ -851,7 +851,16 @@ impl OpenCADStudio {
                 Task::none()
             }
 
+            Message::CommandHistoryToggle => {
+                self.command_line.toggle_history();
+                Task::none()
+            }
+
             Message::CommandSubmit => {
+                // Submitting a command implicitly dismisses the history
+                // dropdown so the dispatched command's new prompt is
+                // immediately visible on the overlay.
+                self.command_line.close_history();
                 let i = self.active_tab;
                 if self.tabs[i].active_cmd.is_some() {
                     let text = self.command_line.input.trim().to_string();
