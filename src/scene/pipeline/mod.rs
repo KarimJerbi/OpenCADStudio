@@ -38,6 +38,11 @@ pub struct Pipeline {
     hatch_batched_pipeline: wgpu::RenderPipeline,
     image_pipeline: wgpu::RenderPipeline,
     mesh_pipeline: wgpu::RenderPipeline,
+    /// Wireframe variant of the mesh pipeline (LineList topology, same
+    /// vertex layout / shader). Used when the active render mode is
+    /// Wireframe 2D or Wireframe 3D so 3D solids draw as their
+    /// triangle edges instead of filled faces.
+    mesh_wireframe_pipeline: wgpu::RenderPipeline,
     face3d_pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -421,6 +426,51 @@ impl Pipeline {
             cache: None,
         });
 
+        // Wireframe variant — same shader / vertex layout / depth state,
+        // only the input topology changes (LineList) and back-face
+        // culling drops out (each triangle edge is shared between two
+        // faces, one of which would otherwise hide the edge).
+        let mesh_wireframe_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("mesh.wireframe.pipeline"),
+                layout: Some(&mesh_layout),
+                vertex: wgpu::VertexState {
+                    module: &mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[mesh_gpu::MeshVertex::layout()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: MSAA_SAMPLES,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &mesh_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                multiview: None,
+                cache: None,
+            });
+
         // ── Face3D pipeline ────────────────────────────────────────────────
         let face3d_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("face3d.shader"),
@@ -666,6 +716,7 @@ impl Pipeline {
             hatch_batched_pipeline,
             image_pipeline,
             mesh_pipeline,
+            mesh_wireframe_pipeline,
             face3d_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -790,18 +841,32 @@ impl Pipeline {
         // outlines stay on the screen regardless of mode.
         self.gpu_face3d_edges = WireGpu::from_batch(device, face3d_wires);
         // Fill buffer: in wireframe mode we drop the 3DFACE quads
-        // (those come from `face3d_wires.key_vertices`) but keep
-        // `all_wires.fill_tris` — that channel carries 2D content like
-        // text-LOD greek rectangles and PolyfaceMesh face triangles
-        // which shouldn't disappear with the toggle.
+        // (those come from `face3d_wires.key_vertices`) *and* the
+        // PolyfaceMesh / PolygonMesh face triangles routed through
+        // `all_wires.fill_tris` (Face3DGpu::from_wires recognises them
+        // by the wire having both `points` and `fill_tris`). 2-D
+        // fill_tris (text-LOD greek, MultiLeader background — `points`
+        // empty) survive in either mode.
+        let keep_3d_mesh_fills = !wireframe_only;
         let face3d_for_fill: &[WireModel] = if wireframe_only { &[] } else { face3d_wires };
+        let has_any_2d_fill = all_wires
+            .iter()
+            .any(|w| !w.fill_tris.is_empty() && w.points.is_empty());
+        let has_any_3d_fill = all_wires
+            .iter()
+            .any(|w| !w.fill_tris.is_empty() && !w.points.is_empty());
         let has_fills = !face3d_for_fill.is_empty()
-            || all_wires.iter().any(|w| !w.fill_tris.is_empty());
+            || has_any_2d_fill
+            || (keep_3d_mesh_fills && has_any_3d_fill);
         if !has_fills {
             self.gpu_face3d_fill = None;
         } else {
-            self.gpu_face3d_fill =
-                Some(Face3DGpu::from_wires(device, face3d_for_fill, all_wires));
+            self.gpu_face3d_fill = Some(Face3DGpu::from_wires(
+                device,
+                face3d_for_fill,
+                all_wires,
+                keep_3d_mesh_fills,
+            ));
         }
     }
 
@@ -870,6 +935,7 @@ impl Pipeline {
         target: &wgpu::TextureView,
         clip_bounds: Rectangle<u32>,
         bg_color: [f32; 4],
+        mesh_wireframe: bool,
     ) {
         let vp = clip_bounds;
         let msaa = &self.msaa_view;
@@ -997,7 +1063,16 @@ impl Pipeline {
                 occlusion_query_set: None,
             });
             pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.mesh_pipeline);
+            // Wireframe mode swaps in the LineList pipeline + the
+            // per-mesh `wire_index_buffer` (triangle indices expanded
+            // into edge segments at upload time); everything else stays
+            // identical so the same uniforms / vertex buffers feed both
+            // paths.
+            if mesh_wireframe {
+                pass.set_pipeline(&self.mesh_wireframe_pipeline);
+            } else {
+                pass.set_pipeline(&self.mesh_pipeline);
+            }
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             for (i, set) in self.gpu_meshes.iter().enumerate() {
                 if !self.mesh_visible.get(i).copied().unwrap_or(true) {
@@ -1012,12 +1087,17 @@ impl Pipeline {
                 let Some(mesh) = set.lods.get(level) else {
                     continue;
                 };
-                if mesh.index_count == 0 {
+                let (ibuf, icount) = if mesh_wireframe {
+                    (&mesh.wire_index_buffer, mesh.wire_index_count)
+                } else {
+                    (&mesh.index_buffer, mesh.index_count)
+                };
+                if icount == 0 {
                     continue;
                 }
                 pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..icount, 0, 0..1);
             }
         }
 

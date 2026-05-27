@@ -53,6 +53,13 @@ pub struct MeshGpu {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// Line-list index buffer: every triangle `(a, b, c)` from the
+    /// solid index buffer is expanded into three segments
+    /// `(a,b)(b,c)(c,a)`. Used by the wireframe-mode render path so 3D
+    /// solids draw as their triangle edges without needing the
+    /// `POLYGON_MODE_LINE` device feature.
+    pub wire_index_buffer: wgpu::Buffer,
+    pub wire_index_count: u32,
 }
 
 /// GPU-side bundle of MeshLodSet — one MeshGpu per available LOD plus
@@ -109,10 +116,27 @@ impl MeshGpu {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        // Wireframe-mode index buffer: expand each triangle into its
+        // three edge segments. Allocates ~2× the solid index count but
+        // is cheap compared to mesh tessellation and only happens when
+        // a new mesh is uploaded.
+        let mut wire_indices: Vec<u32> = Vec::with_capacity(mesh.indices.len() * 2);
+        for tri in mesh.indices.chunks_exact(3) {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            wire_indices.extend_from_slice(&[a, b, b, c, c, a]);
+        }
+        let wire_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("mesh.wire_ibuf.{}", mesh.name)),
+            contents: bytemuck::cast_slice(&wire_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         Self {
             vertex_buffer,
             index_buffer,
             index_count: mesh.indices.len() as u32,
+            wire_index_buffer,
+            wire_index_count: wire_indices.len() as u32,
         }
     }
 }

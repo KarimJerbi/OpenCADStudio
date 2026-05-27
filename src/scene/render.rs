@@ -247,7 +247,11 @@ impl shader::Primitive for Primitive {
         target: &iced::wgpu::TextureView,
         clip: &Rectangle<u32>,
     ) {
-        pipeline.render(encoder, target, *clip, self.bg_color);
+        // `mesh_fill` is false for Wireframe 2D / Wireframe 3D — flip
+        // the draw path so meshes use the wireframe pipeline + the
+        // pre-built triangle-edge index buffer.
+        let mesh_wireframe = !self.mesh_fill;
+        pipeline.render(encoder, target, *clip, self.bg_color, mesh_wireframe);
         if self.show_viewcube {
             pipeline.viewcube.render(encoder, target, *clip);
         }

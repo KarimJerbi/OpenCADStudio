@@ -62,6 +62,7 @@ impl Face3DGpu {
         device: &wgpu::Device,
         face3d_wires: &[WireModel],
         all_wires: &[WireModel],
+        keep_3d_mesh_fills: bool,
     ) -> Self {
         let mut vertices: Vec<Face3DVertex> = Vec::with_capacity(face3d_wires.len() * 6);
 
@@ -91,8 +92,18 @@ impl Face3DGpu {
         // AO-style dim to them would wash out user-picked colors. Wires
         // with both fill_tris and points (mesh edges + faces) keep the dim
         // so PolyfaceMesh / PolygonMesh still look 3-D-shaded.
+        //
+        // When `keep_3d_mesh_fills` is false (wireframe render modes),
+        // skip wires that carry 3-D mesh face data (`points` + `fill_tris`)
+        // while leaving 2-D fills (text greek, MultiLeader background)
+        // alone — they're not "3D objects" the wireframe toggle should
+        // hide.
         for wire in all_wires {
             if wire.fill_tris.is_empty() {
+                continue;
+            }
+            let is_3d_mesh_face = !wire.points.is_empty();
+            if is_3d_mesh_face && !keep_3d_mesh_fills {
                 continue;
             }
             let [r, g, b, a] = wire.color;
