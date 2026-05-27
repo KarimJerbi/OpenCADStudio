@@ -74,8 +74,6 @@ pub(super) struct OpenCADStudio {
     show_ucs_icon: bool,
     /// Whether the ViewCube 3D gizmo is visible in model space (NAVVCUBE).
     show_viewcube: bool,
-    /// Whether the navigation toolbar is shown in the viewport (NAVBAR).
-    show_navbar: bool,
     /// Whether the Properties panel is shown on the left (PROPERTIES).
     show_properties: bool,
     /// Whether the document file tabs are shown at the top (FILETAB).
@@ -408,8 +406,6 @@ pub enum Message {
     ToggleGridSnap,
     /// Toggle the ViewCube 3D gizmo visibility (NAVVCUBE).
     ToggleViewCube,
-    /// Toggle the navigation toolbar visibility (NAVBAR).
-    ToggleNavbar,
     /// Toggle the Properties panel visibility (PROPERTIES).
     ToggleProperties,
     /// Toggle the document file tabs at the top (FILETAB).
@@ -746,7 +742,6 @@ impl OpenCADStudio {
             dyn_input: true,
             show_ucs_icon: true,
             show_viewcube: true,
-            show_navbar: true,
             show_properties: true,
             show_file_tabs: true,
             show_layout_tabs: true,

@@ -529,24 +529,6 @@ impl OpenCADStudio {
             .height(Fill)
         };
 
-        if self.show_navbar && !tab.is_start {
-            // Anchor the nav toolbar to the vertical centre of the
-            // viewport area, flush against the right edge with a small
-            // gutter, so it stays aligned no matter how tall the
-            // window is.
-            let nav = container(overlay::nav_toolbar())
-                .align_right(Fill)
-                .align_y(iced::alignment::Vertical::Center)
-                .height(Fill)
-                .padding(iced::Padding {
-                    top: 0.0,
-                    right: 8.0,
-                    bottom: 0.0,
-                    left: 0.0,
-                });
-            viewport_stack = viewport_stack.push(nav);
-        }
-
         if self.show_viewcube && !is_paper && !tab.is_start {
             let cube_click: Element<'_, Message> = container(
                 mouse_area(container(

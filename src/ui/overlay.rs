@@ -1,10 +1,9 @@
-//! Viewport overlay widgets:
-//!   • nav_toolbar()     — vertical orbit/pan/zoom buttons on the right
+//! Viewport overlay widgets.
 
 use glam::{Mat4, Vec3};
 use iced::mouse;
-use iced::widget::{button, canvas, column, container, text};
-use iced::{Background, Border, Color, Element, Length, Point, Size, Theme};
+use iced::widget::canvas;
+use iced::{Color, Element, Length, Point, Size, Theme};
 
 use crate::app::Message;
 use crate::scene::object::GripShape;
@@ -27,64 +26,6 @@ pub struct GripMarker {
     pub shape: GripShape,
     /// True → grip is currently being dragged (drawn filled red).
     pub is_hot: bool,
-}
-
-// ── Nav toolbar ───────────────────────────────────────────────────────────
-
-pub fn nav_toolbar<'a>() -> Element<'a, Message> {
-    let b = |icon: &'a str, cmd: &'a str| -> Element<'a, Message> {
-        button(text(icon).size(14).color(Color::WHITE))
-            .on_press(Message::Command(cmd.into()))
-            .style(|_: &Theme, status| button::Style {
-                background: Some(Background::Color(match status {
-                    button::Status::Hovered => Color {
-                        r: 0.32,
-                        g: 0.32,
-                        b: 0.32,
-                        a: 0.95,
-                    },
-                    button::Status::Pressed => Color {
-                        r: 0.18,
-                        g: 0.42,
-                        b: 0.70,
-                        a: 1.00,
-                    },
-                    _ => Color {
-                        r: 0.20,
-                        g: 0.20,
-                        b: 0.20,
-                        a: 0.85,
-                    },
-                })),
-                border: Border {
-                    color: Color {
-                        r: 0.30,
-                        g: 0.30,
-                        b: 0.30,
-                        a: 1.0,
-                    },
-                    width: 1.0,
-                    radius: 2.0.into(),
-                },
-                text_color: Color::WHITE,
-                shadow: iced::Shadow::default(),
-                snap: false,
-            })
-            .padding([6, 8])
-            .into()
-    };
-    container(
-        column![
-            b("⟳", "3DORBIT"),
-            b("✥", "PAN"),
-            b("⊕", "ZOOMIN"),
-            b("⊖", "ZOOMOUT"),
-            b("⊡", "ZOOMEXTENTS")
-        ]
-        .spacing(2),
-    )
-    .padding(4)
-    .into()
 }
 
 // ── Grid display params ───────────────────────────────────────────────────

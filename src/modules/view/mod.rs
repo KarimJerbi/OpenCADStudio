@@ -4,7 +4,6 @@ mod cascade;
 mod file_tabs;
 mod hidden;
 mod layout_tabs;
-mod navbar;
 mod orbit;
 mod ortho;
 mod pan;
@@ -53,7 +52,6 @@ impl CadModule for ViewModule {
                 tools: vec![
                     RibbonItem::LargeTool(ucs_icon::tool()),
                     RibbonItem::LargeTool(viewcube::tool()),
-                    RibbonItem::LargeTool(navbar::tool()),
                 ],
             },
             // ── Navigate ─────────────────────────────────────────────────────

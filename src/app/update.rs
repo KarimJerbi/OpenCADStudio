@@ -2720,10 +2720,6 @@ impl OpenCADStudio {
                 self.show_viewcube ^= true;
                 Task::none()
             }
-            Message::ToggleNavbar => {
-                self.show_navbar ^= true;
-                Task::none()
-            }
             Message::ToggleProperties => {
                 self.show_properties ^= true;
                 Task::none()

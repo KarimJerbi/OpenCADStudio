@@ -4756,11 +4756,6 @@ impl OpenCADStudio {
                 return Task::done(Message::ToggleViewCube);
             }
 
-            // ── NAVBAR — toggle navigation toolbar visibility ────────────────────
-            "NAVBAR" => {
-                return Task::done(Message::ToggleNavbar);
-            }
-
             // ── PROPERTIES — toggle Properties panel visibility ──────────────────
             "PROPERTIES" | "PR" | "PROPS" => {
                 return Task::done(Message::ToggleProperties);
