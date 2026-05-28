@@ -439,6 +439,39 @@ pub(crate) struct ModelTile {
     pub(crate) camera: Camera,
 }
 
+/// Tolerance for matching two normalized tile coordinates as "the same"
+/// edge — drag math leaves small floating-point residue.
+const TILE_EPS: f32 = 1e-4;
+
+#[derive(Copy, Clone, Debug)]
+pub enum TileEdgeOrient {
+    Vertical,
+    Horizontal,
+}
+
+/// One inner divider between Model tiles, exposed by [`Scene::model_tile_edges`].
+/// `coord` is the fixed axis (x for vertical, y for horizontal) and `span`
+/// is the perpendicular extent over which the divider actually separates
+/// tiles. All values are normalized to the 0..1 canvas.
+#[derive(Clone, Debug)]
+pub struct TileEdge {
+    pub orient: TileEdgeOrient,
+    pub coord: f32,
+    pub span: (f32, f32),
+}
+
+#[derive(Copy, Clone, Debug)]
+enum ContactSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+fn overlap_len(a: (f32, f32), b: (f32, f32)) -> f32 {
+    (a.1.min(b.1) - a.0.max(b.0)).max(0.0)
+}
+
 pub struct Scene {
     pub camera: Rc<RefCell<Camera>>,
     /// Model-space tiled viewport layout. One full-window tile by default;
@@ -4462,6 +4495,326 @@ impl Scene {
     pub fn update(&mut self, _dt: Duration) {}
 
     // ── Paper-space coordinate helpers ───────────────────────────────────
+
+    /// Discover the inner divider edges between Model tiles. Each entry
+    /// is one draggable horizontal or vertical edge, with the span along
+    /// the perpendicular axis that the edge actually covers (the union
+    /// of touching tiles' extents). Coordinates are in normalized 0..1
+    /// canvas space. Returns an empty list outside Model or for a
+    /// single-tile layout.
+    pub fn model_tile_edges(&self) -> Vec<TileEdge> {
+        if self.current_layout != "Model" {
+            return vec![];
+        }
+        let tiles = self.model_tiles.borrow();
+        if tiles.len() < 2 {
+            return vec![];
+        }
+        let mut out = Vec::new();
+        // Collect candidate inner x's: any tile edge that's strictly
+        // inside (0, 1). Dedup by epsilon.
+        let mut xs: Vec<f32> = Vec::new();
+        let mut ys: Vec<f32> = Vec::new();
+        for t in tiles.iter() {
+            for x in [t.rect.x, t.rect.x + t.rect.width] {
+                if x > TILE_EPS && x < 1.0 - TILE_EPS {
+                    xs.push(x);
+                }
+            }
+            for y in [t.rect.y, t.rect.y + t.rect.height] {
+                if y > TILE_EPS && y < 1.0 - TILE_EPS {
+                    ys.push(y);
+                }
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        xs.dedup_by(|a, b| (*a - *b).abs() < TILE_EPS);
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        ys.dedup_by(|a, b| (*a - *b).abs() < TILE_EPS);
+        for x in xs {
+            let mut y0 = f32::INFINITY;
+            let mut y1 = f32::NEG_INFINITY;
+            let mut has_left = false;
+            let mut has_right = false;
+            for t in tiles.iter() {
+                if ((t.rect.x + t.rect.width) - x).abs() < TILE_EPS {
+                    has_left = true;
+                    y0 = y0.min(t.rect.y);
+                    y1 = y1.max(t.rect.y + t.rect.height);
+                }
+                if (t.rect.x - x).abs() < TILE_EPS {
+                    has_right = true;
+                    y0 = y0.min(t.rect.y);
+                    y1 = y1.max(t.rect.y + t.rect.height);
+                }
+            }
+            if has_left && has_right && y1 > y0 {
+                out.push(TileEdge {
+                    orient: TileEdgeOrient::Vertical,
+                    coord: x,
+                    span: (y0, y1),
+                });
+            }
+        }
+        for y in ys {
+            let mut x0 = f32::INFINITY;
+            let mut x1 = f32::NEG_INFINITY;
+            let mut has_top = false;
+            let mut has_bot = false;
+            for t in tiles.iter() {
+                if ((t.rect.y + t.rect.height) - y).abs() < TILE_EPS {
+                    has_top = true;
+                    x0 = x0.min(t.rect.x);
+                    x1 = x1.max(t.rect.x + t.rect.width);
+                }
+                if (t.rect.y - y).abs() < TILE_EPS {
+                    has_bot = true;
+                    x0 = x0.min(t.rect.x);
+                    x1 = x1.max(t.rect.x + t.rect.width);
+                }
+            }
+            if has_top && has_bot && x1 > x0 {
+                out.push(TileEdge {
+                    orient: TileEdgeOrient::Horizontal,
+                    coord: y,
+                    span: (x0, x1),
+                });
+            }
+        }
+        out
+    }
+
+    /// Hit-test the inner Model-tile dividers against a pixel cursor.
+    /// `bounds` is the canvas pixel rectangle (origin = canvas top-left).
+    /// Returns the closest edge within `tolerance_px` pixels of the cursor
+    /// along its perpendicular axis, also requiring the cursor to lie
+    /// within the edge's actual span.
+    pub fn hit_model_tile_edge(
+        &self,
+        cursor_px: iced::Point,
+        bounds: iced::Rectangle,
+        tolerance_px: f32,
+    ) -> Option<TileEdge> {
+        if bounds.width <= 0.0 || bounds.height <= 0.0 {
+            return None;
+        }
+        let cx = cursor_px.x - bounds.x;
+        let cy = cursor_px.y - bounds.y;
+        let nx = cx / bounds.width;
+        let ny = cy / bounds.height;
+        let tol_nx = tolerance_px / bounds.width;
+        let tol_ny = tolerance_px / bounds.height;
+        let mut best: Option<(f32, TileEdge)> = None;
+        for e in self.model_tile_edges() {
+            let (dist, in_span) = match e.orient {
+                TileEdgeOrient::Vertical => (
+                    (e.coord - nx).abs() / tol_nx.max(1e-9),
+                    ny >= e.span.0 && ny <= e.span.1,
+                ),
+                TileEdgeOrient::Horizontal => (
+                    (e.coord - ny).abs() / tol_ny.max(1e-9),
+                    nx >= e.span.0 && nx <= e.span.1,
+                ),
+            };
+            if in_span && dist <= 1.0 {
+                if best.as_ref().map_or(true, |(d, _)| dist < *d) {
+                    best = Some((dist, e));
+                }
+            }
+        }
+        best.map(|(_, e)| e)
+    }
+
+    /// Move the inner divider edge from `old_coord` to `new_coord`, both
+    /// in normalized 0..1 space. Adjusts every tile that touches the
+    /// edge on either side. `min_size` clamps the new coordinate so no
+    /// tile crosses into a non-positive width / height — caller still
+    /// runs `collapse_small_model_tiles` afterward to merge any tiles
+    /// that fell below the viewcube threshold.
+    pub fn move_model_tile_edge(
+        &self,
+        orient: TileEdgeOrient,
+        old_coord: f32,
+        new_coord: f32,
+        min_size: f32,
+    ) {
+        let mut tiles = self.model_tiles.borrow_mut();
+        // Clamp the new coordinate so no tile becomes ≤ 0 wide / tall.
+        // (Sub-`min_size` results are still allowed — the collapse pass
+        // handles those.)
+        let new_coord = match orient {
+            TileEdgeOrient::Vertical => {
+                let mut lo = 0.0_f32;
+                let mut hi = 1.0_f32;
+                for t in tiles.iter() {
+                    if ((t.rect.x + t.rect.width) - old_coord).abs() < TILE_EPS {
+                        lo = lo.max(t.rect.x + min_size * 0.25);
+                    }
+                    if (t.rect.x - old_coord).abs() < TILE_EPS {
+                        hi = hi.min(t.rect.x + t.rect.width - min_size * 0.25);
+                    }
+                }
+                new_coord.clamp(lo, hi)
+            }
+            TileEdgeOrient::Horizontal => {
+                let mut lo = 0.0_f32;
+                let mut hi = 1.0_f32;
+                for t in tiles.iter() {
+                    if ((t.rect.y + t.rect.height) - old_coord).abs() < TILE_EPS {
+                        lo = lo.max(t.rect.y + min_size * 0.25);
+                    }
+                    if (t.rect.y - old_coord).abs() < TILE_EPS {
+                        hi = hi.min(t.rect.y + t.rect.height - min_size * 0.25);
+                    }
+                }
+                new_coord.clamp(lo, hi)
+            }
+        };
+        for t in tiles.iter_mut() {
+            match orient {
+                TileEdgeOrient::Vertical => {
+                    if ((t.rect.x + t.rect.width) - old_coord).abs() < TILE_EPS {
+                        t.rect.width = (new_coord - t.rect.x).max(0.0);
+                    } else if (t.rect.x - old_coord).abs() < TILE_EPS {
+                        let old_right = t.rect.x + t.rect.width;
+                        t.rect.x = new_coord;
+                        t.rect.width = (old_right - new_coord).max(0.0);
+                    }
+                }
+                TileEdgeOrient::Horizontal => {
+                    if ((t.rect.y + t.rect.height) - old_coord).abs() < TILE_EPS {
+                        t.rect.height = (new_coord - t.rect.y).max(0.0);
+                    } else if (t.rect.y - old_coord).abs() < TILE_EPS {
+                        let old_bottom = t.rect.y + t.rect.height;
+                        t.rect.y = new_coord;
+                        t.rect.height = (old_bottom - new_coord).max(0.0);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Remove every tile whose width or height has dropped below the
+    /// supplied minima, absorbing each one's area into the neighbour
+    /// that shares the longest contact edge. Iterates until no tile is
+    /// too small (handles chains of collapses). Adjusts
+    /// `active_model_tile` so the live camera stays bound to a real
+    /// tile (preferring the neighbour that absorbed the active tile).
+    pub fn collapse_small_model_tiles(&self, min_w: f32, min_h: f32) {
+        let mut tiles = self.model_tiles.borrow_mut();
+        loop {
+            if tiles.len() < 2 {
+                break;
+            }
+            let small = tiles
+                .iter()
+                .enumerate()
+                .find(|(_, t)| t.rect.width < min_w || t.rect.height < min_h)
+                .map(|(i, _)| i);
+            let Some(idx) = small else { break };
+            let removed = tiles[idx].rect;
+            // Find the neighbour with the longest shared contact edge.
+            let mut best: Option<(usize, f32, ContactSide)> = None;
+            for (j, t) in tiles.iter().enumerate() {
+                if j == idx {
+                    continue;
+                }
+                let probes = [
+                    (
+                        ContactSide::Left,
+                        ((t.rect.x + t.rect.width) - removed.x).abs() < TILE_EPS,
+                        overlap_len(
+                            (t.rect.y, t.rect.y + t.rect.height),
+                            (removed.y, removed.y + removed.height),
+                        ),
+                    ),
+                    (
+                        ContactSide::Right,
+                        (t.rect.x - (removed.x + removed.width)).abs() < TILE_EPS,
+                        overlap_len(
+                            (t.rect.y, t.rect.y + t.rect.height),
+                            (removed.y, removed.y + removed.height),
+                        ),
+                    ),
+                    (
+                        ContactSide::Top,
+                        ((t.rect.y + t.rect.height) - removed.y).abs() < TILE_EPS,
+                        overlap_len(
+                            (t.rect.x, t.rect.x + t.rect.width),
+                            (removed.x, removed.x + removed.width),
+                        ),
+                    ),
+                    (
+                        ContactSide::Bottom,
+                        (t.rect.y - (removed.y + removed.height)).abs() < TILE_EPS,
+                        overlap_len(
+                            (t.rect.x, t.rect.x + t.rect.width),
+                            (removed.x, removed.x + removed.width),
+                        ),
+                    ),
+                ];
+                for (side, touches, c) in probes {
+                    if touches && c > 0.0 {
+                        if best.map_or(true, |(_, len, _)| c > len) {
+                            best = Some((j, c, side));
+                        }
+                    }
+                }
+            }
+            if let Some((nbr_idx, _, side)) = best {
+                match side {
+                    ContactSide::Left => {
+                        tiles[nbr_idx].rect.width =
+                            (removed.x + removed.width) - tiles[nbr_idx].rect.x;
+                    }
+                    ContactSide::Right => {
+                        let old_right =
+                            tiles[nbr_idx].rect.x + tiles[nbr_idx].rect.width;
+                        tiles[nbr_idx].rect.x = removed.x;
+                        tiles[nbr_idx].rect.width = old_right - removed.x;
+                    }
+                    ContactSide::Top => {
+                        tiles[nbr_idx].rect.height =
+                            (removed.y + removed.height) - tiles[nbr_idx].rect.y;
+                    }
+                    ContactSide::Bottom => {
+                        let old_bottom =
+                            tiles[nbr_idx].rect.y + tiles[nbr_idx].rect.height;
+                        tiles[nbr_idx].rect.y = removed.y;
+                        tiles[nbr_idx].rect.height = old_bottom - removed.y;
+                    }
+                }
+                let active = self.active_model_tile.get();
+                let new_active = if active == idx {
+                    if nbr_idx > idx { nbr_idx - 1 } else { nbr_idx }
+                } else if active > idx {
+                    active - 1
+                } else {
+                    active
+                };
+                tiles.remove(idx);
+                self.active_model_tile
+                    .set(new_active.min(tiles.len().saturating_sub(1)));
+            } else {
+                // Isolated tile (shouldn't happen with axis-aligned
+                // splits) — drop it and stretch the first remaining
+                // tile to fill the canvas so we don't leave a hole.
+                tiles.remove(idx);
+                let active = self.active_model_tile.get();
+                self.active_model_tile
+                    .set(active.saturating_sub(if active > idx { 1 } else { 0 }).min(tiles.len().saturating_sub(1)));
+                if let Some(first) = tiles.first_mut() {
+                    first.rect = iced::Rectangle {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                    };
+                }
+                break;
+            }
+        }
+    }
 
     /// Split the active Model tile in two. `horizontal` → a horizontal
     /// divider (top / bottom halves); otherwise a vertical divider (left /

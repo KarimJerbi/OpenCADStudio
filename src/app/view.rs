@@ -371,6 +371,13 @@ impl OpenCADStudio {
                 vec![]
             };
 
+            // Model-space tile dividers (none in paper / single-tile layouts).
+            let tile_edges = if !is_paper {
+                tab.scene.model_tile_edges()
+            } else {
+                vec![]
+            };
+
             overlay::selection_overlay(
                 sel,
                 snap_info,
@@ -380,6 +387,7 @@ impl OpenCADStudio {
                 ost_points,
                 tab.last_cursor_screen,
                 !is_paper && self.show_viewcube,
+                tile_edges,
             )
         };
 

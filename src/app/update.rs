@@ -6,7 +6,9 @@ use super::{Message, OpenCADStudio, POLY_START_DELAY_MS};
 use crate::modules::ModuleEvent;
 use crate::scene::grip::{find_hit_grip, find_hit_grip_paper, GripEdit};
 use crate::scene::object::GripApply;
-use crate::scene::{self, hover_id, Scene, VIEWCUBE_DRAW_PX, VIEWCUBE_PAD, VIEWCUBE_PX};
+use crate::scene::{
+    self, hover_id, Scene, TileEdgeOrient, VIEWCUBE_DRAW_PX, VIEWCUBE_PAD, VIEWCUBE_PX,
+};
 use crate::ui::PropertiesPanel;
 use acadrust::types::Color as AcadColor;
 use acadrust::{EntityType as AcadEntityType, Handle};
@@ -15,6 +17,20 @@ use iced::window;
 use iced::{mouse, Task};
 
 const VIEWCUBE_HIT_SIZE: f32 = VIEWCUBE_DRAW_PX;
+/// Pixel distance from a Model-tile inner divider that still registers as
+/// a resize grip on the press.
+const TILE_EDGE_HIT_PX: f32 = 4.0;
+/// Normalized minimum tile size before `collapse_small_model_tiles` merges
+/// it into a neighbour. Sized to comfortably contain the ViewCube + its
+/// padding so a tile that's still GPU-rendered always has room to show
+/// the gizmo.
+fn tile_min_norm(canvas_w: f32, canvas_h: f32) -> (f32, f32) {
+    let px = VIEWCUBE_DRAW_PX + 2.0 * VIEWCUBE_PAD + 16.0;
+    (
+        (px / canvas_w.max(1.0)).min(0.95),
+        (px / canvas_h.max(1.0)).min(0.95),
+    )
+}
 
 fn format_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
@@ -1646,6 +1662,35 @@ impl OpenCADStudio {
 
             Message::ViewportMove(p) => {
                 let i = self.active_tab;
+
+                // A Model-tile divider drag short-circuits the rest of
+                // the move handling — the cursor neither pans the camera
+                // nor updates snap state while the user is resizing
+                // panes.
+                if let Some(drag) = self.tile_drag.as_mut() {
+                    let (vw, vh) = self.tabs[i].scene.selection.borrow().vp_size;
+                    if vw > 1.0 && vh > 1.0 {
+                        let new_coord = match drag.orient {
+                            TileEdgeOrient::Vertical => (p.x / vw).clamp(0.0, 1.0),
+                            TileEdgeOrient::Horizontal => (p.y / vh).clamp(0.0, 1.0),
+                        };
+                        let (min_w, min_h) = tile_min_norm(vw, vh);
+                        let min_size = match drag.orient {
+                            TileEdgeOrient::Vertical => min_w,
+                            TileEdgeOrient::Horizontal => min_h,
+                        };
+                        self.tabs[i].scene.move_model_tile_edge(
+                            drag.orient,
+                            drag.last_applied,
+                            new_coord,
+                            min_size,
+                        );
+                        drag.last_applied = new_coord;
+                        self.tabs[i].scene.camera_generation += 1;
+                    }
+                    return Task::none();
+                }
+
                 // Keep the ViewCube hover in sync as the cursor leaves the
                 // hit-area overlay and moves over the rest of the viewport.
                 // `hover_id` returns None outside the cube box, which clears
@@ -2084,6 +2129,33 @@ impl OpenCADStudio {
                     }
                 }
 
+                // Tiled Model layout: an inner divider near the cursor
+                // becomes a resize grip. Start the drag and short-circuit
+                // (no pick / select / camera swap). Released on
+                // `ViewportLeftRelease`.
+                if self.tabs[i].active_cmd.is_none()
+                    && self.tabs[i].scene.current_layout == "Model"
+                    && vw > 1.0
+                    && vh > 1.0
+                {
+                    let canvas_bounds = iced::Rectangle {
+                        x: 0.0,
+                        y: 0.0,
+                        width: vw,
+                        height: vh,
+                    };
+                    if let Some(edge) = self.tabs[i]
+                        .scene
+                        .hit_model_tile_edge(p, canvas_bounds, TILE_EDGE_HIT_PX)
+                    {
+                        self.tile_drag = Some(crate::app::TileDrag {
+                            orient: edge.orient,
+                            last_applied: edge.coord,
+                        });
+                        return Task::none();
+                    }
+                }
+
                 // Tiled Model layout: clicking a non-active tile activates
                 // it (swapping in its camera) instead of selecting / drawing.
                 if self.tabs[i].active_cmd.is_none() && vw > 1.0 && vh > 1.0 {
@@ -2165,6 +2237,22 @@ impl OpenCADStudio {
 
             Message::ViewportLeftRelease => {
                 let i = self.active_tab;
+
+                // End an in-flight tile-divider drag. Any tile that fell
+                // below the minimum (viewcube fits comfortably) gets
+                // absorbed into its longest-contact neighbour, so the
+                // user can drag a divider all the way to one side to
+                // remove a pane.
+                if self.tile_drag.take().is_some() {
+                    let (vw, vh) = self.tabs[i].scene.selection.borrow().vp_size;
+                    let (min_w, min_h) = tile_min_norm(vw, vh);
+                    self.tabs[i]
+                        .scene
+                        .collapse_small_model_tiles(min_w, min_h);
+                    self.tabs[i].scene.camera_generation += 1;
+                    return Task::none();
+                }
+
                 let (p, is_click, is_down) = {
                     let sel = self.tabs[i].scene.selection.borrow();
                     let p = match sel.last_move_pos {

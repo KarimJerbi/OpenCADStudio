@@ -108,6 +108,7 @@ pub fn selection_overlay<'a>(
     ost_points: Vec<OstTrackPoint>,
     cursor_screen: Point,
     show_viewcube: bool,
+    tile_edges: Vec<crate::scene::TileEdge>,
 ) -> Element<'a, Message> {
     canvas(SelectionCanvas {
         selection,
@@ -118,6 +119,7 @@ pub fn selection_overlay<'a>(
         ost_points,
         cursor_screen,
         show_viewcube,
+        tile_edges,
     })
     .width(Length::Fill)
     .height(Length::Fill)
@@ -133,6 +135,7 @@ struct SelectionCanvas {
     ost_points: Vec<OstTrackPoint>,
     cursor_screen: Point,
     show_viewcube: bool,
+    tile_edges: Vec<crate::scene::TileEdge>,
 }
 
 impl canvas::Program<Message> for SelectionCanvas {
@@ -158,6 +161,43 @@ impl canvas::Program<Message> for SelectionCanvas {
                 }
             }
         }
+        // Hover over a Model-tile divider → resize cursor cue.
+        if !self.tile_edges.is_empty() {
+            if let Some(pos) = cursor.position_in(bounds) {
+                const TOL_PX: f32 = 4.0;
+                for e in &self.tile_edges {
+                    let (perp, edge_px, span_lo, span_hi, pos_along) = match e.orient {
+                        crate::scene::TileEdgeOrient::Vertical => (
+                            pos.x,
+                            e.coord * bounds.width,
+                            e.span.0 * bounds.height,
+                            e.span.1 * bounds.height,
+                            pos.y,
+                        ),
+                        crate::scene::TileEdgeOrient::Horizontal => (
+                            pos.y,
+                            e.coord * bounds.height,
+                            e.span.0 * bounds.width,
+                            e.span.1 * bounds.width,
+                            pos.x,
+                        ),
+                    };
+                    if (perp - edge_px).abs() <= TOL_PX
+                        && pos_along >= span_lo
+                        && pos_along <= span_hi
+                    {
+                        return match e.orient {
+                            crate::scene::TileEdgeOrient::Vertical => {
+                                mouse::Interaction::ResizingHorizontally
+                            }
+                            crate::scene::TileEdgeOrient::Horizontal => {
+                                mouse::Interaction::ResizingVertically
+                            }
+                        };
+                    }
+                }
+            }
+        }
         if cursor.is_over(bounds) {
             mouse::Interaction::Crosshair
         } else {
@@ -174,6 +214,49 @@ impl canvas::Program<Message> for SelectionCanvas {
         cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // ── Tile dividers (Model-space tiled layout) ──────────────────────
+        // Drawn first so all other overlays sit on top — the line is just
+        // a visual cue for the resize-drag handles.
+        if !self.tile_edges.is_empty() {
+            const DIVIDER: Color = Color {
+                r: 0.40,
+                g: 0.45,
+                b: 0.55,
+                a: 0.85,
+            };
+            for e in &self.tile_edges {
+                let (a, b) = match e.orient {
+                    crate::scene::TileEdgeOrient::Vertical => {
+                        let x = e.coord * bounds.width;
+                        (
+                            Point::new(x, e.span.0 * bounds.height),
+                            Point::new(x, e.span.1 * bounds.height),
+                        )
+                    }
+                    crate::scene::TileEdgeOrient::Horizontal => {
+                        let y = e.coord * bounds.height;
+                        (
+                            Point::new(e.span.0 * bounds.width, y),
+                            Point::new(e.span.1 * bounds.width, y),
+                        )
+                    }
+                };
+                let path = canvas::Path::new(|p| {
+                    p.move_to(a);
+                    p.line_to(b);
+                });
+                frame.stroke(
+                    &path,
+                    canvas::Stroke {
+                        width: 2.0,
+                        style: canvas::Style::Solid(DIVIDER),
+                        line_cap: canvas::LineCap::Butt,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
 
         // ── Grid display ──────────────────────────────────────────────────
         if let Some(ref g) = self.grid {

@@ -11,7 +11,18 @@ mod view;
 use document::DocumentTab;
 
 use crate::modules::ModuleEvent;
-use crate::scene::CubeRegion;
+use crate::scene::{CubeRegion, TileEdgeOrient};
+
+/// In-flight drag of a Model-tile inner divider. `last_applied` is the
+/// most recent normalized coordinate handed to `move_model_tile_edge` —
+/// the next `ViewportMove` uses it as the `old_coord` argument so the
+/// drag follows the same edge across frames even after sub-pixel
+/// adjustments from the clamp inside `move_model_tile_edge`.
+#[derive(Clone, Debug)]
+pub struct TileDrag {
+    pub orient: TileEdgeOrient,
+    pub last_applied: f32,
+}
 use crate::snap::Snapper;
 use crate::ui::{AppMenu, CommandLine, Ribbon, StatusBar};
 use acadrust::types::{Color as AcadColor, LineWeight};
@@ -73,6 +84,10 @@ pub(super) struct OpenCADStudio {
     /// `true` after a bare `VPORTS` in model space — the next command-line
     /// entry is treated as the tiled-config option (SIngle/2H/2V/4).
     awaiting_vports: bool,
+    /// Active drag of a Model-tile divider. Set on press over an inner
+    /// edge, updated on move, cleared on release (which also runs the
+    /// collapse pass).
+    tile_drag: Option<TileDrag>,
     /// Show the UCS icon in the bottom-left corner of model space (UCSICON).
     show_ucs_icon: bool,
     /// Whether the ViewCube 3D gizmo is visible in model space (NAVVCUBE).
@@ -747,6 +762,7 @@ impl OpenCADStudio {
             show_grid: false,
             dyn_input: true,
             awaiting_vports: false,
+            tile_drag: None,
             show_ucs_icon: true,
             show_viewcube: true,
             show_properties: true,
