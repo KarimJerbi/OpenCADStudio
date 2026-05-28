@@ -178,13 +178,28 @@ impl shader::Primitive for Primitive {
 
         for (i, vp) in self.viewports.iter().enumerate() {
             let inner = &mut pipeline.inners[i];
-            // Physical MSAA/depth size for this viewport's sub-rect.
+            // The MSAA / depth / resolve textures are always sized to the
+            // FULL viewport rectangle (not the on-canvas-visible portion)
+            // so the camera matrices render at consistent aspect / scale.
+            // The blit step picks the visible sub-rectangle out via the
+            // shader's UV crop uniform, which lets partially off-canvas
+            // viewports composite to their visible surface area without
+            // drift.
             let clip_size = Size::new(
                 (vp.screen_rect.width * bounds.width * scale).ceil().max(1.0) as u32,
                 (vp.screen_rect.height * bounds.height * scale).ceil().max(1.0) as u32,
             );
             inner.ensure_depth_texture(device, clip_size);
             inner.viewcube.ensure_depth_texture(device, full_size);
+            // Compute the UV crop for this viewport. `screen_rect` is in
+            // normalized canvas units (0..1) but may extend negative or
+            // beyond 1 when the viewport hangs off the canvas. The on-
+            // canvas portion in viewport-local UV is straightforward to
+            // derive from how much sticks out on each side.
+            let sr = vp.screen_rect;
+            let (uo_x, us_x) = uv_crop_axis(sr.x, sr.width);
+            let (uo_y, us_y) = uv_crop_axis(sr.y, sr.height);
+            inner.upload_blit_uv(queue, [uo_x, uo_y], [us_x, us_y]);
             inner.upload_uniforms(queue, &vp.uniforms);
             let cur_key = (vp.geometry_epoch, vp.camera_generation);
             let fill_mode = vp.fill_mode;
@@ -244,20 +259,35 @@ impl shader::Primitive for Primitive {
         target: &iced::wgpu::TextureView,
         clip: &Rectangle<u32>,
     ) {
+        let cw = clip.width as f32;
+        let ch = clip.height as f32;
+        let clip_right = clip.x + clip.width;
+        let clip_bottom = clip.y + clip.height;
         for (i, vp) in self.viewports.iter().enumerate() {
             let Some(inner) = pipeline.inners.get(i) else {
                 break;
             };
-            // Derive this viewport's physical sub-clip from the normalized
-            // screen_rect and the surface clip.
-            let cw = clip.width as f32;
-            let ch = clip.height as f32;
-            let vp_clip = Rectangle {
-                x: clip.x + (vp.screen_rect.x * cw) as u32,
-                y: clip.y + (vp.screen_rect.y * ch) as u32,
-                width: (vp.screen_rect.width * cw).max(1.0) as u32,
-                height: (vp.screen_rect.height * ch).max(1.0) as u32,
+            // Where the viewport would land on the surface in absolute
+            // pixels (i32 because either edge may stick off the canvas).
+            let vp_full_x = clip.x as i32 + (vp.screen_rect.x * cw) as i32;
+            let vp_full_y = clip.y as i32 + (vp.screen_rect.y * ch) as i32;
+            let vp_full_w = (vp.screen_rect.width * cw).max(1.0) as i32;
+            let vp_full_h = (vp.screen_rect.height * ch).max(1.0) as i32;
+            // Intersect with the surface clip — that's the slice we blit.
+            let dest_x = vp_full_x.max(clip.x as i32);
+            let dest_y = vp_full_y.max(clip.y as i32);
+            let dest_right = (vp_full_x + vp_full_w).min(clip_right as i32);
+            let dest_bottom = (vp_full_y + vp_full_h).min(clip_bottom as i32);
+            if dest_right <= dest_x || dest_bottom <= dest_y {
+                continue;
+            }
+            let surface_dest = Rectangle {
+                x: dest_x as u32,
+                y: dest_y as u32,
+                width: (dest_right - dest_x) as u32,
+                height: (dest_bottom - dest_y) as u32,
             };
+            let vp_size = Size::new(vp_full_w.max(1) as u32, vp_full_h.max(1) as u32);
             // `mesh_fill` is false for Wireframe 2D / Wireframe 3D — flip
             // the draw path so meshes use the wireframe pipeline + the
             // pre-built triangle-edge index buffer.
@@ -265,17 +295,48 @@ impl shader::Primitive for Primitive {
             inner.render(
                 encoder,
                 target,
-                vp_clip,
+                vp_size,
+                surface_dest,
                 self.bg_color,
                 mesh_wireframe,
                 vp.hidden_line,
                 vp.show_3d_edges,
             );
-            if vp.show_viewcube {
+            // The ViewCube renders directly to the surface at the full
+            // viewport rect. Skip it when the viewport's top-right corner
+            // (where the cube sits) is off-canvas — wgpu's `set_viewport`
+            // rejects negative origins, and a clamped cube would scale
+            // distortedly. The active viewport is normally fully visible.
+            if vp.show_viewcube
+                && vp_full_x >= clip.x as i32
+                && vp_full_y >= clip.y as i32
+                && vp_full_x + vp_full_w <= clip_right as i32
+                && vp_full_y + vp_full_h <= clip_bottom as i32
+            {
+                let vp_clip = Rectangle {
+                    x: vp_full_x as u32,
+                    y: vp_full_y as u32,
+                    width: vp_full_w as u32,
+                    height: vp_full_h as u32,
+                };
                 inner.viewcube.render(encoder, target, vp_clip);
             }
         }
     }
+}
+
+/// On-canvas-visible UV crop on one axis. `pos` and `size` are in the
+/// shader widget's normalized 0..1 coords. Returns `(uv_offset, uv_scale)`
+/// applied as `actual_uv = quad_uv * uv_scale + uv_offset` in the blit
+/// shader — identity `(0.0, 1.0)` for fully on-canvas viewports.
+fn uv_crop_axis(pos: f32, size: f32) -> (f32, f32) {
+    if size <= 0.0 {
+        return (0.0, 1.0);
+    }
+    let left_off = (-pos).max(0.0);
+    let right_off = (pos + size - 1.0).max(0.0);
+    let visible = (size - left_off - right_off).max(0.0);
+    (left_off / size, visible / size)
 }
 
 // ── Render-style helpers (impl Scene) ────────────────────────────────────

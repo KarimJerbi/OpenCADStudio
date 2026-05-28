@@ -8,6 +8,7 @@ pub mod viewcube;
 pub mod wire_gpu;
 
 use iced::wgpu;
+use iced::wgpu::util::DeviceExt;
 use iced::{Rectangle, Size};
 
 pub use face3d_gpu::Face3DGpu;
@@ -69,6 +70,10 @@ pub struct Pipeline {
     blit_bind_group_layout: wgpu::BindGroupLayout,
     blit_sampler: wgpu::Sampler,
     blit_bind_group: wgpu::BindGroup,
+    /// UV transform (offset + scale) consumed by the blit shader so a
+    /// partially off-canvas viewport still composites the right portion of
+    /// its resolve texture to the visible portion of the surface.
+    blit_uniform_buffer: wgpu::Buffer,
     /// Cached texture format (needed to recreate MSAA / depth textures on resize).
     surface_format: wgpu::TextureFormat,
     gpu_wires: Vec<WireGpu>,
@@ -743,7 +748,26 @@ impl Pipeline {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
+        });
+
+        // UV crop uniform: [uv_offset_x, uv_offset_y, uv_scale_x, uv_scale_y]
+        // padded to 16 bytes (std140 vec2 alignment). Defaulted to the
+        // identity crop (offset 0, scale 1) for the common on-canvas case.
+        let blit_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("blit.uniform_buffer"),
+            contents: bytemuck::cast_slice(&[0.0f32, 0.0, 1.0, 1.0]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let blit_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -810,6 +834,10 @@ impl Pipeline {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&blit_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: blit_uniform_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -837,6 +865,7 @@ impl Pipeline {
             blit_bind_group_layout: blit_bgl,
             blit_sampler,
             blit_bind_group,
+            blit_uniform_buffer,
             surface_format: format,
             gpu_wires: vec![],
             wire_pixel_scissors: vec![],
@@ -1030,17 +1059,39 @@ impl Pipeline {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
     }
 
+    /// Write the blit shader's UV crop uniform. Call in `prepare` (the only
+    /// place with a `&Queue`) — `render` then just submits the draw call.
+    pub fn upload_blit_uv(&self, queue: &wgpu::Queue, uv_offset: [f32; 2], uv_scale: [f32; 2]) {
+        queue.write_buffer(
+            &self.blit_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[uv_offset[0], uv_offset[1], uv_scale[0], uv_scale[1]]),
+        );
+    }
+
+    /// Render the geometry passes at `vp_size` (the full viewport size — the
+    /// MSAA / resolve textures are this size) and blit the resulting resolve
+    /// to `surface_dest` on the swap-chain. The UV crop is read from the
+    /// blit uniform buffer (written by `upload_blit_uv` during `prepare`)
+    /// so a viewport that hangs off the canvas still composites the correct
+    /// sub-rectangle to the visible portion of the surface.
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
-        clip_bounds: Rectangle<u32>,
+        vp_size: Size<u32>,
+        surface_dest: Rectangle<u32>,
         bg_color: [f32; 4],
         mesh_wireframe: bool,
         hidden_line: bool,
         show_3d_edges: bool,
     ) {
-        let vp = clip_bounds;
+        let vp = Rectangle::<u32> {
+            x: 0,
+            y: 0,
+            width: vp_size.width,
+            height: vp_size.height,
+        };
         let msaa = &self.msaa_view;
         let [r, g, b, a] = bg_color;
         let clear_color = wgpu::Color {
@@ -1543,10 +1594,12 @@ impl Pipeline {
             // No draw calls — the pass itself triggers the MSAA resolve.
         }
 
-        // ── Blit resolve texture → surface target at clip_bounds position ──
-        // The viewport maps the full-screen NDC quad to exactly clip_bounds
-        // in the surface, leaving all other widgets untouched.
-        {
+        // ── Blit resolve texture → surface target at surface_dest position ──
+        // The viewport maps the NDC quad to exactly `surface_dest` in the
+        // swap-chain; `uv_offset` + `uv_scale` (passed through the blit
+        // uniform) crop the resolve so we sample only the visible portion
+        // of the full viewport's MSAA texture.
+        if surface_dest.width > 0 && surface_dest.height > 0 {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("blit.render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1563,10 +1616,10 @@ impl Pipeline {
                 occlusion_query_set: None,
             });
             pass.set_viewport(
-                vp.x as f32,
-                vp.y as f32,
-                vp.width as f32,
-                vp.height as f32,
+                surface_dest.x as f32,
+                surface_dest.y as f32,
+                surface_dest.width as f32,
+                surface_dest.height as f32,
                 0.0,
                 1.0,
             );
@@ -1595,6 +1648,10 @@ impl Pipeline {
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::Sampler(&self.blit_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.blit_uniform_buffer.as_entire_binding(),
                     },
                 ],
             });

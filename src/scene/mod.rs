@@ -4644,30 +4644,12 @@ impl Scene {
             ) else {
                 continue;
             };
-            let is_active = self.active_viewport == Some(h);
-            // Skip the GPU pass for inactive viewports whose screen rect
-            // extends beyond the canvas — the per-viewport pipeline blits
-            // the full MSAA at a u32-saturated (≥0) surface offset, so a
-            // negative offset would paint the content at the canvas
-            // corner instead of where the viewport actually sits. The CPU
-            // projection in PaperCanvas already handles those correctly
-            // clipped to the canvas, so the user simply sees that copy.
-            // The active viewport always renders through the GPU so its
-            // own render mode (Hidden Line, Gouraud, …) still applies.
-            if !is_active
-                && (screen_rect.x < 0.0
-                    || screen_rect.y < 0.0
-                    || screen_rect.x + screen_rect.width > canvas_w
-                    || screen_rect.y + screen_rect.height > canvas_h)
-            {
-                continue;
-            }
             out.push(ViewportInstance {
                 handle: h,
                 screen_rect,
                 camera,
                 render_mode: vp.render_mode,
-                active: is_active,
+                active: self.active_viewport == Some(h),
             });
         }
         out
@@ -4745,9 +4727,12 @@ impl Scene {
                 }
             }
         }
-        let layout_block = self.current_layout_block_handle();
+        // The unified GPU shader draws every content viewport (active and
+        // inactive) directly through its own camera + scissor, so the
+        // paper canvas no longer needs to CPU-project model content onto
+        // the sheet. `paper_sheet_wires()` keeps the title-block /
+        // annotation / viewport-border 2-D pass that GPU does not handle.
         let mut wires = self.paper_sheet_wires();
-        wires.extend(self.viewport_content_wires(layout_block, None, self.active_viewport));
         if let Some(iw) = &self.interim_wire {
             wires.push(iw.clone());
         }
