@@ -5290,14 +5290,102 @@ impl Scene {
         arc
     }
 
-    /// Hatch fills for the paper-space canvas.
+    /// Hatch fills for the paper-space 2-D canvas. The GPU-rendered
+    /// content viewports already draw model-block hatches inside their
+    /// own scissor; including those here would also draw them on the
+    /// paper sheet through the paper camera (huge / off-position), so
+    /// restrict the canvas list to entities owned by the active paper
+    /// layout block. Iterates the source `self.hatches` map (keyed by
+    /// entity handle) rather than the already-flattened arc — the
+    /// flattened arc carries pattern names, not handles, so filtering
+    /// there is unreliable.
     pub fn paper_canvas_hatches(&self) -> Arc<Vec<HatchModel>> {
-        self.hatch_models_arc()
+        let layout_block = self.current_layout_block_handle();
+        let layer_hidden = |layer: &str| {
+            self.document
+                .layers
+                .get(layer)
+                .map(|l| l.flags.off || l.flags.frozen)
+                .unwrap_or(false)
+        };
+        let mut models: Vec<HatchModel> = Vec::new();
+        for (&handle, model) in self.hatches.iter() {
+            let Some(entity) = self.document.get_entity(handle) else {
+                continue;
+            };
+            let c = entity.common();
+            if c.invisible || layer_hidden(&c.layer) {
+                continue;
+            }
+            if !self.belongs_to_visible_block(handle, c.owner_handle, layout_block) {
+                continue;
+            }
+            let mut m = model.clone();
+            m.color = self.render_style(entity).0;
+            if let EntityType::Hatch(dxf) = entity {
+                if let hatch_model::HatchPattern::Pattern(_) = &m.pattern {
+                    m.angle_offset = dxf.pattern_angle as f32;
+                    m.scale = dxf.pattern_scale as f32;
+                }
+            }
+            if self.selected.contains(&handle) {
+                m.color = [0.15, 0.55, 1.00, m.color[3]];
+            }
+            models.push(m);
+        }
+        Arc::new(models)
     }
 
-    /// Wipeout (opaque background fill) models for the paper-space canvas.
+    /// Wipeout fills for the paper-space 2-D canvas. Same rationale as
+    /// `paper_canvas_hatches` — only include wipeouts owned by the
+    /// active paper layout block, so model wipeouts (drawn through their
+    /// content viewport's GPU pipeline) don't get a second mis-projected
+    /// copy on the paper sheet.
     pub fn paper_canvas_wipeouts(&self) -> Arc<Vec<HatchModel>> {
-        self.wipeout_models_arc()
+        let layout_block = self.current_layout_block_handle();
+        let bg_color = self.paper_bg_color;
+        let mut models = Vec::new();
+        for entity in self.document.entities() {
+            let EntityType::Wipeout(wo) = entity else {
+                continue;
+            };
+            if wo.common.invisible {
+                continue;
+            }
+            if self
+                .document
+                .layers
+                .get(&wo.common.layer)
+                .map(|l| l.flags.off || l.flags.frozen)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if !self.belongs_to_visible_block(wo.common.handle, wo.common.owner_handle, layout_block)
+            {
+                continue;
+            }
+            // Paper-block wipeouts live in paper coords — no `world_offset`.
+            let boundary = Self::wipeout_boundary_2d(wo, [0.0; 3]);
+            if boundary.len() < 3 {
+                continue;
+            }
+            let mut fill_color = bg_color;
+            if self.selected.contains(&wo.common.handle) {
+                fill_color = [0.15, 0.55, 1.00, 0.35];
+            }
+            models.push(HatchModel {
+                boundary: Arc::new(boundary),
+                pattern: hatch_model::HatchPattern::Solid,
+                name: "WIPEOUT_FILL".into(),
+                color: fill_color,
+                angle_offset: 0.0,
+                scale: 1.0,
+                world_origin: [0.0; 2],
+                vp_scissor: None,
+            });
+        }
+        Arc::new(models)
     }
 
     pub(super) fn paper_sheet_wires(&self) -> Vec<WireModel> {
