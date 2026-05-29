@@ -130,6 +130,7 @@ impl OpenCADStudio {
                             dl.turn_off();
                         }
                     }
+                    self.tabs[i].scene.bump_geometry();
                     self.tabs[i].dirty = true;
                     self.refresh_layer_panel();
                     self.command_line.push_info("Layer(s) turned off.");
@@ -164,6 +165,7 @@ impl OpenCADStudio {
                             dl.freeze();
                         }
                     }
+                    self.tabs[i].scene.bump_geometry();
                     self.tabs[i].dirty = true;
                     self.refresh_layer_panel();
                     self.command_line.push_info("Layer(s) frozen.");
@@ -195,6 +197,7 @@ impl OpenCADStudio {
                             dl.lock();
                         }
                     }
+                    self.tabs[i].scene.bump_geometry();
                     self.tabs[i].dirty = true;
                     self.refresh_layer_panel();
                     self.command_line.push_info("Layer(s) locked.");
@@ -233,6 +236,7 @@ impl OpenCADStudio {
                         dl.turn_on();
                     }
                 }
+                self.tabs[i].scene.bump_geometry();
                 self.tabs[i].dirty = true;
                 self.refresh_layer_panel();
                 self.command_line.push_info("All layers turned on.");
@@ -252,6 +256,7 @@ impl OpenCADStudio {
                         dl.thaw();
                     }
                 }
+                self.tabs[i].scene.bump_geometry();
                 self.tabs[i].dirty = true;
                 self.refresh_layer_panel();
                 self.command_line.push_info("All layers thawed.");
@@ -282,6 +287,7 @@ impl OpenCADStudio {
                             dl.unlock();
                         }
                     }
+                    self.tabs[i].scene.bump_geometry();
                     self.tabs[i].dirty = true;
                     self.refresh_layer_panel();
                     self.command_line.push_info("Layer(s) unlocked.");
@@ -315,6 +321,7 @@ impl OpenCADStudio {
                             }
                         }
                     }
+                    self.tabs[i].scene.bump_geometry();
                     self.tabs[i].dirty = true;
                     self.refresh_layer_panel();
                     self.command_line
@@ -337,6 +344,7 @@ impl OpenCADStudio {
                         dl.turn_on();
                     }
                 }
+                self.tabs[i].scene.bump_geometry();
                 self.tabs[i].dirty = true;
                 self.refresh_layer_panel();
                 self.command_line
