@@ -96,3 +96,44 @@ pub enum GripApply {
     /// Translate the whole object by this delta vector.
     Translate(Vec3),
 }
+
+/// One entry in the hover-popup menu that opens when the cursor dwells
+/// on a grip. The `label` is the user-visible string; `action` is the
+/// operation the entity will perform when the item is committed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GripMenuItem {
+    pub label: &'static str,
+    pub action: GripMenuAction,
+}
+
+/// All operations a grip popup menu can dispatch. Entity-specific code
+/// in `apply_grip_menu` decodes these into edits. `Stretch` is the
+/// default no-op-equivalent — picking it just starts the regular
+/// stretch drag, identical to clicking the grip with no popup open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GripMenuAction {
+    Stretch,
+    Lengthen,
+    Radius,
+    ArcLength,
+    AddVertex,
+    RemoveVertex,
+    ConvertToArc,
+    ConvertToLine,
+    StretchVertex,
+    AddLeader,
+    RemoveLeader,
+    ReverseArrows,
+    MoveWithDimLine,
+    MoveWithLeader,
+    MoveIndependent,
+    ResetText,
+    RotateText,
+    AboveDimLine,
+    Center,
+    OriginPoint,
+    HatchAngle,
+    HatchScale,
+    HatchPattern,
+    TangentDirection,
+}

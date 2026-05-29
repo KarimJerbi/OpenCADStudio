@@ -684,6 +684,69 @@ impl OpenCADStudio {
             }
         }
 
+        // Multi-functional grip popup (Phase 2). Floating column of
+        // menu items at the grip's screen position, with the selected
+        // item highlighted. Each item dispatches `GripMenuPick`.
+        if let Some(popup) = self.grip_popup.as_ref() {
+            if !tab.is_start {
+                let anchor_x = (popup.anchor.x + 12.0).max(0.0);
+                let anchor_y = (popup.anchor.y + 12.0).max(0.0);
+                let mut col = column![].spacing(0);
+                for (idx, item) in popup.items.iter().enumerate() {
+                    let is_sel = idx == popup.selected;
+                    let label = item.label;
+                    let btn = button(text(label).size(12).color(Color::WHITE))
+                        .on_press(Message::GripMenuPick(idx))
+                        .padding([4, 10])
+                        .style(move |_: &Theme, status| iced::widget::button::Style {
+                            background: Some(Background::Color(match (is_sel, status) {
+                                (true, _) => Color {
+                                    r: 0.20,
+                                    g: 0.45,
+                                    b: 0.95,
+                                    a: 0.95,
+                                },
+                                (_, iced::widget::button::Status::Hovered) => Color {
+                                    r: 0.20,
+                                    g: 0.20,
+                                    b: 0.20,
+                                    a: 0.95,
+                                },
+                                _ => Color {
+                                    r: 0.10,
+                                    g: 0.10,
+                                    b: 0.10,
+                                    a: 0.92,
+                                },
+                            })),
+                            border: Border {
+                                color: Color {
+                                    r: 0.35,
+                                    g: 0.35,
+                                    b: 0.35,
+                                    a: 1.0,
+                                },
+                                width: 1.0,
+                                radius: 0.0.into(),
+                            },
+                            text_color: Color::WHITE,
+                            ..Default::default()
+                        });
+                    col = col.push(iced::widget::opaque(btn));
+                }
+                let popup_layer = iced::widget::column![
+                    Space::new().height(iced::Length::Fixed(anchor_y)),
+                    iced::widget::row![
+                        Space::new().width(iced::Length::Fixed(anchor_x)),
+                        col,
+                    ],
+                ]
+                .width(Fill)
+                .height(Fill);
+                viewport_stack = viewport_stack.push(popup_layer);
+            }
+        }
+
         // Properties / layers panels carry no useful state on the Start tab.
         // Replace the properties panel with a Recent Documents list there.
         let properties_el: Element<'_, Message> = if tab.is_start {

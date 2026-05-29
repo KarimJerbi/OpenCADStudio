@@ -440,7 +440,121 @@ impl TruckConvertible for LwPolyline {
     }
 }
 
-crate::impl_entity_basics!(LwPolyline);
+impl crate::entities::traits::Grippable for LwPolyline {
+    fn grips(&self) -> Vec<crate::scene::object::GripDef> {
+        grips(self)
+    }
+    fn apply_grip(
+        &mut self,
+        grip_id: usize,
+        apply: crate::scene::object::GripApply,
+    ) {
+        apply_grip(self, grip_id, apply);
+    }
+    fn grip_menu(
+        &self,
+        grip_id: usize,
+    ) -> Vec<crate::scene::object::GripMenuItem> {
+        use crate::scene::object::{GripMenuAction, GripMenuItem};
+        let n = self.vertices.len();
+        if grip_id < n {
+            // Vertex grip.
+            return vec![
+                GripMenuItem { label: "Stretch", action: GripMenuAction::Stretch },
+                GripMenuItem { label: "Add Vertex", action: GripMenuAction::AddVertex },
+                GripMenuItem { label: "Remove Vertex", action: GripMenuAction::RemoveVertex },
+            ];
+        }
+        // Segment midpoint grip.
+        let seg = grip_id - n;
+        let is_arc = self
+            .vertices
+            .get(seg)
+            .map_or(false, |v| v.bulge.abs() >= 1e-9);
+        let convert = if is_arc {
+            GripMenuItem { label: "Convert to Line", action: GripMenuAction::ConvertToLine }
+        } else {
+            GripMenuItem { label: "Convert to Arc", action: GripMenuAction::ConvertToArc }
+        };
+        vec![
+            GripMenuItem { label: "Stretch", action: GripMenuAction::Stretch },
+            GripMenuItem { label: "Add Vertex", action: GripMenuAction::AddVertex },
+            convert,
+        ]
+    }
+    fn apply_grip_menu(
+        &mut self,
+        grip_id: usize,
+        action: crate::scene::object::GripMenuAction,
+    ) {
+        use crate::scene::object::GripMenuAction as A;
+        let n = self.vertices.len();
+        match action {
+            A::Stretch => {}
+            A::AddVertex => {
+                // Insert a new vertex at the chord midpoint between the
+                // hovered vertex (or segment) and its neighbour. The new
+                // vertex inherits the previous vertex's bulge so an
+                // existing arc is split into two arcs of the same chord.
+                let (i0, i1) = if grip_id < n {
+                    let i0 = grip_id;
+                    let i1 = (grip_id + 1) % n;
+                    (i0, i1)
+                } else {
+                    let seg = grip_id - n;
+                    (seg, (seg + 1) % n)
+                };
+                if i1 == 0 && !self.is_closed {
+                    return;
+                }
+                let v0 = &self.vertices[i0];
+                let v1 = &self.vertices[i1];
+                let mx = (v0.location.x + v1.location.x) * 0.5;
+                let my = (v0.location.y + v1.location.y) * 0.5;
+                let inherited = v0.clone();
+                let mut new_v = inherited.clone();
+                new_v.location.x = mx;
+                new_v.location.y = my;
+                let insert_at = (i0 + 1).min(self.vertices.len());
+                self.vertices.insert(insert_at, new_v);
+            }
+            A::RemoveVertex if grip_id < n && self.vertices.len() > 2 => {
+                self.vertices.remove(grip_id);
+            }
+            A::ConvertToArc if grip_id >= n => {
+                if let Some(v) = self.vertices.get_mut(grip_id - n) {
+                    if v.bulge.abs() < 1e-9 {
+                        v.bulge = 0.5;
+                    }
+                }
+            }
+            A::ConvertToLine if grip_id >= n => {
+                if let Some(v) = self.vertices.get_mut(grip_id - n) {
+                    v.bulge = 0.0;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl crate::entities::traits::PropertyEditable for LwPolyline {
+    fn geometry_properties(
+        &self,
+        _text_style_names: &[String],
+    ) -> crate::scene::object::PropSection {
+        properties(self)
+    }
+    fn apply_geom_prop(&mut self, field: &str, value: &str) {
+        apply_geom_prop(self, field, value);
+    }
+}
+
+impl crate::entities::traits::Transformable for LwPolyline {
+    fn apply_transform(&mut self, t: &crate::command::EntityTransform) {
+        apply_transform(self, t);
+    }
+}
 
 pub(crate) fn wide_fills(pl: &acadrust::entities::LwPolyline) -> Vec<Vec<[f32; 2]>> {
     let hw_const = (pl.constant_width / 2.0) as f32;

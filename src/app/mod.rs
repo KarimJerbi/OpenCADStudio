@@ -23,6 +23,26 @@ pub struct TileDrag {
     pub orient: TileEdgeOrient,
     pub last_applied: f32,
 }
+
+/// Cursor dwelling over a grip. When `started.elapsed() >=` the popup
+/// threshold the multi-functional menu opens (`grip_popup`).
+#[derive(Clone, Debug)]
+pub struct GripHover {
+    pub handle: acadrust::Handle,
+    pub grip_id: usize,
+    pub screen: iced::Point,
+    pub started: std::time::Instant,
+}
+
+/// Open multi-functional-grip popup state.
+#[derive(Clone, Debug)]
+pub struct GripPopup {
+    pub handle: acadrust::Handle,
+    pub grip_id: usize,
+    pub anchor: iced::Point,
+    pub items: Vec<crate::scene::object::GripMenuItem>,
+    pub selected: usize,
+}
 use crate::snap::Snapper;
 use crate::ui::{AppMenu, CommandLine, Ribbon, StatusBar};
 use acadrust::types::{Color as AcadColor, LineWeight};
@@ -94,6 +114,14 @@ pub(super) struct OpenCADStudio {
     /// reverting to the command-default when `has_base` flips. Cleared
     /// on point commit / command start. See #35.
     dyn_user_reshaped: bool,
+    /// Grip the cursor is currently dwelling on. Set when the cursor
+    /// stops within `GRIP_THRESHOLD_PX` of a grip; cleared when it
+    /// drifts away. The instant lets `ViewportMove` detect when the
+    /// dwell crosses the popup-open threshold.
+    grip_hover: Option<GripHover>,
+    /// Open multi-functional grip popup. Persists across mouse moves
+    /// until dismissed (click outside, ESC, cursor leaves the grip).
+    grip_popup: Option<GripPopup>,
     /// Show the UCS icon in the bottom-left corner of model space (UCSICON).
     show_ucs_icon: bool,
     /// Whether the ViewCube 3D gizmo is visible in model space (NAVVCUBE).
@@ -422,6 +450,9 @@ pub enum Message {
     ViewportScroll(mouse::ScrollDelta),
     ViewportExit,
     ViewCubeSnap(CubeRegion),
+    /// User picked an item in the multi-functional grip popup menu —
+    /// the index is into `grip_popup.items`.
+    GripMenuPick(usize),
     WindowResized(f32, f32),
     /// Enter pressed globally — finalises the active command (no text-input involvement).
     CommandFinalize,
@@ -770,6 +801,8 @@ impl OpenCADStudio {
             awaiting_vports: false,
             tile_drag: None,
             dyn_user_reshaped: false,
+            grip_hover: None,
+            grip_popup: None,
             show_ucs_icon: true,
             show_viewcube: true,
             show_properties: true,

@@ -2,7 +2,9 @@ use acadrust::{CadDocument, EntityType};
 
 use crate::command::EntityTransform;
 use crate::scene::acad_to_truck::TruckEntity;
-use crate::scene::object::{GripApply, GripDef, PropSection};
+use crate::scene::object::{
+    GripApply, GripDef, GripMenuAction, GripMenuItem, PropSection,
+};
 use crate::scene::tess_util::FallbackGeometry;
 
 pub trait TruckConvertible {
@@ -20,6 +22,19 @@ pub trait FallbackTess {
 pub trait Grippable {
     fn grips(&self) -> Vec<GripDef>;
     fn apply_grip(&mut self, grip_id: usize, apply: GripApply);
+    /// Items shown in the hover popup that opens when the cursor
+    /// dwells on a grip. Default is a single `Stretch` entry — i.e.
+    /// the popup just confirms the default drag behaviour. Override
+    /// per entity to add Add Vertex / Convert to Arc / Reverse Arrows /
+    /// etc.
+    fn grip_menu(&self, _grip_id: usize) -> Vec<GripMenuItem> {
+        vec![GripMenuItem { label: "Stretch", action: GripMenuAction::Stretch }]
+    }
+    /// React to a popup-menu commit. Default no-op — `Stretch` is the
+    /// "do nothing extra" path, the normal drag still happens on click.
+    /// Entities override this to mutate themselves when the user picks
+    /// Add Vertex / Remove Vertex / Convert / Reverse / …
+    fn apply_grip_menu(&mut self, _grip_id: usize, _action: GripMenuAction) {}
 }
 
 pub trait PropertyEditable {
@@ -58,9 +73,11 @@ pub trait TextContent {
 pub trait EntityTypeOps {
     fn to_truck_entity(&self, document: &CadDocument) -> Option<TruckEntity>;
     fn grips(&self) -> Vec<GripDef>;
+    fn grip_menu(&self, grip_id: usize) -> Vec<GripMenuItem>;
     fn geometry_properties(&self, text_style_names: &[String]) -> Option<PropSection>;
     fn apply_geom_prop(&mut self, field: &str, value: &str);
     fn apply_grip(&mut self, grip_id: usize, apply: GripApply);
+    fn apply_grip_menu(&mut self, grip_id: usize, action: GripMenuAction);
     fn apply_transform(&mut self, t: &EntityTransform);
     fn mass_props(&self) -> Option<MassProps>;
     fn text_content(&self) -> Option<String>;
@@ -225,6 +242,38 @@ impl EntityTypeOps for EntityType {
     fn apply_grip(&mut self, grip_id: usize, apply: GripApply) {
         dispatch!(self,
             |e| Grippable::apply_grip(e, grip_id, apply),
+            [
+                Line, Circle, Arc, Ellipse, LwPolyline, Polyline, Polyline2D,
+                Polyline3D, Ray, XLine, RasterImage, Wipeout,
+                AttributeDefinition, AttributeEntity, MLine, Tolerance,
+                Solid, Solid3D, Region, Body, Face3D, PolygonMesh,
+                PolyfaceMesh, Mesh, Table, Point, Spline, Text, MText,
+                Viewport, Insert, Leader, MultiLeader, Dimension, Hatch,
+                Underlay, Shape, Ole2Frame,
+            ],
+            _ => {},
+        )
+    }
+
+    fn grip_menu(&self, grip_id: usize) -> Vec<GripMenuItem> {
+        dispatch!(self,
+            |e| Grippable::grip_menu(e, grip_id),
+            [
+                Line, Circle, Arc, Ellipse, LwPolyline, Polyline, Polyline2D,
+                Polyline3D, Ray, XLine, RasterImage, Wipeout,
+                AttributeDefinition, AttributeEntity, MLine, Tolerance,
+                Solid, Solid3D, Region, Body, Face3D, PolygonMesh,
+                PolyfaceMesh, Mesh, Table, Point, Spline, Text, MText,
+                Viewport, Insert, Leader, MultiLeader, Dimension, Hatch,
+                Underlay, Shape, Ole2Frame,
+            ],
+            _ => vec![],
+        )
+    }
+
+    fn apply_grip_menu(&mut self, grip_id: usize, action: GripMenuAction) {
+        dispatch!(self,
+            |e| Grippable::apply_grip_menu(e, grip_id, action),
             [
                 Line, Circle, Arc, Ellipse, LwPolyline, Polyline, Polyline2D,
                 Polyline3D, Ray, XLine, RasterImage, Wipeout,

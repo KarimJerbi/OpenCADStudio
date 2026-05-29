@@ -1766,6 +1766,11 @@ impl OpenCADStudio {
                     VIEWCUBE_PX,
                 ));
 
+                // Multi-functional grip hover: detect cursor sitting on a
+                // selected entity's grip and, after a dwell, open the
+                // popup menu. See scene::object::GripMenuItem.
+                self.update_grip_hover(i, p);
+
                 let mut sel = self.tabs[i].scene.selection.borrow_mut();
                 sel.last_move_pos = Some(p);
 
@@ -2269,6 +2274,8 @@ impl OpenCADStudio {
                                 origin_world: world,
                                 last_world: world,
                             });
+                            self.grip_hover = None;
+                            self.grip_popup = None;
                             return Task::none();
                         }
                     }
@@ -3057,6 +3064,38 @@ impl OpenCADStudio {
                 self.tabs[i].scene.camera_generation += 1;
                 self.command_line
                     .push_output(&format!("View: {}", region.label()));
+                Task::none()
+            }
+
+            Message::GripMenuPick(idx) => {
+                let i = self.active_tab;
+                let Some(popup) = self.grip_popup.take() else {
+                    return Task::none();
+                };
+                self.grip_hover = None;
+                let Some(item) = popup.items.get(idx).cloned() else {
+                    return Task::none();
+                };
+                use crate::entities::traits::EntityTypeOps;
+                use crate::scene::object::GripMenuAction;
+                if matches!(item.action, GripMenuAction::Stretch) {
+                    // Default action: nothing — user can click the grip
+                    // to start the normal drag.
+                    return Task::none();
+                }
+                self.push_undo_snapshot(i, item.label);
+                if let Some(entity) = self
+                    .tabs[i]
+                    .scene
+                    .document
+                    .get_entity_mut(popup.handle)
+                {
+                    entity.apply_grip_menu(popup.grip_id, item.action);
+                }
+                self.tabs[i].scene.bump_geometry();
+                self.tabs[i].dirty = true;
+                self.refresh_selected_grips();
+                self.refresh_properties();
                 Task::none()
             }
 
@@ -5466,6 +5505,108 @@ impl OpenCADStudio {
         if !current_is_acceptable {
             self.tabs[i].dyn_fields = default.into_iter().map(DynFieldEntry::new).collect();
             self.tabs[i].dyn_active = 0;
+        }
+    }
+
+    /// Track cursor dwell over a selected entity's grip. Sets
+    /// `grip_hover` while the cursor sits within `GRIP_THRESHOLD_PX` of
+    /// a grip and opens `grip_popup` once the dwell exceeds the
+    /// threshold. Cursor drift clears both.
+    fn update_grip_hover(&mut self, i: usize, p: iced::Point) {
+        const HOVER_OPEN_MS: u128 = 600;
+        const POPUP_DISMISS_PX: f32 = 80.0;
+        if self.tabs[i].active_cmd.is_some()
+            || self.tabs[i].active_grip.is_some()
+            || self.tabs[i].selected_grips.is_empty()
+        {
+            self.grip_hover = None;
+            self.grip_popup = None;
+            return;
+        }
+        let Some(handle) = self.tabs[i].selected_handle else {
+            self.grip_hover = None;
+            self.grip_popup = None;
+            return;
+        };
+        let (vw, vh) = self.tabs[i].scene.selection.borrow().vp_size;
+        let bounds = iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: vw,
+            height: vh,
+        };
+        let is_paper = self.tabs[i].scene.current_layout != "Model";
+        let hit = if is_paper {
+            let cam = self.tabs[i].scene.camera.borrow();
+            let aspect = if vh > 0.0 { vw / vh } else { 1.0 };
+            let half_h = cam.ortho_size();
+            let half_w = half_h * aspect;
+            let tx = cam.target.x;
+            let ty = cam.target.y;
+            drop(cam);
+            find_hit_grip_paper(
+                p,
+                &self.tabs[i].selected_grips,
+                tx,
+                ty,
+                half_w,
+                half_h,
+                bounds,
+            )
+        } else {
+            let vp_mat = self.tabs[i].scene.camera.borrow().view_proj(bounds);
+            find_hit_grip(p, &self.tabs[i].selected_grips, vp_mat, bounds)
+        };
+        match hit {
+            Some((grip_id, _, _)) => {
+                let same = self
+                    .grip_hover
+                    .as_ref()
+                    .map_or(false, |h| h.handle == handle && h.grip_id == grip_id);
+                if !same {
+                    self.grip_hover = Some(super::GripHover {
+                        handle,
+                        grip_id,
+                        screen: p,
+                        started: std::time::Instant::now(),
+                    });
+                    self.grip_popup = None;
+                } else if let Some(h) = self.grip_hover.as_mut() {
+                    h.screen = p;
+                }
+                // Open popup once dwell crosses the threshold.
+                if self.grip_popup.is_none()
+                    && self
+                        .grip_hover
+                        .as_ref()
+                        .map_or(false, |h| h.started.elapsed().as_millis() >= HOVER_OPEN_MS)
+                {
+                    let entity_opt = self.tabs[i].scene.document.get_entity(handle);
+                    if let Some(e) = entity_opt {
+                        use crate::entities::traits::EntityTypeOps;
+                        let items = e.grip_menu(grip_id);
+                        if !items.is_empty() {
+                            self.grip_popup = Some(super::GripPopup {
+                                handle,
+                                grip_id,
+                                anchor: p,
+                                items,
+                                selected: 0,
+                            });
+                        }
+                    }
+                }
+            }
+            None => {
+                self.grip_hover = None;
+                if let Some(popup) = &self.grip_popup {
+                    let dx = p.x - popup.anchor.x;
+                    let dy = p.y - popup.anchor.y;
+                    if (dx * dx + dy * dy).sqrt() > POPUP_DISMISS_PX {
+                        self.grip_popup = None;
+                    }
+                }
+            }
         }
     }
 
