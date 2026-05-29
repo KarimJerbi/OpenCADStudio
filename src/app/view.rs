@@ -689,8 +689,6 @@ impl OpenCADStudio {
         // as a single widget instead of stacked tiles.
         if let Some(popup) = self.grip_popup.as_ref() {
             if !tab.is_start {
-                let anchor_x = (popup.anchor.x + 12.0).max(0.0);
-                let anchor_y = (popup.anchor.y + 12.0).max(0.0);
                 // Size the row to the widest label so the selection
                 // highlight fills the whole row instead of just the
                 // text glyphs. ~7 px per character at size 12 + the
@@ -759,16 +757,32 @@ impl OpenCADStudio {
                         },
                         ..Default::default()
                     });
-                let popup_layer = iced::widget::column![
-                    Space::new().height(iced::Length::Fixed(anchor_y)),
-                    iced::widget::row![
-                        Space::new().width(iced::Length::Fixed(anchor_x)),
-                        iced::widget::opaque(menu_panel),
-                    ],
-                ]
-                .width(Fill)
-                .height(Fill);
-                viewport_stack = viewport_stack.push(popup_layer);
+                // Offset the menu by 12 px so the cursor doesn't land on
+                // the first item immediately, matching the right-click
+                // context menu's "panel below the click point" feel.
+                let anchor = iced::Point::new(popup.anchor.x + 12.0, popup.anchor.y + 12.0);
+                viewport_stack = viewport_stack.push(position_canvas_overlay(anchor, menu_panel.into()));
+            }
+        }
+
+        // Right-click context menu. Lives inside the viewport stack so
+        // the cursor position (canvas-relative) anchors the menu under
+        // the cursor instead of drifting into window-relative space.
+        if !tab.is_start {
+            let ctx_pos = tab.scene.selection.borrow().context_menu;
+            if let Some(p) = ctx_pos {
+                let has_cmd = tab.active_cmd.is_some();
+                let has_selection = !tab.scene.selected.is_empty();
+                let last_cmds: Vec<String> = self
+                    .command_line
+                    .cmd_recall
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .cloned()
+                    .collect();
+                viewport_stack = viewport_stack
+                    .push(viewport_context_menu_overlay(p, has_cmd, has_selection, last_cmds));
             }
         }
 
@@ -896,26 +910,6 @@ impl OpenCADStudio {
             iced::widget::Space::new().width(0).height(0).into()
         };
 
-        // ── Viewport right-click context menu ─────────────────────────────
-        let viewport_ctx_layer: Element<'_, Message> = {
-            let ctx_pos = tab.scene.selection.borrow().context_menu;
-            if let Some(p) = ctx_pos {
-                let has_cmd = tab.active_cmd.is_some();
-                let has_selection = !tab.scene.selected.is_empty();
-                let last_cmds: Vec<String> = self
-                    .command_line
-                    .cmd_recall
-                    .iter()
-                    .rev()
-                    .take(3)
-                    .cloned()
-                    .collect();
-                viewport_context_menu_overlay(p, has_cmd, has_selection, last_cmds)
-            } else {
-                iced::widget::Space::new().width(0).height(0).into()
-            }
-        };
-
         let open_progress_layer: Element<'_, Message> = if let Some(p) = &self.opening {
             crate::ui::open_progress::view(p, iced::time::Instant::now())
         } else {
@@ -929,7 +923,6 @@ impl OpenCADStudio {
             scale_layer,
             dropdown_layer,
             layout_ctx_layer,
-            viewport_ctx_layer,
             open_progress_layer,
         ]
         .into()
@@ -1263,6 +1256,34 @@ pub(super) fn doc_tab_bar<'a>(tabs: &'a [DocumentTab], active_tab: usize) -> Ele
 
 // ── Layout context-menu overlay ────────────────────────────────────────────
 
+// ── Canvas-relative overlay positioning ────────────────────────────────────
+
+/// Wraps `panel` in a column+row of `Space` widgets so it sits at
+/// canvas-relative coordinates `(anchor.x, anchor.y)`. `panel` is wrapped
+/// in `iced::widget::opaque` so mouse events on the panel itself do not
+/// fall through to the viewport mouse area underneath; outside-click
+/// dismissal is the caller's responsibility (handled via `ViewportLeftPress`
+/// in `update.rs`, identical to how the multi-functional grip popup is
+/// dismissed). Pushed into `viewport_stack` so the anchor is interpreted
+/// in canvas-relative space, not window-relative.
+fn position_canvas_overlay<'a>(
+    anchor: iced::Point,
+    panel: Element<'a, Message>,
+) -> Element<'a, Message> {
+    let ax = anchor.x.max(0.0);
+    let ay = anchor.y.max(0.0);
+    column![
+        Space::new().height(iced::Length::Fixed(ay)),
+        row![
+            Space::new().width(iced::Length::Fixed(ax)),
+            iced::widget::opaque(panel),
+        ],
+    ]
+    .width(Fill)
+    .height(Fill)
+    .into()
+}
+
 // ── Viewport right-click context menu ──────────────────────────────────────
 
 fn viewport_context_menu_overlay(
@@ -1374,7 +1395,7 @@ fn viewport_context_menu_overlay(
         ));
     }
 
-    let menu_col = column(items).spacing(0).width(180);
+    let menu_col = column(items).spacing(0).width(iced::Length::Fixed(180.0));
 
     let menu = container(menu_col)
         .style(move |_: &Theme| container::Style {
@@ -1386,22 +1407,10 @@ fn viewport_context_menu_overlay(
             },
             ..Default::default()
         })
-        .padding([4, 0]);
+        .padding([4, 0])
+        .width(iced::Length::Fixed(180.0));
 
-    // Click-catcher to close the menu when clicking outside.
-    let catcher = mouse_area(container(Space::new()).width(Fill).height(Fill))
-        .on_press(Message::ViewportContextMenuClose)
-        .on_right_press(Message::ViewportContextMenuClose);
-
-    // Position using top/left spacing.
-    let positioned = column![
-        Space::new().height(pos.y),
-        row![Space::new().width(pos.x), menu],
-    ]
-    .width(Fill)
-    .height(Fill);
-
-    stack![catcher, positioned].into()
+    position_canvas_overlay(pos, menu.into())
 }
 
 /// A small right-click context menu rendered above the status bar.

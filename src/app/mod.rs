@@ -627,8 +627,6 @@ pub enum Message {
     // ── About window ────────────────────────────────────────────────────
     AboutOpen,
     AboutCopyInfo,
-    /// Close the viewport right-click context menu without performing any action.
-    ViewportContextMenuClose,
     /// The user clicked the title-bar ✕ (fires before the window closes).
     WindowCloseRequested(window::Id),
     /// A window was fully closed (fires after `window::close()` is called).

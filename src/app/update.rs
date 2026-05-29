@@ -1888,7 +1888,11 @@ impl OpenCADStudio {
                     if let Some(press) = sel.right_press_pos {
                         let dx = p.x - press.x;
                         let dy = p.y - press.y;
-                        if !sel.right_dragging && (dx * dx + dy * dy) > 9.0 {
+                        // 8 px (64 squared) threshold so normal hand jitter
+                        // between a right-button press and release doesn't
+                        // promote a click-and-release to an orbit drag, which
+                        // would suppress the context menu on release.
+                        if !sel.right_dragging && (dx * dx + dy * dy) > 64.0 {
                             sel.right_dragging = true;
                             sel.context_menu = None;
                         }
@@ -2238,7 +2242,11 @@ impl OpenCADStudio {
                 sel.poly_active = false;
                 sel.poly_points.clear();
                 sel.poly_crossing = false;
-                sel.context_menu = None;
+                // Don't touch `context_menu` here. ViewportExit also fires
+                // when an upper overlay (the right-click menu panel) takes
+                // the cursor, so clearing the menu state on every exit
+                // would close the menu the moment it opens. Outside-click
+                // dismiss is handled in `ViewportLeftPress`.
                 Task::none()
             }
 
@@ -2251,6 +2259,15 @@ impl OpenCADStudio {
                 if self.grip_popup.take().is_some() {
                     self.grip_hover = None;
                     return Task::none();
+                }
+                // Same dismiss-on-outside-click for the right-click
+                // context menu: its panel is opaque, so a press that
+                // reaches here is outside the menu.
+                {
+                    let mut sel = self.tabs[i].scene.selection.borrow_mut();
+                    if sel.context_menu.take().is_some() {
+                        return Task::none();
+                    }
                 }
                 let (p, vp_size) = {
                     let sel = self.tabs[i].scene.selection.borrow();
@@ -2368,7 +2385,6 @@ impl OpenCADStudio {
                 }
 
                 let mut sel = self.tabs[i].scene.selection.borrow_mut();
-                sel.context_menu = None;
                 sel.left_down = true;
                 // Stored in full-canvas space (like ViewportMove's cursor and
                 // the overlay box / lasso drawing); release maps it into the
@@ -4148,12 +4164,6 @@ impl OpenCADStudio {
                     std::env::consts::ARCH,
                 );
                 iced::clipboard::write(info)
-            }
-
-            Message::ViewportContextMenuClose => {
-                let i = self.active_tab;
-                self.tabs[i].scene.selection.borrow_mut().context_menu = None;
-                Task::none()
             }
 
             Message::EnterViewport(handle) => {
