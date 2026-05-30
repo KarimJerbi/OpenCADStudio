@@ -111,6 +111,9 @@ pub struct MTextEditorState {
     pub rect_width: f64,
     /// `Some` when editing an existing entity; `None` for a fresh MText.
     pub editing: Option<Handle>,
+    /// When true the panel shows the rendered preview; when false the raw
+    /// code/text input. Toggled so the two never stack.
+    pub show_preview: bool,
     /// Canvas-space anchor where the toolbar + text area are drawn (the
     /// insertion-point click position).
     pub screen_anchor: iced::Point,
@@ -132,6 +135,7 @@ impl MTextEditorState {
             width: "1".to_string(),
             char_space: "0".to_string(),
             preview_wires: Vec::new(),
+            show_preview: false,
             attachment: AttachmentPoint::TopLeft,
             line_spacing: 1.0,
             // Default box ~20 characters wide; overwritten with the entity's

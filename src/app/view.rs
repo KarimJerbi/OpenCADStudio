@@ -1345,9 +1345,19 @@ const MTEXT_COLORS: [(&str, u16); 8] = [
 /// Canvas program that renders the tessellated MText strokes inside the
 /// editor's own preview area (never on the drawing). Strokes lie in the
 /// world XY plane; the program fits + vertically flips them into the box.
+const MTEXT_PREVIEW_PAD: f32 = 12.0;
+/// Screen pixels per world unit of text height — fixes the preview to the
+/// real text size (so it scrolls rather than shrinking to fit).
+const MTEXT_PREVIEW_PX_PER_UNIT: f32 = 10.0;
+
 struct MTextPreview {
     /// Disconnected polylines as (x, y) world points (NaN-split already done).
     segments: Vec<Vec<(f32, f32)>>,
+    /// World-space min corner (bbox) and pixels-per-world-unit scale.
+    minx: f32,
+    miny: f32,
+    scale: f32,
+    content_h: f32,
 }
 
 impl iced::widget::canvas::Program<Message> for MTextPreview {
@@ -1362,30 +1372,13 @@ impl iced::widget::canvas::Program<Message> for MTextPreview {
     ) -> Vec<iced::widget::canvas::Geometry> {
         use iced::widget::canvas::{Frame, Path, Stroke};
         let mut frame = Frame::new(renderer, bounds.size());
-        let (mut minx, mut miny, mut maxx, mut maxy) =
-            (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-        for seg in &self.segments {
-            for &(x, y) in seg {
-                minx = minx.min(x);
-                miny = miny.min(y);
-                maxx = maxx.max(x);
-                maxy = maxy.max(y);
-            }
-        }
-        if minx > maxx {
-            return vec![frame.into_geometry()];
-        }
-        let pad = 10.0_f32;
-        let w = (maxx - minx).max(1e-4);
-        let h = (maxy - miny).max(1e-4);
-        let s = ((bounds.width - 2.0 * pad) / w)
-            .min((bounds.height - 2.0 * pad) / h)
-            .max(0.0);
-        let ox = pad + (bounds.width - 2.0 * pad - w * s) * 0.5;
-        let oy = pad + (bounds.height - 2.0 * pad - h * s) * 0.5;
-        // Flip Y: world up → screen down.
+        let pad = MTEXT_PREVIEW_PAD;
+        // Draw at the real size; flip Y (world up → screen down).
         let map = |x: f32, y: f32| {
-            iced::Point::new(ox + (x - minx) * s, bounds.height - (oy + (y - miny) * s))
+            iced::Point::new(
+                pad + (x - self.minx) * self.scale,
+                self.content_h - (pad + (y - self.miny) * self.scale),
+            )
         };
         for seg in &self.segments {
             if seg.len() < 2 {
@@ -1557,6 +1550,11 @@ fn mtext_editor_overlay<'a>(
         button(lbl("1")).on_press(Message::MTextLineSpacing(1.0)).padding(3).style(btn_style),
         button(lbl("1.5")).on_press(Message::MTextLineSpacing(1.5)).padding(3).style(btn_style),
         button(lbl("2")).on_press(Message::MTextLineSpacing(2.0)).padding(3).style(btn_style),
+        iced::widget::Space::new().width(6),
+        button(lbl(if ed.show_preview { "Code" } else { "Preview" }))
+            .on_press(Message::MTextTogglePreview)
+            .padding(3)
+            .style(btn_style),
         iced::widget::Space::new().width(Fill),
         icon_btn(include_bytes!("../../assets/icons/mt_ok.svg"), Message::MTextOk),
         icon_btn(include_bytes!("../../assets/icons/mt_cancel.svg"), Message::MTextCancel),
@@ -1564,28 +1562,49 @@ fn mtext_editor_overlay<'a>(
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
-    // ── Dedicated preview area (rendered MText) ──────────────────────────
-    let preview = container(
-        canvas(MTextPreview { segments: mtext_preview_segments(ed) })
+    // ── Body: toggles between raw code input and rendered preview ────────
+    const VIEW_H: f32 = 150.0;
+    let body: Element<'a, Message> = if ed.show_preview {
+        let segments = mtext_preview_segments(ed);
+        let (mut minx, mut miny, mut maxx, mut maxy) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for seg in &segments {
+            for &(x, y) in seg {
+                minx = minx.min(x);
+                miny = miny.min(y);
+                maxx = maxx.max(x);
+                maxy = maxy.max(y);
+            }
+        }
+        let h_unit = ed.height_value() as f32;
+        // Real text size: fixed pixels per em so more/taller text grows the
+        // canvas (and scrolls) instead of shrinking to fit.
+        let scale = (22.0 / h_unit.max(1e-3)).clamp(2.0, 600.0);
+        let content_h = if maxx >= minx {
+            ((maxy - miny) * scale + 2.0 * MTEXT_PREVIEW_PAD).max(40.0)
+        } else {
+            40.0
+        };
+        let prog = MTextPreview { segments, minx, miny, scale, content_h };
+        let cv = canvas(prog).width(Fill).height(iced::Length::Fixed(content_h));
+        container(iced::widget::scrollable(cv).height(iced::Length::Fixed(VIEW_H)))
+            .style(move |_: &Theme| container::Style {
+                background: Some(Background::Color(FIELD_BG)),
+                border: Border { color: BORDER, width: 1.0, radius: 3.0.into() },
+                ..Default::default()
+            })
+            .padding(2)
             .width(Fill)
-            .height(iced::Length::Fixed(96.0)),
-    )
-    .style(move |_: &Theme| container::Style {
-        background: Some(Background::Color(FIELD_BG)),
-        border: Border { color: BORDER, width: 1.0, radius: 3.0.into() },
-        ..Default::default()
-    })
-    .padding(2)
-    .width(Fill);
+            .into()
+    } else {
+        text_editor(&ed.content)
+            .on_action(Message::MTextEdit)
+            .height(iced::Length::Fixed(VIEW_H))
+            .padding(6)
+            .size(13)
+            .into()
+    };
 
-    // ── Raw text + inline-code input ─────────────────────────────────────
-    let editor = text_editor(&ed.content)
-        .on_action(Message::MTextEdit)
-        .height(iced::Length::Fixed(72.0))
-        .padding(6)
-        .size(13);
-
-    let panel = container(column![row1, row2, preview, editor].spacing(5))
+    let panel = container(column![row1, row2, body].spacing(5))
         .style(move |_: &Theme| container::Style {
             background: Some(Background::Color(PANEL_BG)),
             border: Border { color: BORDER, width: 1.0, radius: 5.0.into() },
