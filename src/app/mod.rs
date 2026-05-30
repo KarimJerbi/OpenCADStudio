@@ -737,8 +737,9 @@ pub enum Message {
     MTextAlign(mtext_editor::ParaAlign),
     /// Toolbar line-spacing change.
     MTextLineSpacing(f32),
-    /// Toggle the editor between the raw code input and the rendered preview.
-    MTextTogglePreview,
+    /// Switch the editor body between raw code input (`false`) and the
+    /// rendered preview (`true`).
+    MTextShowPreview(bool),
     /// Commit the editor: create or update the MText entity.
     MTextOk,
     /// Discard the editor without creating / changing the entity.

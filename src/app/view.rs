@@ -1550,17 +1550,43 @@ fn mtext_editor_overlay<'a>(
         button(lbl("1")).on_press(Message::MTextLineSpacing(1.0)).padding(3).style(btn_style),
         button(lbl("1.5")).on_press(Message::MTextLineSpacing(1.5)).padding(3).style(btn_style),
         button(lbl("2")).on_press(Message::MTextLineSpacing(2.0)).padding(3).style(btn_style),
-        iced::widget::Space::new().width(6),
-        button(lbl(if ed.show_preview { "Code" } else { "Preview" }))
-            .on_press(Message::MTextTogglePreview)
-            .padding(3)
-            .style(btn_style),
         iced::widget::Space::new().width(Fill),
         icon_btn(include_bytes!("../../assets/icons/mt_ok.svg"), Message::MTextOk),
         icon_btn(include_bytes!("../../assets/icons/mt_cancel.svg"), Message::MTextCancel),
     ]
     .spacing(4)
     .align_y(iced::Alignment::Center);
+
+    // ── Segmented Edit | Preview toggle (between toolbar and body) ────────
+    let seg_btn = move |label: &'static str, active: bool, on: Message| -> Element<'static, Message> {
+        button(text(label).size(12).color(if active {
+            Color::WHITE
+        } else {
+            Color { r: 0.80, g: 0.80, b: 0.80, a: 1.0 }
+        }))
+        .on_press(on)
+        .padding([4, 14])
+        .style(move |_: &Theme, _| button::Style {
+            background: Some(Background::Color(if active {
+                Color { r: 0.20, g: 0.42, b: 0.72, a: 1.0 }
+            } else {
+                Color { r: 0.20, g: 0.20, b: 0.20, a: 1.0 }
+            })),
+            text_color: TEXT_COL,
+            border: Border { color: BORDER, width: 1.0, radius: 4.0.into() },
+            shadow: iced::Shadow::default(),
+            snap: false,
+        })
+        .into()
+    };
+    let toggle = container(
+        row![
+            seg_btn("Edit", !ed.show_preview, Message::MTextShowPreview(false)),
+            seg_btn("Preview", ed.show_preview, Message::MTextShowPreview(true)),
+        ]
+        .spacing(0),
+    )
+    .padding([6, 0]);
 
     // ── Body: toggles between raw code input and rendered preview ────────
     const VIEW_H: f32 = 150.0;
@@ -1604,7 +1630,7 @@ fn mtext_editor_overlay<'a>(
             .into()
     };
 
-    let panel = container(column![row1, row2, body].spacing(5))
+    let panel = container(column![row1, row2, toggle, body].spacing(5))
         .style(move |_: &Theme| container::Style {
             background: Some(Background::Color(PANEL_BG)),
             border: Border { color: BORDER, width: 1.0, radius: 5.0.into() },

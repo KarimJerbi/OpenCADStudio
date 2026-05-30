@@ -3539,9 +3539,9 @@ impl OpenCADStudio {
                 self.rebuild_mtext_preview();
                 Task::none()
             }
-            Message::MTextTogglePreview => {
+            Message::MTextShowPreview(on) => {
                 if let Some(ed) = self.mtext_editor.as_mut() {
-                    ed.show_preview = !ed.show_preview;
+                    ed.show_preview = on;
                 }
                 self.rebuild_mtext_preview();
                 Task::none()

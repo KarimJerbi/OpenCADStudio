@@ -135,7 +135,7 @@ impl MTextEditorState {
             width: "1".to_string(),
             char_space: "0".to_string(),
             preview_wires: Vec::new(),
-            show_preview: false,
+            show_preview: true,
             attachment: AttachmentPoint::TopLeft,
             line_spacing: 1.0,
             // Default box ~20 characters wide; overwritten with the entity's
