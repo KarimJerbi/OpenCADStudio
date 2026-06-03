@@ -315,6 +315,11 @@ pub(super) struct OpenCADStudio {
     /// Edit buffers for the table style's general margins.
     ts_hmargin: String,
     ts_vmargin: String,
+    /// Per-cell edit buffers, indexed 0=Data, 1=Header, 2=Title.
+    ts_cell_textstyle: [String; 3],
+    ts_cell_height: [String; 3],
+    ts_cell_textcolor: [String; 3],
+    ts_cell_fillcolor: [String; 3],
 
     // ── TextStyle Font Browser ────────────────────────────────────────────
     textstyle_selected: String,
@@ -1013,6 +1018,18 @@ pub enum Message {
     TableStyleEdit { field: &'static str, value: String },
     /// Write the general edit buffers back into the selected table style.
     TableStyleApply,
+    /// Update a per-cell edit buffer (row 0=Data,1=Header,2=Title).
+    TableStyleCellEdit {
+        row: u8,
+        field: &'static str,
+        value: String,
+    },
+    /// Toggle background fill on a cell style.
+    TableStyleCellToggleFill(u8),
+    /// Cycle the alignment of a cell style.
+    TableStyleCellCycleAlign(u8),
+    /// Write a cell's edit buffers back into the selected table style.
+    TableStyleCellApply(u8),
     // ── MLineStyle Dialog ─────────────────────────────────────────────────
     MlStyleDialogOpen,
     #[allow(dead_code)]
@@ -1202,6 +1219,10 @@ impl OpenCADStudio {
             tablestyle_selected: "Standard".to_string(),
             ts_hmargin: "1.5".to_string(),
             ts_vmargin: "1.5".to_string(),
+            ts_cell_textstyle: [String::new(), String::new(), String::new()],
+            ts_cell_height: [String::new(), String::new(), String::new()],
+            ts_cell_textcolor: [String::new(), String::new(), String::new()],
+            ts_cell_fillcolor: [String::new(), String::new(), String::new()],
             // MLineStyle dialog
             mlstyle_selected: "Standard".to_string(),
             // MLeaderStyle dialog

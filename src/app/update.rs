@@ -5724,6 +5724,7 @@ impl OpenCADStudio {
                         }
                     })
                     .unwrap_or_else(|| "Standard".to_string());
+                self.load_tablestyle_bufs(i);
                 if let Some(id) = self.tablestyle_window {
                     return window::gain_focus(id);
                 }
@@ -5744,17 +5745,9 @@ impl OpenCADStudio {
                 }
             }
             Message::TableStyleDialogSelect(name) => {
-                use acadrust::objects::ObjectType;
                 self.tablestyle_selected = name;
                 let i = self.active_tab;
-                for obj in self.tabs[i].scene.document.objects.values() {
-                    if let ObjectType::TableStyle(s) = obj {
-                        if s.name == self.tablestyle_selected {
-                            self.ts_hmargin = format!("{:.4}", s.horizontal_margin);
-                            self.ts_vmargin = format!("{:.4}", s.vertical_margin);
-                        }
-                    }
-                }
+                self.load_tablestyle_bufs(i);
                 Task::none()
             }
 
@@ -5787,6 +5780,87 @@ impl OpenCADStudio {
                     }
                 }
                 self.tabs[i].dirty = true;
+                Task::none()
+            }
+
+            Message::TableStyleCellEdit { row, field, value } => {
+                let r = row as usize;
+                if r < 3 {
+                    match field {
+                        "textstyle" => self.ts_cell_textstyle[r] = value,
+                        "height" => self.ts_cell_height[r] = value,
+                        "textcolor" => self.ts_cell_textcolor[r] = value,
+                        "fillcolor" => self.ts_cell_fillcolor[r] = value,
+                        _ => {}
+                    }
+                }
+                Task::none()
+            }
+
+            Message::TableStyleCellToggleFill(row) => {
+                let i = self.active_tab;
+                if let Some(s) = self.tablestyle_mut(i) {
+                    if let Some(c) = Self::ts_cell_of(s, row) {
+                        c.fill_enabled = !c.fill_enabled;
+                    }
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                    self.tabs[i].scene.bump_geometry();
+                }
+                Task::none()
+            }
+
+            Message::TableStyleCellCycleAlign(row) => {
+                use acadrust::objects::CellAlignment;
+                let i = self.active_tab;
+                if let Some(s) = self.tablestyle_mut(i) {
+                    if let Some(c) = Self::ts_cell_of(s, row) {
+                        c.alignment = match c.alignment {
+                            CellAlignment::TopLeft => CellAlignment::TopCenter,
+                            CellAlignment::TopCenter => CellAlignment::TopRight,
+                            CellAlignment::TopRight => CellAlignment::MiddleLeft,
+                            CellAlignment::MiddleLeft => CellAlignment::MiddleCenter,
+                            CellAlignment::MiddleCenter => CellAlignment::MiddleRight,
+                            CellAlignment::MiddleRight => CellAlignment::BottomLeft,
+                            CellAlignment::BottomLeft => CellAlignment::BottomCenter,
+                            CellAlignment::BottomCenter => CellAlignment::BottomRight,
+                            CellAlignment::BottomRight => CellAlignment::TopLeft,
+                        };
+                    }
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                    self.tabs[i].scene.bump_geometry();
+                }
+                Task::none()
+            }
+
+            Message::TableStyleCellApply(row) => {
+                let i = self.active_tab;
+                let r = row as usize;
+                if r >= 3 {
+                    return Task::none();
+                }
+                let ts = self.ts_cell_textstyle[r].trim().to_string();
+                let height: Option<f64> = self.ts_cell_height[r].trim().parse().ok();
+                let tc: Option<i16> = self.ts_cell_textcolor[r].trim().parse().ok();
+                let fc: Option<i16> = self.ts_cell_fillcolor[r].trim().parse().ok();
+                if let Some(c) = self.tablestyle_mut(i).and_then(|s| Self::ts_cell_of(s, row)) {
+                    if !ts.is_empty() {
+                        c.text_style_name = ts;
+                    }
+                    if let Some(h) = height {
+                        c.text_height = h;
+                    }
+                    if let Some(v) = tc {
+                        c.text_color = acadrust::types::Color::from_index(v);
+                    }
+                    if let Some(v) = fc {
+                        c.fill_color = acadrust::types::Color::from_index(v);
+                    }
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                    self.tabs[i].scene.bump_geometry();
+                }
                 Task::none()
             }
 
@@ -6842,6 +6916,65 @@ impl OpenCADStudio {
         // coordinate. See #32.
         self.refresh_active_cmd_preview(i);
         Some(task)
+    }
+
+    /// Mutable access to the currently selected table style.
+    fn tablestyle_mut(&mut self, tab: usize) -> Option<&mut acadrust::objects::TableStyle> {
+        use acadrust::objects::ObjectType;
+        let name = self.tablestyle_selected.clone();
+        self.tabs[tab]
+            .scene
+            .document
+            .objects
+            .values_mut()
+            .find_map(|o| match o {
+                ObjectType::TableStyle(s) if s.name == name => Some(s),
+                _ => None,
+            })
+    }
+
+    /// Mutable access to a table style's cell style by row (0=Data,1=Header,2=Title).
+    fn ts_cell_of(
+        s: &mut acadrust::objects::TableStyle,
+        row: u8,
+    ) -> Option<&mut acadrust::objects::RowCellStyle> {
+        match row {
+            0 => Some(&mut s.data_row_style),
+            1 => Some(&mut s.header_row_style),
+            2 => Some(&mut s.title_row_style),
+            _ => None,
+        }
+    }
+
+    /// Populate margin + per-cell edit buffers from the selected table style.
+    fn load_tablestyle_bufs(&mut self, tab: usize) {
+        use acadrust::objects::ObjectType;
+        let name = self.tablestyle_selected.clone();
+        let Some(s) = self.tabs[tab]
+            .scene
+            .document
+            .objects
+            .values()
+            .find_map(|o| match o {
+                ObjectType::TableStyle(s) if s.name == name => Some(s),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        self.ts_hmargin = format!("{:.4}", s.horizontal_margin);
+        self.ts_vmargin = format!("{:.4}", s.vertical_margin);
+        for (r, c) in [&s.data_row_style, &s.header_row_style, &s.title_row_style]
+            .into_iter()
+            .enumerate()
+        {
+            self.ts_cell_textstyle[r] = c.text_style_name.clone();
+            self.ts_cell_height[r] = format!("{:.4}", c.text_height);
+            self.ts_cell_textcolor[r] =
+                c.text_color.index().map(|v| v.to_string()).unwrap_or_default();
+            self.ts_cell_fillcolor[r] =
+                c.fill_color.index().map(|v| v.to_string()).unwrap_or_default();
+        }
     }
 
     /// Mutable access to the currently selected multileader style.

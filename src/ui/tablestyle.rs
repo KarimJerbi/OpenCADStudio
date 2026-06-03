@@ -131,6 +131,10 @@ pub fn view_window<'a>(
     selected_style: Option<&'a acadrust::objects::TableStyle>,
     hmargin_buf: &'a str,
     vmargin_buf: &'a str,
+    cell_textstyle: &'a [String; 3],
+    cell_height: &'a [String; 3],
+    cell_textcolor: &'a [String; 3],
+    cell_fillcolor: &'a [String; 3],
 ) -> Element<'a, Message> {
     // ── Toolbar ───────────────────────────────────────────────────────────
     let toolbar = container(
@@ -208,17 +212,56 @@ pub fn view_window<'a>(
         .into()
     };
 
-    let row_info =
-        |row_label: &'static str, rs: &acadrust::objects::RowCellStyle| -> Element<'_, Message> {
-            column![
-                text(row_label).size(11).color(ACCENT),
-                info_row("  Text Style:", rs.text_style_name.clone()),
-                info_row("  Text Height:", format!("{:.4}", rs.text_height)),
-                info_row("  Alignment:", format!("{:?}", rs.alignment)),
+    let cell_editor = |row_label: &'static str,
+                       row: u8,
+                       rs: &acadrust::objects::RowCellStyle|
+     -> Element<'a, Message> {
+        let r = row as usize;
+        let cell_in = |label: &'static str,
+                       placeholder: &'static str,
+                       value: &'a str,
+                       field: &'static str|
+         -> Element<'a, Message> {
+            row![
+                text(label).size(11).color(DIM).width(150),
+                text_input(placeholder, value)
+                    .on_input(move |v| Message::TableStyleCellEdit { row, field, value: v })
+                    .size(11)
+                    .width(100),
             ]
-            .spacing(3)
+            .spacing(8)
+            .align_y(iced::Center)
             .into()
         };
+        column![
+            text(row_label).size(11).color(ACCENT),
+            cell_in("  Text style:", "Standard", &cell_textstyle[r], "textstyle"),
+            cell_in("  Text height:", "0.18", &cell_height[r], "height"),
+            cell_in("  Text color (ACI):", "256", &cell_textcolor[r], "textcolor"),
+            cell_in("  Fill color (ACI):", "256", &cell_fillcolor[r], "fillcolor"),
+            row![
+                text("  Alignment:").size(11).color(DIM).width(150),
+                text(format!("{:?}", rs.alignment)).size(11).width(120),
+                button(text("Cycle").size(10))
+                    .on_press(Message::TableStyleCellCycleAlign(row))
+                    .style(btn_s(false))
+                    .padding([2, 8]),
+            ]
+            .spacing(8)
+            .align_y(iced::Center),
+            checkbox(rs.fill_enabled)
+                .label("  Background fill enabled")
+                .on_toggle(move |_| Message::TableStyleCellToggleFill(row))
+                .size(14)
+                .text_size(11),
+            button(text("Apply cell").size(11))
+                .on_press(Message::TableStyleCellApply(row))
+                .style(btn_s(true))
+                .padding([4, 12]),
+        ]
+        .spacing(3)
+        .into()
+    };
 
     let details: Element<'_, Message> = if let Some(s) = selected_style {
         scrollable(
@@ -261,9 +304,9 @@ pub fn view_window<'a>(
                     .on_press(Message::TableStyleApply)
                     .style(btn_s(true))
                     .padding([4, 12]),
-                row_info("Data Row:", &s.data_row_style),
-                row_info("Header Row:", &s.header_row_style),
-                row_info("Title Row:", &s.title_row_style),
+                cell_editor("Data Row:", 0, &s.data_row_style),
+                cell_editor("Header Row:", 1, &s.header_row_style),
+                cell_editor("Title Row:", 2, &s.title_row_style),
             ]
             .spacing(6)
             .padding([12, 12]),
