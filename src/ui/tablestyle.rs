@@ -2,7 +2,8 @@
 
 use crate::app::Message;
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, text, text_input, Space,
+    button, checkbox, column, container, pick_list, row, scrollable, text, text_input, Column,
+    Space,
 };
 use iced::{Background, Border, Color, Element, Fill, Theme};
 
@@ -133,10 +134,17 @@ pub fn view_window<'a>(
     selected_style: Option<&'a acadrust::objects::TableStyle>,
     hmargin_buf: &'a str,
     vmargin_buf: &'a str,
+    description_buf: &'a str,
     cell_textstyle: &'a [String; 3],
     cell_height: &'a [String; 3],
     cell_textcolor: &'a [String; 3],
     cell_fillcolor: &'a [String; 3],
+    cell_datatype: &'a [String; 3],
+    cell_unittype: &'a [String; 3],
+    cell_format: &'a [String; 3],
+    border_lw: &'a [[String; 6]; 3],
+    border_color: &'a [[String; 6]; 3],
+    border_spacing: &'a [[String; 6]; 3],
 ) -> Element<'a, Message> {
     // ── Toolbar ───────────────────────────────────────────────────────────
     let toolbar = container(
@@ -235,48 +243,99 @@ pub fn view_window<'a>(
             .align_y(iced::Center)
             .into()
         };
-        column![
-            text(row_label).size(11).color(ACCENT),
-            cell_in("  Text style:", "Standard", &cell_textstyle[r], "textstyle"),
-            cell_in("  Text height:", "0.18", &cell_height[r], "height"),
-            cell_in("  Text color (ACI):", "256", &cell_textcolor[r], "textcolor"),
-            cell_in("  Fill color (ACI):", "256", &cell_fillcolor[r], "fillcolor"),
-            row![
-                text("  Alignment:").size(11).color(DIM).width(150),
-                pick_list(
-                    [
-                        "TopLeft",
-                        "TopCenter",
-                        "TopRight",
-                        "MiddleLeft",
-                        "MiddleCenter",
-                        "MiddleRight",
-                        "BottomLeft",
-                        "BottomCenter",
-                        "BottomRight",
-                    ]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>(),
-                    Some(format!("{:?}", rs.alignment)),
-                    move |value| Message::TableStyleCellSetAlign { row, value },
-                )
-                .text_size(11)
-                .width(140),
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
-            checkbox(rs.fill_enabled)
-                .label("  Background fill enabled")
-                .on_toggle(move |_| Message::TableStyleCellToggleFill(row))
-                .size(14)
-                .text_size(11),
+        let mut col = Column::new()
+            .spacing(3)
+            .push(text(row_label).size(11).color(ACCENT))
+            .push(cell_in("  Text style:", "Standard", &cell_textstyle[r], "textstyle"))
+            .push(cell_in("  Text height:", "0.18", &cell_height[r], "height"))
+            .push(cell_in("  Text color (ACI):", "256", &cell_textcolor[r], "textcolor"))
+            .push(cell_in("  Fill color (ACI):", "256", &cell_fillcolor[r], "fillcolor"))
+            .push(
+                row![
+                    text("  Alignment:").size(11).color(DIM).width(150),
+                    pick_list(
+                        [
+                            "TopLeft",
+                            "TopCenter",
+                            "TopRight",
+                            "MiddleLeft",
+                            "MiddleCenter",
+                            "MiddleRight",
+                            "BottomLeft",
+                            "BottomCenter",
+                            "BottomRight",
+                        ]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>(),
+                        Some(format!("{:?}", rs.alignment)),
+                        move |value| Message::TableStyleCellSetAlign { row, value },
+                    )
+                    .text_size(11)
+                    .width(140),
+                ]
+                .spacing(8)
+                .align_y(iced::Center),
+            )
+            .push(
+                checkbox(rs.fill_enabled)
+                    .label("  Background fill enabled")
+                    .on_toggle(move |_| Message::TableStyleCellToggleFill(row))
+                    .size(14)
+                    .text_size(11),
+            )
+            .push(cell_in("  Data type:", "0", &cell_datatype[r], "datatype"))
+            .push(cell_in("  Unit type:", "0", &cell_unittype[r], "unittype"))
+            .push(cell_in("  Format string:", "", &cell_format[r], "format"))
+            .push(text("  Borders  (type / weight / color / spacing / hidden)").size(10).color(DIM));
+
+        let borders: [(&'static str, &acadrust::objects::TableCellBorder); 6] = [
+            ("L", &rs.left_border),
+            ("R", &rs.right_border),
+            ("T", &rs.top_border),
+            ("B", &rs.bottom_border),
+            ("H", &rs.horizontal_inside_border),
+            ("V", &rs.vertical_inside_border),
+        ];
+        for (b, (bname, bd)) in borders.into_iter().enumerate() {
+            let bu = b as u8;
+            col = col.push(
+                row![
+                    text(format!("   {bname}")).size(11).color(DIM).width(28),
+                    pick_list(
+                        ["Single", "Double"].iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                        Some(format!("{:?}", bd.border_type)),
+                        move |value| Message::TableStyleBorderSetType { cell: row, border: bu, value },
+                    )
+                    .text_size(10)
+                    .width(74),
+                    text_input("wt", &border_lw[r][b])
+                        .on_input(move |v| Message::TableStyleBorderEdit { cell: row, border: bu, field: "lw", value: v })
+                        .size(10)
+                        .width(46),
+                    text_input("clr", &border_color[r][b])
+                        .on_input(move |v| Message::TableStyleBorderEdit { cell: row, border: bu, field: "color", value: v })
+                        .size(10)
+                        .width(46),
+                    text_input("gap", &border_spacing[r][b])
+                        .on_input(move |v| Message::TableStyleBorderEdit { cell: row, border: bu, field: "spacing", value: v })
+                        .size(10)
+                        .width(46),
+                    checkbox(bd.is_invisible)
+                        .on_toggle(move |_| Message::TableStyleBorderToggleInvisible { cell: row, border: bu })
+                        .size(13),
+                ]
+                .spacing(5)
+                .align_y(iced::Center),
+            );
+        }
+
+        col.push(
             button(text("Apply cell").size(11))
                 .on_press(Message::TableStyleCellApply(row))
                 .style(btn_s(true))
                 .padding([4, 12]),
-        ]
-        .spacing(3)
+        )
         .into()
     };
 
@@ -284,6 +343,27 @@ pub fn view_window<'a>(
         scrollable(
             column![
                 info_row("Name:", s.name.clone()),
+                row![
+                    text("Description:").size(11).color(DIM).width(160),
+                    text_input("", description_buf)
+                        .on_input(|v| Message::TableStyleEdit { field: "description", value: v })
+                        .size(11)
+                        .width(160),
+                ]
+                .spacing(8)
+                .align_y(iced::Center),
+                row![
+                    text("Flow direction:").size(11).color(DIM).width(160),
+                    pick_list(
+                        ["Down", "Up"].iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                        Some(format!("{:?}", s.flow_direction)),
+                        Message::TableStyleSetFlow,
+                    )
+                    .text_size(11)
+                    .width(100),
+                ]
+                .spacing(8)
+                .align_y(iced::Center),
                 checkbox(s.annotative)
                     .label("Annotative")
                     .on_toggle(|_| Message::TableStyleToggleAnnotative)

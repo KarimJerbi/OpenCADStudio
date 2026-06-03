@@ -119,10 +119,17 @@ impl OpenCADStudio {
                 selected_style,
                 &self.ts_hmargin,
                 &self.ts_vmargin,
+                &self.ts_description,
                 &self.ts_cell_textstyle,
                 &self.ts_cell_height,
                 &self.ts_cell_textcolor,
                 &self.ts_cell_fillcolor,
+                &self.ts_cell_datatype,
+                &self.ts_cell_unittype,
+                &self.ts_cell_format,
+                &self.ts_border_lw,
+                &self.ts_border_color,
+                &self.ts_border_spacing,
             );
         }
         if Some(window_id) == self.mlstyle_window {

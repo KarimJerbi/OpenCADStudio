@@ -5755,6 +5755,7 @@ impl OpenCADStudio {
                 match field {
                     "hmargin" => self.ts_hmargin = value,
                     "vmargin" => self.ts_vmargin = value,
+                    "description" => self.ts_description = value,
                     _ => {}
                 }
                 Task::none()
@@ -5766,6 +5767,7 @@ impl OpenCADStudio {
                 let name = self.tablestyle_selected.clone();
                 let h: Option<f64> = self.ts_hmargin.trim().parse().ok();
                 let v: Option<f64> = self.ts_vmargin.trim().parse().ok();
+                let desc = self.ts_description.clone();
                 self.push_undo_snapshot(i, "TABLESTYLE EDIT");
                 for obj in self.tabs[i].scene.document.objects.values_mut() {
                     if let ObjectType::TableStyle(s) = obj {
@@ -5776,10 +5778,25 @@ impl OpenCADStudio {
                             if let Some(v) = v {
                                 s.vertical_margin = v;
                             }
+                            s.description = desc.clone();
                         }
                     }
                 }
                 self.tabs[i].dirty = true;
+                Task::none()
+            }
+
+            Message::TableStyleSetFlow(value) => {
+                use acadrust::objects::TableFlowDirection;
+                let i = self.active_tab;
+                if let Some(s) = self.tablestyle_mut(i) {
+                    s.flow_direction = match value.as_str() {
+                        "Up" => TableFlowDirection::Up,
+                        _ => TableFlowDirection::Down,
+                    };
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                }
                 Task::none()
             }
 
@@ -5791,8 +5808,65 @@ impl OpenCADStudio {
                         "height" => self.ts_cell_height[r] = value,
                         "textcolor" => self.ts_cell_textcolor[r] = value,
                         "fillcolor" => self.ts_cell_fillcolor[r] = value,
+                        "datatype" => self.ts_cell_datatype[r] = value,
+                        "unittype" => self.ts_cell_unittype[r] = value,
+                        "format" => self.ts_cell_format[r] = value,
                         _ => {}
                     }
+                }
+                Task::none()
+            }
+
+            Message::TableStyleBorderEdit {
+                cell,
+                border,
+                field,
+                value,
+            } => {
+                let (c, b) = (cell as usize, border as usize);
+                if c < 3 && b < 6 {
+                    match field {
+                        "lw" => self.ts_border_lw[c][b] = value,
+                        "color" => self.ts_border_color[c][b] = value,
+                        "spacing" => self.ts_border_spacing[c][b] = value,
+                        _ => {}
+                    }
+                }
+                Task::none()
+            }
+
+            Message::TableStyleBorderSetType {
+                cell,
+                border,
+                value,
+            } => {
+                use acadrust::objects::TableBorderType;
+                let i = self.active_tab;
+                if let Some(s) = self.tablestyle_mut(i) {
+                    if let Some(bd) = Self::ts_cell_of(s, cell).and_then(|c| Self::ts_border_of(c, border))
+                    {
+                        bd.border_type = match value.as_str() {
+                            "Double" => TableBorderType::Double,
+                            _ => TableBorderType::Single,
+                        };
+                    }
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                    self.tabs[i].scene.bump_geometry();
+                }
+                Task::none()
+            }
+
+            Message::TableStyleBorderToggleInvisible { cell, border } => {
+                let i = self.active_tab;
+                if let Some(s) = self.tablestyle_mut(i) {
+                    if let Some(bd) = Self::ts_cell_of(s, cell).and_then(|c| Self::ts_border_of(c, border))
+                    {
+                        bd.is_invisible = !bd.is_invisible;
+                    }
+                    self.push_undo_snapshot(i, "TABLESTYLE EDIT");
+                    self.tabs[i].dirty = true;
+                    self.tabs[i].scene.bump_geometry();
                 }
                 Task::none()
             }
@@ -5844,6 +5918,18 @@ impl OpenCADStudio {
                 let height: Option<f64> = self.ts_cell_height[r].trim().parse().ok();
                 let tc: Option<i16> = self.ts_cell_textcolor[r].trim().parse().ok();
                 let fc: Option<i16> = self.ts_cell_fillcolor[r].trim().parse().ok();
+                let dtype: Option<i32> = self.ts_cell_datatype[r].trim().parse().ok();
+                let utype: Option<i32> = self.ts_cell_unittype[r].trim().parse().ok();
+                let fmt = self.ts_cell_format[r].clone();
+                // Per-border numeric edits for this cell.
+                let border_vals: [(Option<i16>, Option<i16>, Option<f64>); 6] =
+                    std::array::from_fn(|b| {
+                        (
+                            self.ts_border_lw[r][b].trim().parse().ok(),
+                            self.ts_border_color[r][b].trim().parse().ok(),
+                            self.ts_border_spacing[r][b].trim().parse().ok(),
+                        )
+                    });
                 if let Some(c) = self.tablestyle_mut(i).and_then(|s| Self::ts_cell_of(s, row)) {
                     if !ts.is_empty() {
                         c.text_style_name = ts;
@@ -5856,6 +5942,26 @@ impl OpenCADStudio {
                     }
                     if let Some(v) = fc {
                         c.fill_color = acadrust::types::Color::from_index(v);
+                    }
+                    if let Some(v) = dtype {
+                        c.data_type = v;
+                    }
+                    if let Some(v) = utype {
+                        c.unit_type = v;
+                    }
+                    c.format_string = fmt;
+                    for (b, (lw, color, spacing)) in border_vals.into_iter().enumerate() {
+                        if let Some(bd) = Self::ts_border_of(c, b as u8) {
+                            if let Some(v) = lw {
+                                bd.line_weight = acadrust::types::LineWeight::from_value(v);
+                            }
+                            if let Some(v) = color {
+                                bd.color = acadrust::types::Color::from_index(v);
+                            }
+                            if let Some(v) = spacing {
+                                bd.double_line_spacing = v;
+                            }
+                        }
                     }
                     self.push_undo_snapshot(i, "TABLESTYLE EDIT");
                     self.tabs[i].dirty = true;
@@ -7115,6 +7221,23 @@ impl OpenCADStudio {
         }
     }
 
+    /// Mutable access to a cell's border by index
+    /// (0=left 1=right 2=top 3=bottom 4=horizontal-inside 5=vertical-inside).
+    fn ts_border_of(
+        c: &mut acadrust::objects::RowCellStyle,
+        border: u8,
+    ) -> Option<&mut acadrust::objects::TableCellBorder> {
+        match border {
+            0 => Some(&mut c.left_border),
+            1 => Some(&mut c.right_border),
+            2 => Some(&mut c.top_border),
+            3 => Some(&mut c.bottom_border),
+            4 => Some(&mut c.horizontal_inside_border),
+            5 => Some(&mut c.vertical_inside_border),
+            _ => None,
+        }
+    }
+
     /// Populate margin + per-cell edit buffers from the selected table style.
     fn load_tablestyle_bufs(&mut self, tab: usize) {
         use acadrust::objects::ObjectType;
@@ -7133,6 +7256,7 @@ impl OpenCADStudio {
         };
         self.ts_hmargin = format!("{:.4}", s.horizontal_margin);
         self.ts_vmargin = format!("{:.4}", s.vertical_margin);
+        self.ts_description = s.description.clone();
         for (r, c) in [&s.data_row_style, &s.header_row_style, &s.title_row_style]
             .into_iter()
             .enumerate()
@@ -7143,6 +7267,23 @@ impl OpenCADStudio {
                 c.text_color.index().map(|v| v.to_string()).unwrap_or_default();
             self.ts_cell_fillcolor[r] =
                 c.fill_color.index().map(|v| v.to_string()).unwrap_or_default();
+            self.ts_cell_datatype[r] = c.data_type.to_string();
+            self.ts_cell_unittype[r] = c.unit_type.to_string();
+            self.ts_cell_format[r] = c.format_string.clone();
+            let borders = [
+                &c.left_border,
+                &c.right_border,
+                &c.top_border,
+                &c.bottom_border,
+                &c.horizontal_inside_border,
+                &c.vertical_inside_border,
+            ];
+            for (b, bd) in borders.into_iter().enumerate() {
+                self.ts_border_lw[r][b] = bd.line_weight.value().to_string();
+                self.ts_border_color[r][b] =
+                    bd.color.index().map(|v| v.to_string()).unwrap_or_default();
+                self.ts_border_spacing[r][b] = format!("{:.4}", bd.double_line_spacing);
+            }
         }
     }
 

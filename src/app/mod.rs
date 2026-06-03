@@ -323,11 +323,21 @@ pub(super) struct OpenCADStudio {
     /// Edit buffers for the table style's general margins.
     ts_hmargin: String,
     ts_vmargin: String,
+    /// General table-style description buffer.
+    ts_description: String,
     /// Per-cell edit buffers, indexed 0=Data, 1=Header, 2=Title.
     ts_cell_textstyle: [String; 3],
     ts_cell_height: [String; 3],
     ts_cell_textcolor: [String; 3],
     ts_cell_fillcolor: [String; 3],
+    ts_cell_datatype: [String; 3],
+    ts_cell_unittype: [String; 3],
+    ts_cell_format: [String; 3],
+    /// Per-cell, per-border numeric buffers ([cell][border], border order:
+    /// 0=left 1=right 2=top 3=bottom 4=horizontal-inside 5=vertical-inside).
+    ts_border_lw: [[String; 6]; 3],
+    ts_border_color: [[String; 6]; 3],
+    ts_border_spacing: [[String; 6]; 3],
 
     // ── TextStyle Font Browser ────────────────────────────────────────────
     textstyle_selected: String,
@@ -1043,6 +1053,26 @@ pub enum Message {
     },
     /// Write a cell's edit buffers back into the selected table style.
     TableStyleCellApply(u8),
+    /// Set the table flow direction from the dropdown.
+    TableStyleSetFlow(String),
+    /// Update a per-cell, per-border numeric edit buffer.
+    TableStyleBorderEdit {
+        cell: u8,
+        border: u8,
+        field: &'static str,
+        value: String,
+    },
+    /// Set a border's line type (Single / Double).
+    TableStyleBorderSetType {
+        cell: u8,
+        border: u8,
+        value: String,
+    },
+    /// Toggle a border's visibility.
+    TableStyleBorderToggleInvisible {
+        cell: u8,
+        border: u8,
+    },
     // ── MLineStyle Dialog ─────────────────────────────────────────────────
     MlStyleDialogOpen,
     #[allow(dead_code)]
@@ -1247,10 +1277,17 @@ impl OpenCADStudio {
             tablestyle_selected: "Standard".to_string(),
             ts_hmargin: "1.5".to_string(),
             ts_vmargin: "1.5".to_string(),
-            ts_cell_textstyle: [String::new(), String::new(), String::new()],
-            ts_cell_height: [String::new(), String::new(), String::new()],
-            ts_cell_textcolor: [String::new(), String::new(), String::new()],
-            ts_cell_fillcolor: [String::new(), String::new(), String::new()],
+            ts_description: String::new(),
+            ts_cell_textstyle: Default::default(),
+            ts_cell_height: Default::default(),
+            ts_cell_textcolor: Default::default(),
+            ts_cell_fillcolor: Default::default(),
+            ts_cell_datatype: Default::default(),
+            ts_cell_unittype: Default::default(),
+            ts_cell_format: Default::default(),
+            ts_border_lw: Default::default(),
+            ts_border_color: Default::default(),
+            ts_border_spacing: Default::default(),
             // MLineStyle dialog
             mlstyle_selected: "Standard".to_string(),
             // MLeaderStyle dialog
