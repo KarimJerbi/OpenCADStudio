@@ -799,6 +799,7 @@ impl OpenCADStudio {
         // In-place MText editor (toolbar + text area), anchored at the
         // insertion-point click.
         if !tab.is_start {
+            let canvas = tab.scene.selection.borrow().vp_size;
             if let Some(ed) = &self.mtext_editor {
                 let styles: Vec<String> = tab
                     .scene
@@ -807,10 +808,10 @@ impl OpenCADStudio {
                     .iter()
                     .map(|s| s.name.clone())
                     .collect();
-                viewport_stack = viewport_stack.push(mtext_editor_overlay(ed, styles));
+                viewport_stack = viewport_stack.push(mtext_editor_overlay(ed, styles, canvas));
             }
             if let Some(ed) = &self.text_inline {
-                viewport_stack = viewport_stack.push(text_inline_overlay(ed));
+                viewport_stack = viewport_stack.push(text_inline_overlay(ed, canvas));
             }
         }
 
@@ -1372,7 +1373,10 @@ pub(super) const TEXT_INLINE_ID: &str = "text_inline_input";
 
 /// In-place single-line TEXT editor: a plain text-entry box (no formatting
 /// toolbar), anchored at the insertion-point click. Enter commits; Esc cancels.
-fn text_inline_overlay(ed: &super::text_inline::TextInlineState) -> Element<'_, Message> {
+fn text_inline_overlay(
+    ed: &super::text_inline::TextInlineState,
+    canvas: (f32, f32),
+) -> Element<'_, Message> {
     const PANEL_BG: Color = Color { r: 0.16, g: 0.16, b: 0.16, a: 0.98 };
     const BORDER: Color = Color { r: 0.40, g: 0.40, b: 0.40, a: 1.0 };
 
@@ -1392,9 +1396,13 @@ fn text_inline_overlay(ed: &super::text_inline::TextInlineState) -> Element<'_, 
         })
         .padding(4);
 
+    // Keep the box on-screen so its field stays clickable at the edges.
+    const PANEL_W: f32 = 240.0 + 20.0;
+    const PANEL_H: f32 = 46.0;
+    let (cw, ch) = canvas;
     let anchor = iced::Point::new(
-        (ed.screen_anchor.x - 6.0).max(0.0),
-        (ed.screen_anchor.y - 18.0).max(0.0),
+        (ed.screen_anchor.x - 6.0).clamp(0.0, (cw - PANEL_W).max(0.0)),
+        (ed.screen_anchor.y - 18.0).clamp(0.0, (ch - PANEL_H).max(0.0)),
     );
     position_canvas_overlay(anchor, panel.into())
 }
@@ -1656,6 +1664,7 @@ fn mtext_preview_segments(
 fn mtext_editor_overlay<'a>(
     ed: &'a super::mtext_editor::MTextEditorState,
     styles: Vec<String>,
+    canvas_size: (f32, f32),
 ) -> Element<'a, Message> {
     use super::mtext_editor::{JustifyChoice, MTextFmt, ParaAlign};
     use iced::widget::{canvas, svg, text_editor};
@@ -1891,9 +1900,15 @@ fn mtext_editor_overlay<'a>(
         .padding(6)
         .width(iced::Length::Fixed(640.0));
 
+    // Keep the whole panel on-screen: clamp the anchor so it never spills past
+    // the right/bottom edge (where its toolbar buttons would be unclickable).
+    // Width is fixed; height is the toolbar rows + the fixed VIEW_H body.
+    const PANEL_W: f32 = 640.0 + 14.0; // fixed width + padding/border
+    const PANEL_H: f32 = VIEW_H + 150.0; // body + toolbars/toggle/padding
+    let (cw, ch) = canvas_size;
     let anchor = iced::Point::new(
-        (ed.screen_anchor.x - 10.0).max(0.0),
-        (ed.screen_anchor.y - 90.0).max(0.0),
+        (ed.screen_anchor.x - 10.0).clamp(0.0, (cw - PANEL_W).max(0.0)),
+        (ed.screen_anchor.y - 90.0).clamp(0.0, (ch - PANEL_H).max(0.0)),
     );
     position_canvas_overlay(anchor, panel.into())
 }
