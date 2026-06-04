@@ -290,7 +290,7 @@ fn lengthen_ellipse(ell: &EllipseEnt, pick_pt: Vec3, mode: &LenMode) -> Option<E
 
     // Determine which end is closer to pick_pt (use DXF XY plane).
     let p_x = pick_pt.x as f64;
-    let p_y = pick_pt.y as f64; // Y-up: world Z → DXF Y
+    let p_y = pick_pt.y as f64;
     let pt_start_x = ell.center.x + a * t0.cos() * nx - b * t0.sin() * ny;
     let pt_start_y = ell.center.y + a * t0.cos() * ny + b * t0.sin() * nx;
     let pt_end_x = ell.center.x + a * t1.cos() * nx - b * t1.sin() * ny;
@@ -339,7 +339,7 @@ fn lengthen_lwpoly(poly: &LwPolyline, pick_pt: Vec3, mode: &LenMode) -> Option<E
 
     // Determine which end is closer to the pick point (DXF XY: pick_pt.x, pick_pt.z).
     let px = pick_pt.x as f64;
-    let py = pick_pt.y as f64; // Y-up: world Z = DXF Y
+    let py = pick_pt.y as f64;
 
     let first = &poly.vertices[0];
     let last = &poly.vertices[n - 1];

@@ -151,7 +151,7 @@ impl AlignCommand {
             _ => return CmdResult::Cancel,
         };
 
-        // Build transform: move s1→d1, rotate so s2-s1 aligns with d2-d1 (in XZ plane)
+        // Build transform: move s1→d1, rotate so s2-s1 aligns with d2-d1 (in the world XY plane)
         let src_vec = s2 - s1;
         let dst_vec = d2 - d1;
 

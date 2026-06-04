@@ -723,7 +723,7 @@ impl OpenCADStudio {
                             },
                         );
                     }
-                    // Step 3: rotate in XZ plane by angle_rad
+                    // Step 3: rotate in the XY plane by angle_rad
                     if angle_rad.abs() > 1e-4 {
                         self.tabs[i].scene.transform_entities(
                             &handles,
@@ -989,16 +989,16 @@ impl OpenCADStudio {
                 let mut count = 0usize;
 
                 // Helper: is DXF point (x, y) inside the world-space window?
-                // World XZ = DXF XY.
+                // Drawing plane is world XY (= DXF XY).
                 let in_win = |x: f64, y: f64| -> bool {
                     let wx = x as f32;
                     let wy = y as f32;
-                    wx >= win_min.x && wx <= win_max.x && wy >= win_min.z && wy <= win_max.z
+                    wx >= win_min.x && wx <= win_max.x && wy >= win_min.y && wy <= win_max.y
                 };
 
                 let dx = delta.x as f64;
-                let dy = delta.z as f64; // world Z = DXF Y
-                let dz = delta.y as f64;
+                let dy = delta.y as f64; // drawing plane is world XY
+                let dz = delta.z as f64;
 
                 for handle in &handles {
                     let Some(entity) = self.tabs[i].scene.document.get_entity_mut(*handle) else {

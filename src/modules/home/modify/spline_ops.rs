@@ -132,7 +132,7 @@ pub fn t_to_rel(t_actual: f64, t0: f64, t1: f64) -> f64 {
 // ── Wire preview ───────────────────────────────────────────────────────────
 
 /// World-space wire points for a Spline (samples 64 segments).
-/// Y-up convention: world (x, 0, y) for DXF (x, y).
+/// Drawing plane is world XY: DXF (x, y) → world (x, y), z = elevation.
 pub fn spline_pts_wire(spl: &Spline) -> Vec<[f32; 3]> {
     let (_, pts) = spline_sample_xy(spl, 64);
     if pts.is_empty() {
@@ -144,6 +144,6 @@ pub fn spline_pts_wire(spl: &Spline) -> Vec<[f32; 3]> {
         .map(|v| v.z as f32)
         .unwrap_or(0.0);
     pts.iter()
-        .map(|p| [p[0] as f32, elev, p[1] as f32])
+        .map(|p| [p[0] as f32, p[1] as f32, elev])
         .collect()
 }

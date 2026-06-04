@@ -15,13 +15,13 @@ use glam::Vec3;
 /// A geometric transformation applied to existing entities.
 #[derive(Clone)]
 pub enum EntityTransform {
-    /// Move every point by the given world-space delta (Y-up XZ plane).
+    /// Move every point by the given world-space delta (world XY plane).
     Translate(Vec3),
-    /// Rotate around `center` by `angle_rad` in the XZ plane (Y-up).
+    /// Rotate around `center` by `angle_rad` in the world XY plane.
     Rotate { center: Vec3, angle_rad: f32 },
     /// Uniform scale from `center` by `factor`.
     Scale { center: Vec3, factor: f32 },
-    /// Mirror across the line through `p1`→`p2` in the XZ plane (Y-up).
+    /// Mirror across the line through `p1`→`p2` in the world XY plane.
     Mirror { p1: Vec3, p2: Vec3 },
 }
 
@@ -32,7 +32,7 @@ pub enum EntityTransform {
 pub enum TangentObject {
     /// Infinite line through two world-space XZ-plane points.
     Line { p1: Vec3, p2: Vec3 },
-    /// Circle in the XZ plane.
+    /// Circle in the world XY plane.
     Circle { center: Vec3, radius: f32 },
 }
 

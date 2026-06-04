@@ -760,11 +760,12 @@ impl Array3DCommand {
                     if l == 0 && r == 0 && c == 0 {
                         continue;
                     }
-                    // World: X=col dir, Z=row dir (DXF Y), Y=level (up)
+                    // Drawing plane is world XY: X = col dir, Y = row dir,
+                    // Z = level (elevation).
                     t.push(EntityTransform::Translate(Vec3::new(
                         col_sp * c as f32,
-                        lvl_sp * l as f32,
                         row_sp * r as f32,
+                        lvl_sp * l as f32,
                     )));
                 }
             }

@@ -252,7 +252,7 @@ pub(super) struct OpenCADStudio {
     update_notice_body: Option<String>,
     /// In-memory clipboard: cloned entities waiting to be pasted.
     clipboard: Vec<acadrust::EntityType>,
-    /// Centroid of the clipboard entities (XZ plane, Y-up).
+    /// Centroid of the clipboard entities (world XY plane).
     clipboard_centroid: glam::Vec3,
     /// True while the Shift key is held — drives subtractive pick (Shift+click
     /// removes the picked entity from the selection). Tracked from keyboard

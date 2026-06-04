@@ -53,10 +53,10 @@ pub fn break_entity(entity: &EntityType, p1: Vec3, p2: Vec3) -> Option<Vec<Entit
 fn break_line(line: &LineEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     let s = Vec3::new(
         line.start.x as f32,
-        line.start.z as f32,
         line.start.y as f32,
+        line.start.z as f32,
     );
-    let e = Vec3::new(line.end.x as f32, line.end.z as f32, line.end.y as f32);
+    let e = Vec3::new(line.end.x as f32, line.end.y as f32, line.end.z as f32);
     let dir = e - s;
     let len2 = dir.length_squared();
     if len2 < 1e-12 {
@@ -96,10 +96,10 @@ fn break_line(line: &LineEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
 
 fn break_arc(arc: &ArcEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     let cx = arc.center.x as f32;
-    let cy = arc.center.z as f32; // Y-up: DXF Y→world Z
+    let cy = arc.center.y as f32;
     let r = arc.radius as f32;
 
-    // Project p1 and p2 onto the arc (use XZ plane)
+    // Project p1 and p2 onto the arc (world XY plane)
     let a1 = angle_on_arc(cx, cy, p1);
     let a2 = angle_on_arc(cx, cy, p2);
 
@@ -127,7 +127,7 @@ fn break_arc(arc: &ArcEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
 
 fn break_circle(circle: &acadrust::entities::Circle, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     let cx = circle.center.x as f32;
-    let cy = circle.center.z as f32;
+    let cy = circle.center.y as f32;
 
     let a1 = angle_on_arc(cx, cy, p1);
     let a2 = angle_on_arc(cx, cy, p2);
@@ -193,7 +193,7 @@ fn break_lwpolyline(p: &LwPolyline, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
 
 fn break_ellipse(ell: &EllipseEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     // Compute the eccentric-anomaly parameter of a world point relative to ellipse.
-    // World coords use XZ plane (Y-up), so DXF X→world X, DXF Y→world Z.
+    // World = DXF (XY drawing plane).
     let cx = ell.center.x;
     let cy = ell.center.y;
     let a = (ell.major_axis.x.powi(2) + ell.major_axis.y.powi(2)).sqrt();
@@ -207,7 +207,7 @@ fn break_ellipse(ell: &EllipseEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     // Project a point onto the ellipse parameter (eccentric anomaly)
     let param_of = |pt: Vec3| -> f64 {
         let rx = pt.x as f64 - cx;
-        let ry = pt.z as f64 - cy; // Y-up: DXF Y → world Z
+        let ry = pt.y as f64 - cy;
         let xl = rx * nx + ry * ny;
         let yl = -rx * ny + ry * nx;
         yl.atan2(xl) // atan2(yl/b*b, xl/a*a) simplifies to atan2(yl,xl) for ordering
@@ -256,10 +256,10 @@ fn break_ellipse(ell: &EllipseEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
 
 // ── Small utilities ────────────────────────────────────────────────────────
 
-/// Returns the angle (radians, 0-2π) of `pt` viewed from (cx, cy) in the XZ plane.
+/// Returns the angle (radians, 0-2π) of `pt` viewed from (cx, cy) in the world XY plane.
 fn angle_on_arc(cx: f32, cy: f32, pt: Vec3) -> f32 {
     let dx = pt.x - cx;
-    let dy = pt.z - cy; // XZ plane
+    let dy = pt.y - cy;
     dy.atan2(dx).rem_euclid(std::f32::consts::TAU)
 }
 
@@ -283,7 +283,7 @@ fn nearest_pline_param(p: &LwPolyline, pt: Vec3) -> usize {
         .enumerate()
         .min_by_key(|(_, v)| {
             let dx = v.location.x as f32 - pt.x;
-            let dy = v.location.y as f32 - pt.z;
+            let dy = v.location.y as f32 - pt.y;
             ((dx * dx + dy * dy) * 1e6) as i64
         })
         .map(|(i, _)| i)
@@ -291,8 +291,8 @@ fn nearest_pline_param(p: &LwPolyline, pt: Vec3) -> usize {
 }
 
 fn world_to_dxf(v: Vec3) -> Vec3 {
-    // world Y-up: X→X, Z→DXF Y, Y→DXF Z
-    Vec3::new(v.x, v.z, v.y)
+    // World = DXF (identity).
+    Vec3::new(v.x, v.y, v.z)
 }
 
 fn vec3_to_v3(v: Vec3) -> Vector3 {
@@ -301,11 +301,11 @@ fn vec3_to_v3(v: Vec3) -> Vector3 {
 
 fn break_spline(spl: &SplineEnt, p1: Vec3, p2: Vec3) -> Vec<EntityType> {
     // Find the two nearest parameters to p1 and p2 (DXF XY: world x, z).
-    let t1 = match spline_nearest_t(spl, p1.x as f64, p1.z as f64) {
+    let t1 = match spline_nearest_t(spl, p1.x as f64, p1.y as f64) {
         Some(t) => t,
         None => return vec![EntityType::Spline(spl.clone())],
     };
-    let t2 = match spline_nearest_t(spl, p2.x as f64, p2.z as f64) {
+    let t2 = match spline_nearest_t(spl, p2.x as f64, p2.y as f64) {
         Some(t) => t,
         None => return vec![EntityType::Spline(spl.clone())],
     };

@@ -92,13 +92,13 @@ pub fn join_entities(entities: &[(Handle, &EntityType)]) -> Option<(Vec<Handle>,
 }
 
 fn try_join_lines(lines: &[&(Handle, &EntityType)]) -> Option<(Vec<Handle>, Vec<EntityType>)> {
-    // Collect endpoints in XZ plane
+    // Collect endpoints in the world XY plane
     let segs: Vec<_> = lines
         .iter()
         .map(|(h, e)| {
             if let EntityType::Line(l) = e {
-                let s = Vec3::new(l.start.x as f32, l.start.z as f32, 0.0);
-                let e2 = Vec3::new(l.end.x as f32, l.end.z as f32, 0.0);
+                let s = Vec3::new(l.start.x as f32, l.start.y as f32, 0.0);
+                let e2 = Vec3::new(l.end.x as f32, l.end.y as f32, 0.0);
                 (*h, l, s, e2)
             } else {
                 unreachable!()
