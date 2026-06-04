@@ -553,6 +553,9 @@ pub struct Scene {
     /// `tessellate_block`'s visibility test skips these, so they neither
     /// render nor hit-test until isolation ends.
     pub hidden: HashSet<Handle>,
+    /// Whether entity transparency is honoured on screen. When false the
+    /// wire shader forces every line opaque (a uniform toggle, no retessellate).
+    pub transparency_display: bool,
     /// In-progress preview wires while a command is active (rubber-band + object ghosts).
     pub preview_wires: Vec<WireModel>,
     /// Committed-segment wire drawn during multi-point commands (normal colour).
@@ -698,6 +701,7 @@ impl Scene {
             document: CadDocument::new(),
             selected: HashSet::new(),
             hidden: HashSet::new(),
+            transparency_display: true,
             preview_wires: vec![],
             interim_wire: None,
             camera_generation: 0,

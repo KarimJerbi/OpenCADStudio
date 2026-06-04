@@ -22,6 +22,12 @@ struct Uniforms {
     // per-instance baked half_width. Lets the LWT button switch without
     // retessellating.
     lwdisplay_enable: f32,
+    // Mesh flat-shade flag (unused here; kept so the field offsets match
+    // the shared Uniforms buffer layout).
+    flat_shade: f32,
+    // Transparency-display toggle: 1.0 = honour baked alpha, 0.0 = force
+    // every line opaque.
+    transparency_enable: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -156,5 +162,7 @@ fn in_dash(dist: f32, pat_len: f32, p0: vec4<f32>, p1: vec4<f32>) -> bool {
             }
         }
     }
-    return in.color;
+    // Transparency display off → force the line opaque.
+    let alpha = select(1.0, in.color.a, u.transparency_enable > 0.5);
+    return vec4<f32>(in.color.rgb, alpha);
 }

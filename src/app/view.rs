@@ -1162,6 +1162,7 @@ impl OpenCADStudio {
                         tab.scene.document.header.insertion_units,
                         self.units_popup_open,
                         tab.scene.is_isolation_active(),
+                        tab.scene.transparency_display,
                         &self.statusbar_config,
                     )
                 })

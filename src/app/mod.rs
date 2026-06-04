@@ -750,6 +750,8 @@ pub enum Message {
     ToggleStatusPill(crate::ui::statusbar_config::StatusPill),
     /// Toggle clean-screen mode (hide ribbon + side panels).
     ToggleCleanScreen,
+    /// Toggle whether entity transparency is shown on screen.
+    ToggleTransparencyDisplay,
     /// Toggle the drawing-units picker open/closed.
     ToggleUnitsPopup,
     /// Close the drawing-units picker.

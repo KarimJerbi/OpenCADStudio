@@ -636,6 +636,7 @@ impl Scene {
         uniforms.view_proj = crop_view_proj(uniforms.view_proj, uo, vo, us, vs);
         uniforms.viewport_size = [visible_w, visible_h];
         uniforms.flat_shade = if flags.flat_shade { 1.0 } else { 0.0 };
+        uniforms.transparency_enable = if self.transparency_display { 1.0 } else { 0.0 };
 
         // `screen_rect` carries the *visible* sub-rectangle in normalized
         // canvas coords — that's what `Pipeline::prepare` uses to size

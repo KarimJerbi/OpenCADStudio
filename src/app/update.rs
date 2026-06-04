@@ -3582,6 +3582,14 @@ impl OpenCADStudio {
                 self.clean_screen ^= true;
                 Task::none()
             }
+            Message::ToggleTransparencyDisplay => {
+                let i = self.active_tab;
+                if i < self.tabs.len() {
+                    // No retessellate — the wire shader reads the flag from uniforms.
+                    self.tabs[i].scene.transparency_display ^= true;
+                }
+                Task::none()
+            }
             Message::ToggleUnitsPopup => {
                 self.units_popup_open ^= true;
                 Task::none()

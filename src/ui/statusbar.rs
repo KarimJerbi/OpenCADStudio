@@ -61,6 +61,8 @@ impl StatusBar {
         units_popup_open: bool,
         // True when objects are hidden by Isolate / Hide.
         isolation_active: bool,
+        // Whether entity transparency is shown (Transparency pill state).
+        transparency_display: bool,
         // Which pills the user has chosen to show on the bar.
         config: &'a StatusBarConfig,
     ) -> Element<'a, Message> {
@@ -173,6 +175,16 @@ impl StatusBar {
                     units_popup_open,
                 ),
                 "Drawing Units (INSUNITS)\nClick to change",
+            ));
+        }
+        if vis(StatusPill::Transparency) {
+            right_status = right_status.push(tip(
+                toggle_pill(
+                    "TPY",
+                    transparency_display,
+                    Message::ToggleTransparencyDisplay,
+                ),
+                "Show Transparency\nForce opaque when off",
             ));
         }
         if vis(StatusPill::Isolate) {

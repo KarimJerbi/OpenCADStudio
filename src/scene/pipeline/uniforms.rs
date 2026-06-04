@@ -19,9 +19,13 @@ pub struct Uniforms {
     /// triangle gets a uniform shade (FlatShaded mode); 0.0 → keeps the
     /// per-vertex normal interpolation (GouraudShaded-style).
     pub flat_shade: f32,
+    /// Transparency-display toggle (1.0 = honour entity transparency,
+    /// 0.0 = force opaque). Read by the wire shader so the toggle does not
+    /// require a retessellate.
+    pub transparency_enable: f32,
     /// Pads the struct to 112 B (next multiple of 16) so wgpu's uniform
     /// alignment rules are satisfied.
-    pub _pad: [f32; 3],
+    pub _pad: [f32; 2],
 }
 
 impl Uniforms {
@@ -39,7 +43,8 @@ impl Uniforms {
             world_per_pixel,
             lwdisplay_enable: if lwdisplay_enable { 1.0 } else { 0.0 },
             flat_shade: 0.0,
-            _pad: [0.0; 3],
+            transparency_enable: 1.0,
+            _pad: [0.0; 2],
         }
     }
 }
