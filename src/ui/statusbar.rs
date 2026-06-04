@@ -67,6 +67,8 @@ impl StatusBar {
         quick_properties: bool,
         // True when the selection filter is excluding at least one type.
         selection_filter_active: bool,
+        // Whether selection cycling is enabled.
+        selection_cycling: bool,
         // Which pills the user has chosen to show on the bar.
         config: &'a StatusBarConfig,
     ) -> Element<'a, Message> {
@@ -211,6 +213,12 @@ impl StatusBar {
                     Message::ToggleSelectionFilterPopup,
                 ),
                 "Selection Filtering\nLimit which object types can be picked",
+            ));
+        }
+        if vis(StatusPill::SelCycle) {
+            right_status = right_status.push(tip(
+                toggle_pill("SC", selection_cycling, Message::ToggleSelectionCycling),
+                "Selection Cycling\nRepeat-click to step through overlapping objects",
             ));
         }
         if vis(StatusPill::Vp) && !vp_label.is_empty() {

@@ -1174,6 +1174,7 @@ impl OpenCADStudio {
                         tab.scene.transparency_display,
                         self.quick_properties,
                         tab.scene.selection_filter_active(),
+                        self.selection_cycling,
                         &self.statusbar_config,
                     )
                 })

@@ -55,6 +55,43 @@ pub fn click_hit<'a>(
     best
 }
 
+/// Like `click_hit` but returns every wire within the click threshold,
+/// nearest first. Used by selection cycling to step through overlapping
+/// objects under the cursor.
+pub fn click_hits_all<'a>(
+    cursor: Point,
+    wires: &'a [WireModel],
+    view_proj: Mat4,
+    bounds: Rectangle,
+) -> Vec<&'a str> {
+    let mut hits: Vec<(f32, &str)> = Vec::new();
+    for wire in wires {
+        let mut prev: Option<Point> = None;
+        let mut best_for_wire = CLICK_THRESHOLD_PX;
+        let mut hit = false;
+        for &[px, py, pz] in &wire.points {
+            if px.is_nan() {
+                prev = None;
+                continue;
+            }
+            let cur = world_to_screen(Vec3::new(px, py, pz), view_proj, bounds);
+            if let Some(p0) = prev {
+                let d = dist_point_to_segment(cursor, p0, cur);
+                if d < best_for_wire {
+                    best_for_wire = d;
+                    hit = true;
+                }
+            }
+            prev = Some(cur);
+        }
+        if hit {
+            hits.push((best_for_wire, &wire.name));
+        }
+    }
+    hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    hits.into_iter().map(|(_, name)| name).collect()
+}
+
 /// Pick a 3D solid by clicking anywhere on its shaded body: project each
 /// mesh triangle to screen space and test whether the cursor lands inside it.
 /// Returns the front-most hit (smallest projected depth). Lets meshed solids
