@@ -171,6 +171,12 @@ pub(super) struct OpenCADStudio {
     snapper: Snapper,
     snap_popup_open: bool,
     scale_popup_open: bool,
+    /// True while the status-bar customization menu is open.
+    statusbar_menu_open: bool,
+    /// Clean-screen mode: hide ribbon and side panels for a full canvas.
+    clean_screen: bool,
+    /// Which status-bar pills the user has chosen to show (persisted).
+    statusbar_config: crate::ui::statusbar_config::StatusBarConfig,
     /// Whether Tangent snap was enabled before a tangent-pick command started.
     pre_cmd_tangent: Option<bool>,
     /// Orthogonal drawing constraint (F8): constrains picks to 0°/90°/180°/270°.
@@ -732,6 +738,14 @@ pub enum Message {
     ToggleScalePopup,
     /// Close the scale picker popup.
     CloseScalePopup,
+    /// Toggle the status-bar customization menu open/closed.
+    ToggleStatusBarMenu,
+    /// Close the status-bar customization menu.
+    CloseStatusBarMenu,
+    /// Show/hide a single status-bar pill.
+    ToggleStatusPill(crate::ui::statusbar_config::StatusPill),
+    /// Toggle clean-screen mode (hide ribbon + side panels).
+    ToggleCleanScreen,
     /// Toggle dynamic input overlay (F12).
     ToggleDynInput,
     /// Toggle object snap tracking (F11).
@@ -1188,6 +1202,9 @@ impl OpenCADStudio {
             snapper: Snapper::default(),
             snap_popup_open: false,
             scale_popup_open: false,
+            statusbar_menu_open: false,
+            statusbar_config: crate::ui::statusbar_config::StatusBarConfig::load(),
+            clean_screen: false,
             pre_cmd_tangent: None,
             ortho_mode: false,
             polar_mode: false,

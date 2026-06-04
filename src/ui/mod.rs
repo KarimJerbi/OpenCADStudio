@@ -21,6 +21,8 @@ pub mod scale_popup;
 pub mod shortcuts;
 pub mod snap_popup;
 pub mod statusbar;
+pub mod statusbar_config;
+pub mod statusbar_menu;
 pub mod tablestyle;
 pub mod textstyle;
 

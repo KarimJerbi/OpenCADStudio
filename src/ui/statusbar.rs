@@ -6,6 +6,7 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::app::Message;
 use crate::snap::Snapper;
+use crate::ui::statusbar_config::{StatusBarConfig, StatusPill};
 
 #[derive(Clone, Default)]
 pub struct StatusBar {
@@ -50,6 +51,12 @@ impl StatusBar {
         scale_pill_enabled: bool,
         // LWDISPLAY header flag — controls lineweight visibility in the viewport.
         lineweight_display: bool,
+        // Live cursor position in model coordinates, for the coordinate readout.
+        cursor_world: glam::Vec3,
+        // True while clean-screen mode hides the ribbon and side panels.
+        clean_screen: bool,
+        // Which pills the user has chosen to show on the bar.
+        config: &'a StatusBarConfig,
     ) -> Element<'a, Message> {
         let menu_btn = button(text("≡").size(14).color(ICON_COLOR))
             .on_press(Message::Command("MENU".into()))
@@ -92,46 +99,84 @@ impl StatusBar {
         } else {
             status_pill(scale_label).into()
         };
-        let mut right_status = row![
-            tip(
+        // Build the right-side pills, honouring the user's per-pill visibility.
+        let vis = |p: StatusPill| config.is_visible(p);
+        let mut right_status = Row::new().spacing(2).align_y(iced::Center);
+        if vis(StatusPill::Coords) {
+            right_status = right_status.push(tip(
+                status_pill(format_coords(cursor_world)).into(),
+                "Cursor coordinates (X, Y, Z)",
+            ));
+        }
+        if vis(StatusPill::Snap) {
+            right_status = right_status.push(tip(
                 toggle_pill("SNAP", snap_grid_on, Message::ToggleGridSnap),
-                "Snap to Grid\nF9"
-            ),
-            tip(
+                "Snap to Grid\nF9",
+            ));
+        }
+        if vis(StatusPill::Grid) {
+            right_status = right_status.push(tip(
                 toggle_pill("GRID", show_grid, Message::ToggleGrid),
-                "Show Grid\nF7"
-            ),
-            tip(
+                "Show Grid\nF7",
+            ));
+        }
+        if vis(StatusPill::Ortho) {
+            right_status = right_status.push(tip(
                 toggle_pill("ORTHO", ortho_mode, Message::ToggleOrtho),
-                "Orthogonal Mode\nF8"
-            ),
-            tip(
+                "Orthogonal Mode\nF8",
+            ));
+        }
+        if vis(StatusPill::Lwt) {
+            right_status = right_status.push(tip(
                 toggle_pill("LWT", lineweight_display, Message::ToggleLineweightDisplay),
-                "Show Lineweight\nLWDISPLAY"
-            ),
-            polar_pill(polar_mode, polar_increment_deg),
-            tip(
+                "Show Lineweight\nLWDISPLAY",
+            ));
+        }
+        if vis(StatusPill::Polar) {
+            right_status = right_status.push(polar_pill(polar_mode, polar_increment_deg));
+        }
+        if vis(StatusPill::Dyn) {
+            right_status = right_status.push(tip(
                 toggle_pill("DYN", dyn_input, Message::ToggleDynInput),
-                "Dynamic Input\nF12"
-            ),
-            tip(
+                "Dynamic Input\nF12",
+            ));
+        }
+        if vis(StatusPill::Otrack) {
+            right_status = right_status.push(tip(
                 toggle_pill("OTRACK", otrack, Message::ToggleOTrack),
-                "Object Snap Tracking\nF11"
-            ),
-            osnap_btn(osnap_active, snapper.snap_enabled, popup_open),
-            tip(
+                "Object Snap Tracking\nF11",
+            ));
+        }
+        if vis(StatusPill::Osnap) {
+            right_status =
+                right_status.push(osnap_btn(osnap_active, snapper.snap_enabled, popup_open));
+        }
+        if vis(StatusPill::Space) {
+            right_status = right_status.push(tip(
                 space_mode_btn(&current_layout, in_mspace),
                 "PAPER: double-click viewport to enter MSPACE\nMODEL: click to switch to Model Space",
-            ),
-            scale_element,
-        ]
-        .spacing(2);
-        if !vp_label.is_empty() {
+            ));
+        }
+        if vis(StatusPill::Scale) {
+            right_status = right_status.push(scale_element);
+        }
+        if vis(StatusPill::Vp) && !vp_label.is_empty() {
             right_status = right_status.push(tip(
                 status_pill(vp_label).into(),
                 "Viewport count in active layout",
             ));
         }
+        if vis(StatusPill::CleanScreen) {
+            right_status = right_status.push(tip(
+                toggle_pill("CLEAN", clean_screen, Message::ToggleCleanScreen),
+                "Clean Screen\nHide ribbon and panels",
+            ));
+        }
+        // Customization handle: opens the pill show/hide menu.
+        right_status = right_status.push(tip(
+            customize_btn(),
+            "Customization\nShow or hide status-bar items",
+        ));
         let right_status = right_status;
 
         let mut bar = Row::new().align_y(iced::Center).spacing(0);
@@ -164,6 +209,32 @@ impl StatusBar {
             .padding([0, 4])
             .into()
     }
+}
+
+// ── Coordinate readout ────────────────────────────────────────────────────
+
+fn format_coords(p: glam::Vec3) -> String {
+    format!("{:.4}, {:.4}, {:.4}", p.x, p.y, p.z)
+}
+
+// ── Customization handle ──────────────────────────────────────────────────
+
+fn customize_btn() -> Element<'static, Message> {
+    button(text("≡").size(14).color(ICON_COLOR))
+        .on_press(Message::ToggleStatusBarMenu)
+        .style(|_: &Theme, status| button::Style {
+            background: Some(Background::Color(match status {
+                button::Status::Hovered => PILL_BG,
+                _ => Color::TRANSPARENT,
+            })),
+            border: Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .padding([2, 7])
+        .into()
 }
 
 // ── Tooltip helper ────────────────────────────────────────────────────────

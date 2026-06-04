@@ -2130,6 +2130,39 @@ impl OpenCADStudio {
                     return Task::none();
                 }
 
+                // Keep the coordinate readout live on every move, even with no
+                // active command. When a command is running the snap path below
+                // overwrites this with the snapped point.
+                {
+                    let bounds = iced::Rectangle {
+                        x: 0.0,
+                        y: 0.0,
+                        width: vp_size.0,
+                        height: vp_size.1,
+                    };
+                    let paper = if let Some(ref ucs) = self.tabs[i].active_ucs {
+                        let origin = glam::Vec3::new(
+                            ucs.origin.x as f32,
+                            ucs.origin.y as f32,
+                            ucs.origin.z as f32,
+                        );
+                        let normal = ucs_z_axis(ucs);
+                        self.tabs[i]
+                            .scene
+                            .camera
+                            .borrow()
+                            .pick_on_plane(p, bounds, normal, origin)
+                    } else {
+                        self.tabs[i]
+                            .scene
+                            .camera
+                            .borrow()
+                            .pick_on_target_plane(p, bounds)
+                    };
+                    let world = self.tabs[i].scene.paper_to_model(paper);
+                    self.tabs[i].last_cursor_world = world;
+                }
+
                 if self.tabs[i].active_cmd.is_some() {
                     let (vw, vh) = vp_size;
                     let bounds = iced::Rectangle {
@@ -3528,6 +3561,23 @@ impl OpenCADStudio {
             }
             Message::CloseScalePopup => {
                 self.scale_popup_open = false;
+                Task::none()
+            }
+            Message::ToggleStatusBarMenu => {
+                self.statusbar_menu_open ^= true;
+                Task::none()
+            }
+            Message::CloseStatusBarMenu => {
+                self.statusbar_menu_open = false;
+                Task::none()
+            }
+            Message::ToggleStatusPill(pill) => {
+                // Keep the menu open so several pills can be toggled in a row.
+                self.statusbar_config.toggle(pill);
+                Task::none()
+            }
+            Message::ToggleCleanScreen => {
+                self.clean_screen ^= true;
                 Task::none()
             }
             Message::ToggleSnap(t) => {

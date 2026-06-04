@@ -1057,7 +1057,7 @@ impl OpenCADStudio {
         // Replace the properties panel with a Recent Documents list there.
         let properties_el: Element<'_, Message> = if tab.is_start {
             recent_files_panel(&self.app_menu.recent)
-        } else if self.show_properties {
+        } else if self.show_properties && !self.clean_screen {
             tab.properties.view()
         } else {
             Space::new().into()
@@ -1100,11 +1100,16 @@ impl OpenCADStudio {
         .height(Fill);
 
         let main_ui = container({
-            let mut col = column![self.ribbon.view(
-                is_paper,
-                self.tabs[self.active_tab].history.undo_stack.len(),
-                self.tabs[self.active_tab].history.redo_stack.len(),
-            )];
+            // Clean-screen mode drops the ribbon for a full-canvas view; the
+            // status bar stays so the mode can be toggled back off.
+            let mut col = column![];
+            if !self.clean_screen {
+                col = col.push(self.ribbon.view(
+                    is_paper,
+                    self.tabs[self.active_tab].history.undo_stack.len(),
+                    self.tabs[self.active_tab].history.redo_stack.len(),
+                ));
+            }
             if self.show_file_tabs {
                 col = col.push(doc_tab_bar(&self.tabs, self.active_tab));
             }
@@ -1114,6 +1119,22 @@ impl OpenCADStudio {
                     let scale_pill_enabled = is_model
                         || tab.scene.active_viewport.is_some()
                         || tab.scene.has_selected_viewport();
+                    // The cursor is tracked in local render space; re-add the
+                    // model-space world offset so the readout shows true
+                    // drawing coordinates (paper space carries no offset).
+                    let cursor_coord = {
+                        let lc = tab.last_cursor_world;
+                        if is_model {
+                            let wo = tab.scene.world_offset;
+                            glam::Vec3::new(
+                                lc.x + wo[0] as f32,
+                                lc.y + wo[1] as f32,
+                                lc.z + wo[2] as f32,
+                            )
+                        } else {
+                            lc
+                        }
+                    };
                     self.status_bar.view(
                         &self.snapper,
                         self.snap_popup_open,
@@ -1134,6 +1155,9 @@ impl OpenCADStudio {
                         self.scale_popup_open,
                         scale_pill_enabled,
                         tab.scene.document.header.lineweight_display,
+                        cursor_coord,
+                        self.clean_screen,
+                        &self.statusbar_config,
                     )
                 })
                 .width(Fill)
@@ -1165,6 +1189,12 @@ impl OpenCADStudio {
                 tab.scene.first_viewport_scale(),
                 tab.scene.scale_list(),
             )
+        } else {
+            iced::widget::Space::new().width(0).height(0).into()
+        };
+
+        let statusbar_menu_layer: Element<'_, Message> = if self.statusbar_menu_open {
+            crate::ui::statusbar_menu::statusbar_menu_overlay(&self.statusbar_config)
         } else {
             iced::widget::Space::new().width(0).height(0).into()
         };
@@ -1204,6 +1234,7 @@ impl OpenCADStudio {
             self.app_menu.view(),
             snap_layer,
             scale_layer,
+            statusbar_menu_layer,
             dropdown_layer,
             layout_ctx_layer,
             qselect_layer,
