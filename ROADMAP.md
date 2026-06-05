@@ -212,7 +212,18 @@ Today every wire GPU buffer is re-uploaded when
 pool — `HashMap<Handle, GpuSlot>` — uploads only the slots that actually
 changed. Big win in CAD-edit scenarios.
 
-### 3.3 Single-draw batched wire pipeline (Phase 4-B-style)
+### 3.3 Single-draw batched wire pipeline (Phase 4-B-style) ✅ DONE
+
+`upload_wires` made one GPU buffer + one draw call per `WireModel` (tens of
+thousands on a large drawing). Now it merges maximal runs of *consecutive*
+wires sharing scissor + mesh-edge state into one concatenated instance buffer
+each (`WireGpu::from_run`), so the existing draw loop issues one draw per run
+— a 2D model collapses to a single buffer + single draw. Runs stay
+*consecutive* (not globally regrouped) so the sorted draw order is preserved
+bit-for-bit; depth bias and alpha blending are unchanged. The `WireInstance`
+layout, shader, scissor logic and draw loop are untouched — only the buffer
+packing changed. (No iced widget-pipeline limits were hit: the change lives
+entirely inside the existing custom wgpu pipeline.)
 
 Every `WireModel` today costs one draw call plus a bind-group swap. Port
 the batched hatch pipeline (`hatch_batched_gpu.rs`) to wires:

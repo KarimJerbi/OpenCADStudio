@@ -907,13 +907,35 @@ impl Pipeline {
                 .and_then(|h| depth_map.get(&h).copied())
                 .unwrap_or(0.0)
         };
-        self.gpu_wires = wires
-            .iter()
-            .map(|w| WireGpu::new(device, w, depth_of(w)))
-            .collect();
+        // Batch the wire pass: instead of one GPU buffer + one draw call per
+        // WireModel (tens of thousands on a large drawing), merge maximal runs
+        // of *consecutive* wires that share scissor + mesh-edge state into one
+        // concatenated instance buffer each. The draw loop then issues one draw
+        // per run. Runs must be consecutive (not regrouped) so the original
+        // wire order — already sorted by draw order — is preserved; depth bias
+        // and alpha blending both depend on it. Scissor and mesh-edge stay
+        // grouping keys because the draw loop sets one scissor per batch and
+        // skips whole mesh-edge batches in shaded modes.
+        let mut batches: Vec<WireGpu> = Vec::new();
+        let mut i = 0;
+        while i < wires.len() {
+            let scissor = wires[i].vp_scissor;
+            let mesh_edge = !wires[i].fill_tris.is_empty();
+            let mut j = i + 1;
+            while j < wires.len()
+                && wires[j].vp_scissor == scissor
+                && (!wires[j].fill_tris.is_empty()) == mesh_edge
+            {
+                j += 1;
+            }
+            batches.extend(WireGpu::from_run(device, &wires[i..j], depth_map, scissor, mesh_edge));
+            i = j;
+        }
+        self.gpu_wires = batches;
 
         // Full-brightness copies of selected wires, drawn on top of everything
-        // in the selection overlay pass so they're always visible.
+        // in the selection overlay pass so they're always visible. Kept
+        // per-wire — the selection set is small and this overlay is separate.
         self.gpu_selected_wires = wires
             .iter()
             .filter(|w| w.selected)

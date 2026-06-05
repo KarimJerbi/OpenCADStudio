@@ -284,6 +284,50 @@ impl WireGpu {
         g
     }
 
+    /// Merge a run of WireModels that share scissor + mesh-edge state into one
+    /// (or, past the 256 MB GPU limit, a few) instance buffer(s), then stamp
+    /// the shared `scissor` / `mesh_edge` onto each so the draw loop treats the
+    /// whole run as a single batch.
+    ///
+    /// Unlike [`from_batch`], instance order is **guaranteed** to follow wire
+    /// order (parallel `collect` is index-ordered; the flatten is sequential).
+    /// The main wire pass depends on that — depth-biased overlap *and* alpha
+    /// blending both resolve in submission order, so a reorder would change the
+    /// image for transparent / coincident wires.
+    pub fn from_run(
+        device: &wgpu::Device,
+        wires: &[WireModel],
+        depth_map: &rustc_hash::FxHashMap<u64, f32>,
+        scissor: Option<[f32; 4]>,
+        mesh_edge: bool,
+    ) -> Vec<Self> {
+        use rayon::prelude::*;
+        const MAX_INSTANCES: usize = 268_435_456 / std::mem::size_of::<WireInstance>();
+        let per: Vec<Vec<WireInstance>> = wires
+            .par_iter()
+            .map(|w| emit_wire_instances(w, w.color, wire_draw_depth(w, depth_map)))
+            .collect();
+        let mut instances: Vec<WireInstance> = Vec::with_capacity(per.iter().map(Vec::len).sum());
+        for mut v in per {
+            instances.append(&mut v);
+        }
+        if instances.is_empty() {
+            return vec![];
+        }
+        instances
+            .chunks(MAX_INSTANCES)
+            .map(|chunk| {
+                let buf = instance_buffer_mapped(device, "wire.run.ibuf", chunk);
+                Self {
+                    instance_buffer: buf,
+                    instance_count: chunk.len() as u32,
+                    vp_scissor: scissor,
+                    is_3d_mesh_edge: mesh_edge,
+                }
+            })
+            .collect()
+    }
+
     /// Merge multiple WireModels into GPU instance buffers, chunked to fit the
     /// 256 MB GPU limit. Each wire keeps its own color and pattern — they live
     /// per-instance.
