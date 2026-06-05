@@ -345,8 +345,14 @@ pub(crate) fn is_entity_corrupt(e: &EntityType) -> bool {
 }
 
 pub fn purge_corrupt_entities(doc: &mut CadDocument) -> usize {
-    let bad: Vec<acadrust::Handle> = doc
-        .entities()
+    use rayon::prelude::*;
+    // Detection is pure and read-only; the per-vertex finite/extent checks on
+    // large polylines dominate, so fan the scan out across cores. Gather
+    // entity references in one pass, test in parallel, then remove serially
+    // (`remove_entity` needs `&mut doc`).
+    let entities: Vec<&EntityType> = doc.entities().collect();
+    let bad: Vec<acadrust::Handle> = entities
+        .par_iter()
         .filter(|e| is_entity_corrupt(e))
         .map(|e| e.common().handle)
         .collect();
