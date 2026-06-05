@@ -547,20 +547,30 @@ fn offset_mesh_lod_set(mut set: MeshLodSet, world_offset: [f64; 3]) -> MeshLodSe
 /// Stable hash of a `Camera`'s pose for use as a per-tile cache key.
 /// Two cameras with bit-identical target / rotation / distance hash the
 /// same; any orbit / pan / zoom on a tile bumps it.
-fn camera_state_hash(c: &Camera) -> u64 {
+/// Hash of the camera state that affects *tessellation output* on the Model
+/// tile, deliberately EXCLUDING the pan target. Rotation governs the
+/// projection; `wpp` (world-per-pixel) governs the zoom-adaptive curve tol
+/// and the sub-pixel LOD cull. Two cameras with the same value differ only by
+/// pan, so the same tessellation is valid for both as long as the new view
+/// still fits inside the region the wires were culled to (see
+/// `model_tile_wires_arc`). Target is the one varying input on a pure pan.
+fn camera_pan_invariant_hash(c: &Camera, wpp: Option<f32>) -> u64 {
     fn h(state: u64, x: f32) -> u64 {
         state.rotate_left(13) ^ x.to_bits() as u64
     }
-    let mut s: u64 = 0xcbf2_9ce4_8422_2325;
-    s = h(s, c.target.x);
-    s = h(s, c.target.y);
-    s = h(s, c.target.z);
+    let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
     s = h(s, c.rotation.x);
     s = h(s, c.rotation.y);
     s = h(s, c.rotation.z);
     s = h(s, c.rotation.w);
-    s = h(s, c.distance);
+    s = h(s, wpp.unwrap_or(-1.0));
     s
+}
+
+/// `outer` fully contains `inner` (both `[min_x, min_y, max_x, max_y]`).
+#[inline]
+fn aabb_contains(outer: [f32; 4], inner: [f32; 4]) -> bool {
+    outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3]
 }
 
 pub struct Scene {
@@ -607,11 +617,14 @@ pub struct Scene {
     /// LOD / frustum culling has to run independently — the shared
     /// `wire_cache` would cull every tile against whichever camera was
     /// current when it was last built. Keyed by tile index; the value
-    /// carries `(geometry_epoch, camera_state_hash)` so a cache hit is
-    /// also rejected when the same tile's camera moved or the document
-    /// geometry changed.
+    /// Carries `(geometry_epoch, pan_invariant_hash, tessellated_region)`.
+    /// A hit needs the epoch + the rotation/tol signature to match AND the
+    /// tile's current visible view to still fit inside the region the wires
+    /// were culled to — so a pure pan within that 1.25×-margin region reuses
+    /// the tessellation instead of rebuilding it. Zoom / orbit / edits change
+    /// the epoch or signature and rebuild as before.
     model_tile_wire_cache:
-        RefCell<HashMap<usize, ((u64, u64), Arc<Vec<WireModel>>)>>,
+        RefCell<HashMap<usize, ((u64, u64, [f32; 4]), Arc<Vec<WireModel>>)>>,
     /// Index built from every SortEntitiesTable in the document.
     /// Maps block_handle → (entity_handle.value() → sort_handle.value()).
     /// Replaces the O(objects) linear scan inside `wires_for_block()` with an O(1) lookup.
@@ -1549,43 +1562,61 @@ impl Scene {
         cam_aspect: f32,
         tile_pixel_height: f32,
     ) -> Arc<Vec<WireModel>> {
-        let cam_key = camera_state_hash(cam);
-        let key = (self.geometry_epoch, cam_key);
-        {
-            let cache = self.model_tile_wire_cache.borrow();
-            if let Some((cached_key, ref arc)) = cache.get(&tile_idx) {
-                if *cached_key == key {
-                    return Arc::clone(arc);
-                }
-            }
-        }
-        // Compute the tile's own view AABB and world-per-pixel from its
-        // camera + pixel size (mirrors `view_world_aabb` /
-        // `world_per_pixel`, neither of which knows about anything beyond
-        // the live `self.camera`).
-        let view_aabb = if self.camera_generation == 0 {
-            None
-        } else {
-            let h = cam.ortho_size();
-            let w = h * cam_aspect.max(0.01);
-            let margin = 1.25_f32;
-            let cx = cam.target.x;
-            let cy = cam.target.y;
-            Some([cx - w * margin, cy - h * margin, cx + w * margin, cy + h * margin])
-        };
         let wpp = if tile_pixel_height > 0.0 {
             Some((2.0 * cam.ortho_size()) / tile_pixel_height)
         } else {
             None
         };
+        // Cache reuse is split from the exact-camera key: a pure pan keeps the
+        // geometry epoch and the pan-invariant signature (rotation + tol) but
+        // shifts the view. The cached wires were culled to a 1.25×-margin
+        // region; if the new *visible* view still sits inside that region they
+        // remain complete, so we can skip re-tessellation entirely — only the
+        // GPU re-uploads (camera_generation still bumps). No margin widening,
+        // so zoom (which changes the signature) costs exactly as before.
+        let pan_sig = camera_pan_invariant_hash(cam, wpp);
+        // Exact visible rect (margin 1.0) the reused wires must still cover.
+        let need_region = if self.camera_generation == 0 {
+            [f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY]
+        } else {
+            let h = cam.ortho_size();
+            let w = h * cam_aspect.max(0.01);
+            let (cx, cy) = (cam.target.x, cam.target.y);
+            [cx - w, cy - h, cx + w, cy + h]
+        };
+        {
+            let cache = self.model_tile_wire_cache.borrow();
+            if let Some(((epoch, sig, region), arc)) = cache.get(&tile_idx) {
+                if *epoch == self.geometry_epoch
+                    && *sig == pan_sig
+                    && aabb_contains(*region, need_region)
+                {
+                    return Arc::clone(arc);
+                }
+            }
+        }
+        // Miss → cull/tessellate to the 1.25×-margin region (unchanged cost)
+        // and remember that region for the pan-reuse test above.
+        let tess_region = if self.camera_generation == 0 {
+            None
+        } else {
+            let h = cam.ortho_size();
+            let w = h * cam_aspect.max(0.01);
+            let margin = 1.25_f32;
+            let (cx, cy) = (cam.target.x, cam.target.y);
+            Some([cx - w * margin, cy - h * margin, cx + w * margin, cy + h * margin])
+        };
         let block = self.model_space_block_handle();
         let t_tess = std::time::Instant::now();
-        let arc = Arc::new(self.wires_for_block_culled(block, view_aabb, wpp, None, None));
+        let arc = Arc::new(self.wires_for_block_culled(block, tess_region, wpp, None, None));
         self.last_tess_ms.set(t_tess.elapsed().as_secs_f32() * 1000.0);
         self.last_tess_wires.set(arc.len());
-        self.model_tile_wire_cache
-            .borrow_mut()
-            .insert(tile_idx, (key, Arc::clone(&arc)));
+        let stored_region = tess_region
+            .unwrap_or([f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY]);
+        self.model_tile_wire_cache.borrow_mut().insert(
+            tile_idx,
+            ((self.geometry_epoch, pan_sig, stored_region), Arc::clone(&arc)),
+        );
         arc
     }
 

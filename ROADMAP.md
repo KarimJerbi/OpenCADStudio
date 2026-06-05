@@ -165,7 +165,18 @@ geometry is camera-invariant.
   changed),
 - `frame_visible[handle] → bool` (recomputed per `camera_generation`).
 
-**Partial (landed):** `set_hover_highlight` no longer bumps the geometry
+**Partial (landed): pan reuse.** The Model-tile wire cache no longer keys on
+the exact camera hash. It now keys on `(geometry_epoch, pan_invariant_hash,
+tessellated_region)` where `pan_invariant_hash` covers rotation + tol (`wpp`)
+but NOT the pan target. A pure pan keeps the epoch + signature and only shifts
+the view, so as long as the new visible rect still fits inside the
+1.25×-margin region the wires were culled to, the tessellation is reused
+outright — no re-tessellation, `tess ms` drops to ~0 on the PERF HUD. Zoom
+(changes `wpp`), orbit (changes rotation) and edits (change epoch) rebuild
+exactly as before; the cull margin is unchanged, so miss cost is identical
+(no zoom regression).
+
+**Partial (landed): hover.** `set_hover_highlight` no longer bumps the geometry
 epoch (a full re-tessellation) when the hovered entity is already selected —
 the effective highlight set `selected ∪ {hover}` is then unchanged, so the
 tessellation output is identical. Hovering over / between selected entities
