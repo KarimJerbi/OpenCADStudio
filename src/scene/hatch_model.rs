@@ -265,40 +265,47 @@ impl HatchModel {
                         let p1 = [lx + t1 * cos_a, ly + t1 * sin_a];
                         segments.push([p0, p1]);
                     } else {
-                        // Walk the dash sequence along this clipped span.
-                        // Negative entries are gaps, positive are dashes.
-                        // Skip ahead by `t0 mod period` so dash phase aligns
-                        // across consecutive line spans (matches the GPU
-                        // shader which evaluates dash on absolute t).
+                        // Walk the dash sequence along this clipped span with
+                        // absolute phase (so the pattern aligns across spans,
+                        // matching the GPU shader). Positive entries are
+                        // dashes, negative are gaps, and a zero-length entry is
+                        // a dot — rendered as a short mark so dot patterns
+                        // (e.g. DOTS) are visible instead of drawing nothing.
+                        let n = family.dashes.len();
+                        let dot_len = (period * 0.06).max(1e-3);
                         let phase = t0.rem_euclid(period);
-                        let mut t = t0;
-                        let mut cursor = phase;
+                        // Start at the period boundary at or before t0; the
+                        // span clip below drops anything before t0.
+                        let mut seg_t = t0 - phase;
                         let mut idx = 0usize;
-                        // Fast-forward `idx` and the in-element offset by
-                        // the phase amount.
-                        let mut consumed = 0.0_f32;
-                        loop {
+                        let max_iters = (((t1 - t0) / period).ceil() as usize + 2) * n + 8;
+                        let mut iters = 0usize;
+                        while seg_t < t1 && iters < max_iters {
                             let d = family.dashes[idx];
-                            let d_world = d.abs() * scale;
-                            if consumed + d_world > cursor {
-                                let remaining = consumed + d_world - cursor;
-                                let t_end = (t + remaining).min(t1);
-                                if d > 0.0 && t_end > t {
-                                    let p0 = [lx + t * cos_a, ly + t * sin_a];
-                                    let p1 = [lx + t_end * cos_a, ly + t_end * sin_a];
-                                    segments.push([p0, p1]);
+                            let dl = d.abs() * scale;
+                            if d > 0.0 {
+                                let a = seg_t.max(t0);
+                                let b = (seg_t + dl).min(t1);
+                                if b > a {
+                                    segments.push([
+                                        [lx + a * cos_a, ly + a * sin_a],
+                                        [lx + b * cos_a, ly + b * sin_a],
+                                    ]);
                                 }
-                                t = t_end;
-                                if t >= t1 - 1e-6 {
-                                    break;
+                            } else if d == 0.0 && seg_t >= t0 - 1e-6 && seg_t <= t1 + 1e-6 {
+                                // Short centered mark for the dot.
+                                let a = (seg_t - dot_len * 0.5).max(t0);
+                                let b = (seg_t + dot_len * 0.5).min(t1);
+                                if b > a {
+                                    segments.push([
+                                        [lx + a * cos_a, ly + a * sin_a],
+                                        [lx + b * cos_a, ly + b * sin_a],
+                                    ]);
                                 }
-                                cursor = 0.0;
-                                consumed = 0.0;
-                                idx = (idx + 1) % family.dashes.len();
-                            } else {
-                                consumed += d_world;
-                                idx = (idx + 1) % family.dashes.len();
                             }
+                            seg_t += dl;
+                            idx = (idx + 1) % n;
+                            iters += 1;
                             if segments.len() >= MAX_SEGMENTS_TOTAL {
                                 return segments;
                             }

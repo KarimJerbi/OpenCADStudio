@@ -190,11 +190,20 @@ fn check_family(
 
     let perp   = -px * sin_a + pz * cos_a;
     let k      = round(perp / perp_step);
-    let d      = abs(perp - k * perp_step);
+    let dperp  = perp - k * perp_step;
+    let d      = abs(dperp);
     let half_px = length(vec2<f32>(dpdx(perp), dpdy(perp))) * 0.5;
 
-    if d > half_px { return false; }
-    if fam.n_dashes == 0u { return true; }
+    // World units per screen pixel on each axis — used to light exactly the
+    // one pixel that contains a dot's centre (pixel-snapped, so the dot stays
+    // a steady single pixel at any pattern angle instead of flickering).
+    let wpx = length(vec2<f32>(dpdx(xz.x), dpdy(xz.x)));
+    let wpy = length(vec2<f32>(dpdx(xz.y), dpdy(xz.y)));
+
+    // A fragment within ~1px of a line may be a dot; everything further out is
+    // empty fill. (A dot's pixel sits on a line, so its perp offset is < 1px.)
+    if d > half_px * 2.0 { return false; }
+    if fam.n_dashes == 0u { return d <= half_px; }
 
     let along_step = fam.along_step * scale;
     let period     = fam.period * scale;
@@ -206,10 +215,19 @@ fn check_family(
     for (var j = 0u; j < fam.n_dashes; j++) {
         let sv = dashes[fam.dash_offset + j] * scale;
         if sv > 0.0 {
-            if t_mod >= pos && t_mod < pos + sv { return true; }
+            if d <= half_px && t_mod >= pos && t_mod < pos + sv { return true; }
             pos = pos + sv;
-        } else {
+        } else if sv < 0.0 {
             pos = pos - sv;
+        } else {
+            // Dot: signed distance to its lattice centre (along the line and
+            // across lines), rotated back to world, then snapped to the pixel
+            // grid. The dot grid rotates with the pattern; the lit pixel does
+            // not, so it never thins/flickers.
+            let dtv = (t - pos) - round((t - pos) / period) * period;
+            let owx = -dtv * cos_a + dperp * sin_a;
+            let owy = -dtv * sin_a - dperp * cos_a;
+            if abs(owx / wpx) <= 0.5 && abs(owy / wpy) <= 0.5 { return true; }
         }
     }
     return false;

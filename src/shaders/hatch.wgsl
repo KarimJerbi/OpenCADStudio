@@ -165,13 +165,21 @@ fn check_family(
 
     let perp   = -px * sin_a + pz * cos_a;
     let k      = round(perp / perp_step);
-    let d      = abs(perp - k * perp_step);
+    let dperp  = perp - k * perp_step;
+    let d      = abs(dperp);
     let half_px = length(vec2<f32>(dpdx(perp), dpdy(perp))) * 0.5;
 
-    if d > half_px { return false; }
+    // World units per screen pixel on each axis — used to light exactly the
+    // one pixel that contains a dot's centre (pixel-snapped, so a dot stays a
+    // steady single pixel at any pattern angle instead of flickering).
+    let wpx = length(vec2<f32>(dpdx(xz.x), dpdy(xz.x)));
+    let wpy = length(vec2<f32>(dpdx(xz.y), dpdy(xz.y)));
+
+    // A fragment within ~1px of a line may be a dot; further out is empty fill.
+    if d > half_px * 2.0 { return false; }
 
     // Solid line family — no dash check needed.
-    if fam.n_dashes == 0u { return true; }
+    if fam.n_dashes == 0u { return d <= half_px; }
 
     // Dash pattern test: position along line k.
     let along_step = fam.along_step * scale;
@@ -185,10 +193,18 @@ fn check_family(
         let idx = fam.dash_off + j;
         let sv  = f.dash_values[idx / 4u][idx % 4u] * scale;  // scale dash lengths
         if sv > 0.0 {
-            if t_mod >= pos && t_mod < pos + sv { return true; }
+            if d <= half_px && t_mod >= pos && t_mod < pos + sv { return true; }
             pos = pos + sv;
-        } else {
+        } else if sv < 0.0 {
             pos = pos - sv;
+        } else {
+            // Dot: signed distance to its lattice centre, rotated back to world
+            // and snapped to the pixel grid — the grid rotates with the
+            // pattern but the lit pixel stays a steady single pixel.
+            let dtv = (t - pos) - round((t - pos) / period) * period;
+            let owx = -dtv * cos_a + dperp * sin_a;
+            let owy = -dtv * sin_a - dperp * cos_a;
+            if abs(owx / wpx) <= 0.5 && abs(owy / wpy) <= 0.5 { return true; }
         }
     }
     return false;
