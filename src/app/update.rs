@@ -646,8 +646,19 @@ impl OpenCADStudio {
             }
 
             Message::SaveDialogConfirm => {
-                let path = self.save_dialog_folder.join(&self.save_dialog_filename);
-                let (_, version) = crate::io::parse_save_format(&self.save_dialog_format);
+                let (ext, version) = crate::io::parse_save_format(&self.save_dialog_format);
+                // The user need not type an extension: append the selected
+                // format's one when the entered name carries none.
+                let name = self.save_dialog_filename.trim();
+                let filename = if name.is_empty() {
+                    format!("drawing.{ext}")
+                } else if std::path::Path::new(name).extension().is_none() {
+                    format!("{name}.{ext}")
+                } else {
+                    name.to_string()
+                };
+                self.save_dialog_filename = filename.clone();
+                let path = self.save_dialog_folder.join(&filename);
                 let close = self.close_save_dialog_window();
                 let i = self.active_tab;
                 sync_annotation_scale_header(&mut self.tabs[i].scene);
