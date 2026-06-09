@@ -60,6 +60,16 @@ impl OpenCADStudio {
         self.command_line.set_step_prompt(prompt);
         // Persist UI preferences whenever a toggle changes them (issue #68).
         self.persist_settings_if_changed();
+        // OTRACK acquires tracking points only while a command or grip drag is
+        // running; drop them once neither is active so the temporary tracking
+        // points / vectors disappear when the command ends (issue #64).
+        let i = self.active_tab;
+        if self.tabs[i].active_cmd.is_none()
+            && self.tabs[i].active_grip.is_none()
+            && !self.snapper.tracking_points.is_empty()
+        {
+            self.snapper.clear_tracking();
+        }
         task
     }
 
