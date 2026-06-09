@@ -198,6 +198,10 @@ pub(super) struct OpenCADStudio {
     /// Last persisted user preferences (DYN/OSNAP/OTRACK/POLAR/…). Compared
     /// after each message so a change is written to disk exactly once.
     last_saved_settings: Option<settings::UserSettings>,
+    /// Active OTRACK alignment `(tracking_point, unit_direction)` when the
+    /// cursor is on a tracking ray. Lets a typed distance place a point along
+    /// the ray from the tracking point (issue #69). `None` when not aligned.
+    otrack_active: Option<(glam::Vec3, glam::Vec3)>,
     /// Whether Tangent snap was enabled before a tangent-pick command started.
     pre_cmd_tangent: Option<bool>,
     /// Orthogonal drawing constraint (F8): constrains picks to 0°/90°/180°/270°.
@@ -1271,6 +1275,7 @@ impl OpenCADStudio {
             selection_filter_popup_open: false,
             statusbar_config: crate::ui::statusbar_config::StatusBarConfig::load(),
             last_saved_settings: None,
+            otrack_active: None,
             clean_screen: false,
             quick_properties: false,
             selection_cycling: false,

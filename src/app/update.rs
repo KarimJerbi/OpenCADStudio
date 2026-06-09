@@ -69,6 +69,7 @@ impl OpenCADStudio {
             && !self.snapper.tracking_points.is_empty()
         {
             self.snapper.clear_tracking();
+            self.otrack_active = None;
         }
         task
     }
@@ -1225,6 +1226,25 @@ impl OpenCADStudio {
                             return self.apply_cmd_result(r);
                         }
                         return Task::none();
+                    }
+
+                    // OTRACK: while aligned to a tracking ray, a bare distance
+                    // places the point along the ray from the tracking point
+                    // (issue #69).
+                    if let Some((base, dir)) = self.otrack_active {
+                        if let Some(dist) = super::expr_eval::eval_number(text.trim()) {
+                            let pt = base + dir * dist as f32;
+                            self.last_point = Some(pt);
+                            self.dyn_user_reshaped = false;
+                            self.sync_dyn_fields();
+                            let result = self.tabs[i].active_cmd.as_mut().map(|c| c.on_point(pt));
+                            if let Some(r) = result {
+                                let task = self.apply_cmd_result(r);
+                                self.refresh_active_cmd_preview(i);
+                                return task;
+                            }
+                            return Task::none();
+                        }
                     }
 
                     if let Some((coord, kind)) = parse_coord(&text) {
@@ -2384,43 +2404,51 @@ impl OpenCADStudio {
                             .snap(cursor_world, p, &all_wires[..], view_proj, bounds)
                     };
 
-                    // Object Snap Tracking: update dwell and override snap if tracking.
-                    let otrack_snap_world = {
+                    // Object Snap Tracking: update dwell, then align the cursor
+                    // to a tracking ray (and store the alignment so a typed
+                    // distance can place a point along it — issue #69).
+                    let otrack_hit = {
                         let snap_world = self.tabs[i].snap_result.map(|s| s.world);
                         self.snapper
                             .update_otrack_dwell(snap_world, view_proj, bounds);
                         if self.tabs[i].snap_result.is_none() {
-                            self.snapper
-                                .otrack_snap(cursor_world, view_proj, bounds)
-                                .map(|(w, _)| w)
+                            let step = if self.polar_mode {
+                                Some(self.polar_increment_deg)
+                            } else {
+                                None
+                            };
+                            self.snapper.otrack_snap(cursor_world, view_proj, bounds, step)
                         } else {
                             None
                         }
                     };
-                    if let Some(ow) = otrack_snap_world {
-                        // Override the effective point with the OST alignment.
-                        // (don't set snap_result so the normal snap marker stays hidden)
-                        self.tabs[i].last_cursor_world = ow;
-                    }
+                    self.otrack_active = otrack_hit.map(|h| (h.base, h.dir));
 
                     let effective = {
-                        // snap.world is paper-space for viewport-projected wires; convert
-                        // to model-space so previews use consistent coordinates.
-                        let mut pt = self.tabs[i]
-                            .snap_result
-                            .map(|s| self.tabs[i].scene.paper_to_model(s.world))
-                            .unwrap_or(cursor_world);
-                        // Clamp to world XY only when no UCS is active; with a UCS the
-                        // point already lies on the UCS XY plane.
+                        let mut pt = if let Some(h) = otrack_hit {
+                            // Tracking alignment wins over the free cursor;
+                            // ortho/polar don't re-constrain it.
+                            h.aligned
+                        } else {
+                            // snap.world is paper-space for viewport-projected
+                            // wires; convert to model-space for previews.
+                            let mut pt = self.tabs[i]
+                                .snap_result
+                                .map(|s| self.tabs[i].scene.paper_to_model(s.world))
+                                .unwrap_or(cursor_world);
+                            if let Some(base) = self.last_point {
+                                if self.ortho_mode {
+                                    pt = ortho_constrain(pt, base);
+                                } else if self.polar_mode {
+                                    pt = polar_constrain(pt, base, self.polar_increment_deg);
+                                }
+                            }
+                            pt
+                        };
+                        // Clamp to world XY only when no UCS is active; with a
+                        // UCS the point already lies on the UCS XY plane.
                         if self.tabs[i].active_cmd.is_some() && self.tabs[i].active_ucs.is_none() {
                             pt.z = 0.0;
-                        }
-                        if let Some(base) = self.last_point {
-                            if self.ortho_mode {
-                                pt = ortho_constrain(pt, base);
-                            } else if self.polar_mode {
-                                pt = polar_constrain(pt, base, self.polar_increment_deg);
-                            }
                         }
                         pt
                     };
@@ -2483,6 +2511,35 @@ impl OpenCADStudio {
                                 };
                                 previews.push(guide);
                             }
+                        }
+                    }
+                    // OTRACK alignment guide: dashed ray through the tracking
+                    // point along the aligned direction (issue #69).
+                    if let Some(h) = otrack_hit {
+                        if !needs_entity {
+                            let far = 1e5_f32;
+                            let far_pos = h.base + h.dir * far;
+                            let far_neg = h.base - h.dir * far;
+                            previews.push(crate::scene::WireModel {
+                                name: "__otrack_guide__".into(),
+                                points: vec![
+                                    [far_neg.x, far_neg.y, far_neg.z],
+                                    [far_pos.x, far_pos.y, far_pos.z],
+                                ],
+                                color: [0.2, 0.9, 0.5, 0.6],
+                                selected: false,
+                                aci: 0,
+                                pattern_length: 0.8,
+                                pattern: [0.5, -0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                                line_weight_px: 1.0,
+                                snap_pts: vec![],
+                                tangent_geoms: vec![],
+                                key_vertices: vec![],
+                                aabb: crate::scene::WireModel::UNBOUNDED_AABB,
+                                plinegen: true,
+                                vp_scissor: None,
+                                fill_tris: vec![],
+                            });
                         }
                     }
                     self.tabs[i].scene.set_preview_wires(previews);
@@ -2833,7 +2890,24 @@ impl OpenCADStudio {
                         if self.tabs[i].active_ucs.is_none() {
                             pt.z = 0.0;
                         }
-                        if let Some(base) = self.last_point {
+                        // OTRACK alignment wins over ortho/polar; otherwise apply
+                        // ortho/polar relative to the last point.
+                        let otrack = if snap_hit.is_none() {
+                            let step = if self.polar_mode {
+                                Some(self.polar_increment_deg)
+                            } else {
+                                None
+                            };
+                            self.snapper.otrack_snap(raw, vp_mat, bounds, step)
+                        } else {
+                            None
+                        };
+                        if let Some(h) = otrack {
+                            pt = h.aligned;
+                            if self.tabs[i].active_ucs.is_none() {
+                                pt.z = 0.0;
+                            }
+                        } else if let Some(base) = self.last_point {
                             if self.ortho_mode {
                                 pt = ortho_constrain(pt, base);
                             } else if self.polar_mode {
@@ -7224,7 +7298,13 @@ impl OpenCADStudio {
             .map(|c| c.wants_text_input())
             .unwrap_or(false);
         let has_base = self.last_point.is_some();
+        // While aligned to an OTRACK ray, the point step reads a single
+        // distance along the ray (issue #69) — show one Distance box.
+        let otrack_dist = self.otrack_active.is_some()
+            && !wants_text
+            && matches!(field, crate::command::DynField::Point);
         let default: Vec<DynComponent> = match field {
+            _ if otrack_dist => vec![DynComponent::Distance],
             crate::command::DynField::Distance => vec![DynComponent::Distance],
             crate::command::DynField::Angle => vec![DynComponent::Angle],
             crate::command::DynField::Scalar => vec![DynComponent::Scalar],
@@ -7572,6 +7652,33 @@ impl OpenCADStudio {
             || !self.tabs[i].dyn_fields.iter().any(|f| f.locked())
         {
             return None;
+        }
+        // OTRACK: while aligned to a tracking ray, a typed value is a distance
+        // along the ray from the tracking point (issue #69).
+        if let Some((base, dir)) = self.otrack_active {
+            let wants_text = self.tabs[i]
+                .active_cmd
+                .as_ref()
+                .map(|c| c.wants_text_input())
+                .unwrap_or(false);
+            if !wants_text {
+                if let Some(text) = self.tabs[i].dyn_fields.iter().find_map(|f| f.buffer.clone()) {
+                    if let Some(dist) = super::expr_eval::eval_number(text.trim()) {
+                        let pt = base + dir * dist as f32;
+                        self.last_point = Some(pt);
+                        for f in self.tabs[i].dyn_fields.iter_mut() {
+                            f.buffer = None;
+                        }
+                        self.tabs[i].dyn_active = 0;
+                        self.dyn_user_reshaped = false;
+                        self.sync_dyn_fields();
+                        let result = self.tabs[i].active_cmd.as_mut().map(|c| c.on_point(pt));
+                        let task = result.map(|r| self.apply_cmd_result(r))?;
+                        self.refresh_active_cmd_preview(i);
+                        return Some(task);
+                    }
+                }
+            }
         }
         // A text-input step reads its single box as a string and commits via
         // `on_text_input` (a count, radius, distance) rather than resolving a

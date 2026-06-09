@@ -61,6 +61,18 @@ pub struct SnapResult {
     pub tangent_obj: Option<TangentObject>,
 }
 
+/// Object-snap-tracking alignment: the cursor projected onto a ray from an
+/// acquired tracking point.
+#[derive(Debug, Clone, Copy)]
+pub struct OtrackHit {
+    /// Cursor projected onto the tracking ray.
+    pub aligned: Vec3,
+    /// Unit ray direction toward the cursor side (for typed-distance entry).
+    pub dir: Vec3,
+    /// The tracking point the ray emanates from.
+    pub base: Vec3,
+}
+
 // ── Snapper ───────────────────────────────────────────────────────────────
 
 use rustc_hash::FxHashSet as HashSet;
@@ -201,16 +213,19 @@ impl Snapper {
         }
     }
 
-    /// Given the current cursor world position, check if it aligns with any
-    /// tracking point horizontally or vertically.  Returns the snapped world
-    /// position (and index of the tracking point) if alignment is found within
-    /// `snap_radius_px` screen pixels.
+    /// Project the cursor onto a tracking ray emanating from one of the
+    /// acquired tracking points, in the XY plane. Without `polar_step_deg` the
+    /// rays are horizontal / vertical (0° / 90°); with it, every polar
+    /// increment is a candidate so the user can track along POLAR angles.
+    /// Returns the aligned point, the unit ray direction (pointing toward the
+    /// cursor side, used for typed-distance entry), and the tracking point.
     pub fn otrack_snap(
         &self,
         cursor_world: Vec3,
         view_proj: glam::Mat4,
         bounds: iced::Rectangle,
-    ) -> Option<(Vec3, usize)> {
+        polar_step_deg: Option<f32>,
+    ) -> Option<OtrackHit> {
         if !self.otrack_enabled || self.tracking_points.is_empty() {
             return None;
         }
@@ -218,24 +233,46 @@ impl Snapper {
         let cursor_screen = world_to_screen(cursor_world, view_proj, bounds);
         let r = self.snap_radius_px;
 
-        for (idx, &tp) in self.tracking_points.iter().enumerate() {
-            // Horizontal alignment: cursor.z ≈ tp.z
-            let aligned_h = Vec3::new(cursor_world.x, 0.0, tp.z);
-            let s = world_to_screen(aligned_h, view_proj, bounds);
-            let dy = (s.y - cursor_screen.y).abs();
-            if dy < r {
-                return Some((aligned_h, idx));
+        // Candidate angles in [0,180); each ray extends both ways via the
+        // signed projection `t`, so 0°/90° cover horizontal/vertical.
+        let mut angles: Vec<f32> = Vec::new();
+        match polar_step_deg.filter(|s| *s > 1e-3) {
+            Some(step) => {
+                let mut a = 0.0_f32;
+                while a < 180.0 - 1e-3 {
+                    angles.push(a);
+                    a += step;
+                }
             }
-
-            // Vertical alignment: cursor.x ≈ tp.x
-            let aligned_v = Vec3::new(tp.x, 0.0, cursor_world.z);
-            let s = world_to_screen(aligned_v, view_proj, bounds);
-            let dx = (s.x - cursor_screen.x).abs();
-            if dx < r {
-                return Some((aligned_v, idx));
+            None => {
+                angles.push(0.0);
+                angles.push(90.0);
             }
         }
-        None
+
+        let mut best: Option<(f32, OtrackHit)> = None;
+        for &tp in self.tracking_points.iter() {
+            for &adeg in &angles {
+                let ar = adeg.to_radians();
+                let dir = Vec3::new(ar.cos(), ar.sin(), 0.0);
+                let t = (cursor_world.x - tp.x) * dir.x + (cursor_world.y - tp.y) * dir.y;
+                let aligned = Vec3::new(tp.x + dir.x * t, tp.y + dir.y * t, tp.z);
+                let s = world_to_screen(aligned, view_proj, bounds);
+                let sd = ((s.x - cursor_screen.x).powi(2) + (s.y - cursor_screen.y).powi(2)).sqrt();
+                if sd < r && best.as_ref().map_or(true, |(bd, _)| sd < *bd) {
+                    let dir_out = if t >= 0.0 { dir } else { -dir };
+                    best = Some((
+                        sd,
+                        OtrackHit {
+                            aligned,
+                            dir: dir_out,
+                            base: tp,
+                        },
+                    ));
+                }
+            }
+        }
+        best.map(|(_, h)| h)
     }
 
     /// Clear all acquired tracking points (e.g. when command ends).
