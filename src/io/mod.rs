@@ -267,6 +267,44 @@ fn fix_current_style_names(doc: &mut CadDocument) {
             doc.header.multiline_style = name;
         }
     }
+
+    // Current table / multileader style. DXF carries these as $CTABLESTYLE /
+    // $CMLEADERSTYLE header vars (already read). DWG has no header field for
+    // them — they live in the variable dictionary as DICTIONARYVAR entries
+    // keyed "CTABLESTYLE" / "CMLEADERSTYLE". Resolve from there when present;
+    // a missing entry simply leaves the existing value untouched.
+    if let Some(v) = vardict_value(doc, "CTABLESTYLE") {
+        if !v.is_empty() {
+            doc.header.current_table_style_name = v;
+        }
+    }
+    if let Some(v) = vardict_value(doc, "CMLEADERSTYLE") {
+        if !v.is_empty() {
+            doc.header.current_mleader_style_name = v;
+        }
+    }
+}
+
+/// Look up a system-variable value stored in the document's variable
+/// dictionary: find the dictionary entry whose key matches `name`, then read
+/// the `DictionaryVariable` it points at.
+fn vardict_value(doc: &CadDocument, name: &str) -> Option<String> {
+    use acadrust::objects::ObjectType;
+    let handle = doc.objects.values().find_map(|o| {
+        let entries = match o {
+            ObjectType::Dictionary(d) => &d.entries,
+            ObjectType::DictionaryWithDefault(d) => &d.entries,
+            _ => return None,
+        };
+        entries
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, h)| *h)
+    })?;
+    match doc.objects.get(&handle) {
+        Some(ObjectType::DictionaryVariable(v)) => Some(v.value.clone()),
+        _ => None,
+    }
 }
 
 // ── Corrupt-entity guard ──────────────────────────────────────────────────
