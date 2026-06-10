@@ -218,7 +218,7 @@ pub fn save_as_version(
 ) -> Result<(), String> {
     let mut doc = doc.clone();
     doc.version = version;
-    sync_current_style_vardicts(&mut doc);
+    sync_current_styles_on_save(&mut doc);
     let ext = path
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -325,11 +325,44 @@ fn set_vardict_value(doc: &mut CadDocument, name: &str, value: &str) {
     }
 }
 
-/// Mirror the current table / multileader style from the header into the
-/// variable dictionary before saving, so the choice round-trips through DWG
-/// (which stores them as DICTIONARYVAR entries, not header fields). DXF keeps
-/// both the header vars and the dictionary in sync this way too.
-fn sync_current_style_vardicts(doc: &mut CadDocument) {
+/// Materialise the current-style choices into their format-specific storage
+/// before saving, treating the current-style *names* as the single source of
+/// truth:
+///
+/// * text / dim / multiline live in the DWG header as **handles** — the writer
+///   keeps a stored handle if it's still valid and otherwise falls back to
+///   "Standard", so a Set Current change (which only updates the name) would be
+///   lost. Re-resolve the handle from the name here so the change persists.
+/// * table / multileader live in the **variable dictionary** (DICTIONARYVAR).
+///
+/// DXF additionally writes its own header vars from the names, so this keeps
+/// every representation consistent.
+fn sync_current_styles_on_save(doc: &mut CadDocument) {
+    use acadrust::objects::ObjectType;
+
+    let th = doc
+        .text_styles
+        .get(&doc.header.current_text_style_name)
+        .map(|s| s.handle);
+    if let Some(h) = th {
+        doc.header.current_text_style_handle = h;
+    }
+    let dh = doc
+        .dim_styles
+        .get(&doc.header.current_dimstyle_name)
+        .map(|s| s.handle);
+    if let Some(h) = dh {
+        doc.header.current_dimstyle_handle = h;
+    }
+    let mname = doc.header.multiline_style.clone();
+    let mh = doc.objects.values().find_map(|o| match o {
+        ObjectType::MLineStyle(s) if s.name.eq_ignore_ascii_case(&mname) => Some(s.handle),
+        _ => None,
+    });
+    if let Some(h) = mh {
+        doc.header.current_multiline_style_handle = h;
+    }
+
     let table = doc.header.current_table_style_name.clone();
     let mleader = doc.header.current_mleader_style_name.clone();
     set_vardict_value(doc, "CTABLESTYLE", &table);
