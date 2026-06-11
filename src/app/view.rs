@@ -1119,6 +1119,16 @@ impl OpenCADStudio {
             }
         }
 
+        // Paper-space context actions: a right-edge vertical toolbar
+        // (viewport / page setup / plot) instead of a contextual ribbon tab.
+        if is_paper && !tab.is_start {
+            if let Some(tb) = crate::ui::side_toolbar::view(
+                &crate::modules::layout::paper_space_tools(),
+            ) {
+                viewport_stack = viewport_stack.push(tb);
+            }
+        }
+
         // Quick Properties: compact floating property panel on selection,
         // anchored at the canvas top-left so it doesn't track the cursor.
         if self.quick_properties && !tab.is_start {

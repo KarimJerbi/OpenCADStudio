@@ -5005,13 +5005,9 @@ impl OpenCADStudio {
                 self.tabs[i].scene.deselect_all();
                 self.tabs[i].scene.restore_saved_camera();
                 self.tabs[i].last_synced_camera_gen = self.tabs[i].scene.camera_generation;
-                if going_to_paper {
-                    if let Some(idx) = self.ribbon.layout_module_index() {
-                        self.ribbon.select(idx);
-                    }
-                } else if self.ribbon.active_is_layout() {
-                    self.ribbon.select(0);
-                }
+                // Paper-space tools live in the right-edge side toolbar now, so
+                // entering/leaving a layout no longer hijacks the ribbon tab.
+                let _ = going_to_paper;
                 // Refresh VP freeze columns for the new layout.
                 let doc_layers = self.tabs[i].scene.document.layers.clone();
                 let vp_info = self.tabs[i].scene.viewport_list();
@@ -5054,9 +5050,6 @@ impl OpenCADStudio {
                         self.tabs[i].scene.ensure_sheet_viewport(&new_name);
                         self.tabs[i].scene.deselect_all();
                         self.tabs[i].scene.fit_all();
-                        if let Some(idx) = self.ribbon.layout_module_index() {
-                            self.ribbon.select(idx);
-                        }
                         self.command_line.push_output(&format!(
                             "Layout \"{new_name}\" created — use MVIEW to add a viewport"
                         ));
@@ -5075,12 +5068,6 @@ impl OpenCADStudio {
                 if self.tabs[i].scene.delete_layout(&name) {
                     self.layout_context_menu = None;
                     self.layout_rename_state = None;
-                    // If we fell back to Model space, update ribbon.
-                    if self.tabs[i].scene.current_layout == "Model"
-                        && self.ribbon.active_is_layout()
-                    {
-                        self.ribbon.select(0);
-                    }
                     self.command_line
                         .push_output(&format!("Layout \"{name}\" silindi"));
                     self.tabs[i].dirty = true;

@@ -6,6 +6,26 @@ pub mod vplayer;
 
 use crate::modules::{CadModule, IconKind, ModuleEvent, RibbonGroup, ToolDef};
 
+/// Paper-space context tools, as a flat list for the right-edge side toolbar
+/// (the contextual ribbon tab is no longer shown). Viewport + plot actions.
+pub fn paper_space_tools() -> Vec<ToolDef> {
+    vec![
+        mview::tool(),
+        ToolDef {
+            id: "PAGESETUP",
+            label: "Page Setup",
+            icon: IconKind::Glyph("📋"),
+            event: ModuleEvent::Command("PAGESETUP".to_string()),
+        },
+        ToolDef {
+            id: "PLOT",
+            label: "Export PDF",
+            icon: IconKind::Glyph("🖨"),
+            event: ModuleEvent::Command("PLOT".to_string()),
+        },
+    ]
+}
+
 pub struct LayoutModule;
 
 impl CadModule for LayoutModule {

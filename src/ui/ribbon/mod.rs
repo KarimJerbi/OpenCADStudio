@@ -246,7 +246,9 @@ impl Ribbon {
                 .align_y(iced::Center)
                 .spacing(6),
             |row_acc, (i, module)| {
-                if module.id() == "layout" && !is_paper {
+                // The Layout module no longer has a ribbon tab — its paper-space
+                // tools live in the right-edge side toolbar (see ui::side_toolbar).
+                if module.id() == "layout" {
                     return row_acc;
                 }
 
