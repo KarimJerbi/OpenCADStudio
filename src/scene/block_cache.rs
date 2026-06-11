@@ -292,6 +292,12 @@ fn build_defn(
         ) {
             continue;
         }
+        // Invisible sub-entities never render (see pass 2), so keep them out
+        // of the offset centroid too — otherwise a dynamic block's hidden
+        // states would drag the precision origin off the visible geometry.
+        if entity.common().invisible {
+            continue;
+        }
         // For Inserts, take the insertion_point itself (acadrust's
         // `Insert::bounding_box` returns just that). One level deep is
         // enough for an offset-picker — nested Inserts inside that block
@@ -346,6 +352,14 @@ fn build_defn(
         let Some(entity) = doc.get_entity(eh) else {
             continue;
         };
+        // Skip entities flagged invisible. Dynamic blocks (e.g. a visibility-
+        // state parametric block) keep the geometry for every state in one
+        // anonymous block and mark all but the active state's entities
+        // invisible — honouring the flag is what shows a single profile
+        // instead of every variant stacked on top of each other.
+        if entity.common().invisible {
+            continue;
+        }
         match entity {
             EntityType::Block(_)
             | EntityType::BlockEnd(_)
