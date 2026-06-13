@@ -1118,10 +1118,18 @@ impl OpenCADStudio {
                         }
                     }
                     if stretched {
+                        self.tabs[i].scene.mark_entity_dirty(*handle);
                         count += 1;
                     }
                 }
 
+                // Geometry was edited in place via get_entity_mut, which the
+                // scene's tessellation cache doesn't observe. Re-tessellate the
+                // moved entities so the viewport reflects the stretch right away
+                // instead of only on the next unrelated redraw. See #95.
+                if count > 0 {
+                    self.tabs[i].scene.bump_geometry_no_blocks();
+                }
                 self.tabs[i].dirty = true;
                 self.tabs[i].active_cmd = None;
                 self.tabs[i].snap_result = None;
