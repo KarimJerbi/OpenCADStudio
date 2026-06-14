@@ -292,6 +292,7 @@ pub(super) struct OpenCADStudio {
     color_pick_target: Option<ColorPickTarget>,
     shortcuts_window: Option<window::Id>,
     about_window: Option<window::Id>,
+    plugin_manager_window: Option<window::Id>,
     /// New-release notification window — opened on startup when the
     /// GitHub releases API reports a newer version than this build.
     update_notice_window: Option<window::Id>,
@@ -987,6 +988,10 @@ pub enum Message {
     // ── About window ────────────────────────────────────────────────────
     AboutOpen,
     AboutCopyInfo,
+    // ── Plugin Manager window ───────────────────────────────────────────
+    PluginManagerOpen,
+    #[allow(dead_code)]
+    PluginManagerClose,
     // ── Quick Select / Select Similar ───────────────────────────────────
     /// Extend the current selection with every entity in the active
     /// layout that matches a selected entity by (type, layer).
@@ -1402,6 +1407,7 @@ impl OpenCADStudio {
             color_pick_target: None,
             shortcuts_window: None,
             about_window: None,
+            plugin_manager_window: None,
             update_notice_window: None,
             assoc_prompt_window: None,
             default_assoc_prompted: false,
@@ -1711,6 +1717,9 @@ pub fn run() -> iced::Result {
         }
         if Some(window_id) == state.about_window {
             return "About Open CAD Studio".into();
+        }
+        if Some(window_id) == state.plugin_manager_window {
+            return "Plugin Manager".into();
         }
         if Some(window_id) == state.update_notice_window {
             return "Update Available".into();

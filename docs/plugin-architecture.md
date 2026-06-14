@@ -255,7 +255,7 @@ This mirrors QGIS: the application ships core menus; plugins add tabs/tools with
 - [x] Storm Sewer off `commands.rs` monolith
 - [x] Single registration (`plugin.toml` + `BuiltinPlugin::ribbon`)
 - [~] Extract `ocs_plugin_api` crate — manifest + ribbon/`CadModule` done; `acadrust`-typed host surface pending
-- [ ] Plugin manager UI stub (list installed, versions)
+- [x] Plugin manager UI stub (list installed, versions) — `PLUGINS` / `PLUGINMANAGER` command, or the Start-page "Plugins" button
 
 ### Phase 2 — Dynamic loading (desktop)
 

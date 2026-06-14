@@ -474,6 +474,9 @@ impl OpenCADStudio {
         if Some(window_id) == self.about_window {
             return crate::ui::about::view_window();
         }
+        if Some(window_id) == self.plugin_manager_window {
+            return crate::ui::plugin_manager::view_window(&crate::plugin::installed_manifests());
+        }
         if Some(window_id) == self.update_notice_window {
             let latest = self.update_notice_version.as_deref().unwrap_or("?");
             let body = self.update_notice_body.as_deref().unwrap_or("");
@@ -3743,6 +3746,7 @@ pub(super) fn start_page_view<'a>() -> Element<'a, Message> {
                 event: crate::modules::ModuleEvent::Command("CHANGELOG".to_string()),
             },
         ),
+        outline_btn("Plugins", Message::PluginManagerOpen),
         outline_btn("About", Message::AboutOpen),
     ]
     .spacing(12)

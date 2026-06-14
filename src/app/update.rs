@@ -1640,6 +1640,9 @@ impl OpenCADStudio {
                     self.about_window = None;
                     self.ribbon.deactivate_tool_if("ABOUT");
                 }
+                if self.plugin_manager_window == Some(id) {
+                    self.plugin_manager_window = None;
+                }
                 if self.update_notice_window == Some(id) {
                     self.update_notice_window = None;
                 }
@@ -5392,6 +5395,28 @@ impl OpenCADStudio {
                     std::env::consts::ARCH,
                 );
                 iced::clipboard::write(info)
+            }
+
+            // ── Plugin Manager window ─────────────────────────────────────
+            Message::PluginManagerOpen => {
+                if let Some(id) = self.plugin_manager_window {
+                    return window::gain_focus(id);
+                }
+                let (id, task) = window::open(window::Settings {
+                    size: iced::Size::new(520.0, 460.0),
+                    resizable: true,
+                    level: window::Level::AlwaysOnTop,
+                    ..Default::default()
+                });
+                self.plugin_manager_window = Some(id);
+                task.map(|_| Message::Noop)
+            }
+            Message::PluginManagerClose => {
+                if let Some(id) = self.plugin_manager_window.take() {
+                    window::close(id)
+                } else {
+                    Task::none()
+                }
             }
 
             Message::EnterViewport(handle) => {

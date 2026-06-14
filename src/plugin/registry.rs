@@ -1,6 +1,7 @@
 // Compile-time plugin registry via `inventory`.
 
 use super::host::{BuiltinPlugin, HostSession};
+use super::manifest::PluginManifest;
 use crate::app::OpenCADStudio;
 use crate::modules::{registry as core_registry, CadModule};
 
@@ -16,6 +17,15 @@ pub fn all_plugins() -> Vec<Box<dyn BuiltinPlugin>> {
         .into_iter()
         .map(|r| (r.construct)())
         .collect()
+}
+
+/// Static manifest of every installed add-on, sorted by `ribbon_order` then id
+/// for a stable display. Used by the plugin manager window.
+pub fn installed_manifests() -> Vec<&'static PluginManifest> {
+    let mut manifests: Vec<&'static PluginManifest> =
+        all_plugins().iter().map(|p| p.manifest()).collect();
+    manifests.sort_by(|a, b| a.ribbon_order.cmp(&b.ribbon_order).then(a.id.cmp(b.id)));
+    manifests
 }
 
 /// Core ribbon tabs plus add-on tabs (sorted by `manifest.ribbon_order`).
@@ -59,6 +69,25 @@ mod tests {
             "demo_plugin missing; ids: {:?}",
             plugins.iter().map(|p| p.manifest().id).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn installed_manifests_lists_demo_plugin() {
+        let manifests = installed_manifests();
+        assert!(
+            manifests.iter().any(|m| m.id == "opencad.demo_plugin"),
+            "ids: {:?}",
+            manifests.iter().map(|m| m.id).collect::<Vec<_>>()
+        );
+        // Sorted by (ribbon_order, id) — verify non-decreasing order.
+        let mut prev: Option<(i32, &str)> = None;
+        for m in &manifests {
+            let key = (m.ribbon_order, m.id);
+            if let Some(p) = prev {
+                assert!(p <= key, "manifests not sorted: {p:?} then {key:?}");
+            }
+            prev = Some(key);
+        }
     }
 
     #[test]

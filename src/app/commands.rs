@@ -36,6 +36,7 @@ impl OpenCADStudio {
             && !matches!(
                 cmd,
                 "NEW" | "OPEN" | "EXIT" | "QUIT" | "REPORT" | "CHANGELOG" | "ABOUT"
+                    | "PLUGINS" | "PLUGINMANAGER"
             )
         {
             self.command_line
@@ -2673,6 +2674,10 @@ impl OpenCADStudio {
 
             "ABOUT" => {
                 return Task::done(Message::AboutOpen);
+            }
+
+            "PLUGINS" | "PLUGINMANAGER" => {
+                return Task::done(Message::PluginManagerOpen);
             }
 
             "CHANGELOG" => {

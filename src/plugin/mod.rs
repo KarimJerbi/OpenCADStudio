@@ -10,4 +10,4 @@ pub mod registry;
 
 pub use registry::all_ribbon_modules;
 pub(crate) use host::BuiltinPlugin;
-pub(crate) use registry::try_dispatch;
+pub(crate) use registry::{installed_manifests, try_dispatch};

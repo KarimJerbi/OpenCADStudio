@@ -17,6 +17,7 @@ pub mod open_progress;
 pub mod overlay;
 pub mod page_setup;
 pub mod plotstyle;
+pub mod plugin_manager;
 pub mod properties;
 pub mod ribbon;
 pub mod scale_popup;
