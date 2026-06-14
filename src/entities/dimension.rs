@@ -1004,6 +1004,22 @@ fn tessellate_dimension_inner(
         (a, a)
     };
 
+    // Text box (local space) so the dim line can be broken where the text
+    // crosses it — lets a DIMTFILL background sit over the line. The renderer
+    // draws 2D fills under all wires, so the line is gapped rather than masked.
+    let dimgap_local = style.map(|s| (s.dimgap * dim_scale) as f32).unwrap_or(0.09);
+    let text_break = {
+        let tp = vec3_local(dimension_text_pos_f64(dim, style, dim_txt), world_offset);
+        let tw = dimension_text_value(dim, style)
+            .map(|t| t.chars().count() as f32 * dim_txt as f32 * 0.6)
+            .unwrap_or(0.0);
+        if tw > 0.0 {
+            Some((tp, tw * 0.5 + dimgap_local, dim_txt as f32 * 0.5 + dimgap_local))
+        } else {
+            None
+        }
+    };
+
     let mut geom = dimension_geometry(
         dim,
         &arrow1,
@@ -1018,6 +1034,7 @@ fn tessellate_dimension_inner(
             dimcen,
             ticks: dimtsz_raw > 1e-9,
             arrow_len: dimasz,
+            text_break,
         },
         SuppressFlags {
             ext1: dimse1,
@@ -1450,6 +1467,10 @@ struct DimLineParams {
     ticks: bool,
     /// Arrowhead length (DIMASZ, scaled) — used to decide arrow-outside fit.
     arrow_len: f32,
+    /// Text box (local centre, half-width, half-height) used to break the
+    /// dimension line where the text sits on it, so a DIMTFILL background reads
+    /// over the line. None when the text doesn't overlap the line.
+    text_break: Option<(Vec3, f32, f32)>,
 }
 fn dimension_geometry(
     dim: &Dimension,
@@ -1655,7 +1676,24 @@ fn append_linear_dimension(
     // DIMSD1/DIMSD2: when *both* set, omit the dim line entirely. AutoCAD
     // splits at text otherwise — without that pivot info, leave as-is.
     if !(suppress.dim1 && suppress.dim2) {
-        add_segment(&mut g.dim_lines, d1_out, d2_out);
+        // Break the dim line where the text sits on it, so a DIMTFILL
+        // background reads over the line (2-D fills draw under all wires, so the
+        // line is gapped rather than z-masked).
+        let mut drew = false;
+        if let Some((tc, half_w, half_h)) = params.text_break {
+            let dir = normalized_or(d2_out - d1_out, axis);
+            let len = (d2_out - d1_out).length();
+            let along = (tc - d1_out).dot(dir);
+            let perp_dist = (tc - (d1_out + dir * along)).length();
+            if perp_dist < half_h && along - half_w > 0.0 && along + half_w < len {
+                add_segment(&mut g.dim_lines, d1_out, d1_out + dir * (along - half_w));
+                add_segment(&mut g.dim_lines, d1_out + dir * (along + half_w), d2_out);
+                drew = true;
+            }
+        }
+        if !drew {
+            add_segment(&mut g.dim_lines, d1_out, d2_out);
+        }
         if arrows_outside && !params.dimsoxd {
             let stub = params.arrow_len * 2.0;
             add_segment(&mut g.dim_lines, d1 - dir_d1_to_d2 * stub, d1);
