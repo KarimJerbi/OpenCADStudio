@@ -6535,6 +6535,14 @@ impl OpenCADStudio {
                 Task::none()
             }
 
+            Message::TableColorMore(row, field) => {
+                self.ts_color_open = if self.ts_color_open == Some((row, field)) {
+                    None
+                } else {
+                    Some((row, field))
+                };
+                Task::none()
+            }
             Message::TableStyleCellEdit { row, field, value } => {
                 let r = row as usize;
                 if r < 3 {
@@ -6985,6 +6993,14 @@ impl OpenCADStudio {
                 }
                 Task::none()
             }
+            Message::MLeaderColorMore(field) => {
+                self.mls_color_open = if self.mls_color_open == Some(field) {
+                    None
+                } else {
+                    Some(field)
+                };
+                Task::none()
+            }
             Message::MLeaderStyleSetEnum { field, value } => {
                 use acadrust::objects::{
                     BlockContentConnectionType, LeaderContentType, LeaderDrawOrderType,
@@ -7292,6 +7308,14 @@ impl OpenCADStudio {
             }
             Message::DsToggle(field) => {
                 self.apply_ds_toggle(field);
+                Task::none()
+            }
+            Message::DsColorMore(field) => {
+                self.ds_color_open = if self.ds_color_open.as_ref() == Some(&field) {
+                    None
+                } else {
+                    Some(field)
+                };
                 Task::none()
             }
             Message::DsSetHandle { field, value } => {

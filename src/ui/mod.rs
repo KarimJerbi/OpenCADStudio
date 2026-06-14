@@ -4,6 +4,7 @@ pub const ROW_H: f32 = 26.0;
 
 pub mod about;
 pub mod app_menu;
+pub mod color_select;
 pub mod command_line;
 pub mod cycle_popup;
 pub mod dimstyle;

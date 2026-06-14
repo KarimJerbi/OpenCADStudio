@@ -136,6 +136,7 @@ impl OpenCADStudio {
                 &self.ts_border_spacing,
                 self.style_rename.as_deref(),
                 &self.style_rename_buf,
+                self.ts_color_open,
             );
         }
         if Some(window_id) == self.mlstyle_window {
@@ -286,6 +287,7 @@ impl OpenCADStudio {
                     block_content_name,
                     rename_active: self.style_rename.as_deref(),
                     rename_buf: &self.style_rename_buf,
+                    color_open: self.mls_color_open,
                 },
             );
         }
@@ -457,6 +459,7 @@ impl OpenCADStudio {
                     dimltex2_name,
                     block_opts,
                     lt_opts,
+                    color_open: self.ds_color_open.clone(),
                 },
                 self.style_rename.as_deref(),
                 &self.style_rename_buf,

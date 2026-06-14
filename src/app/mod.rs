@@ -352,6 +352,8 @@ pub(super) struct OpenCADStudio {
 
     // ── MLeaderStyle Dialog ───────────────────────────────────────────────
     mleaderstyle_selected: String,
+    /// Colour field whose expanded palette is open (line/text/block).
+    mls_color_open: Option<&'static str>,
     mls_landing_distance: String,
     mls_landing_gap: String,
     mls_arrowhead_size: String,
@@ -381,6 +383,9 @@ pub(super) struct OpenCADStudio {
     /// General table-style description buffer.
     ts_description: String,
     /// Per-cell edit buffers, indexed 0=Data, 1=Header, 2=Title.
+    /// Table cell colour field (row class, "textcolor"/"fillcolor") whose
+    /// expanded palette is open.
+    ts_color_open: Option<(u8, &'static str)>,
     ts_cell_textstyle: [String; 3],
     ts_cell_height: [String; 3],
     ts_cell_textcolor: [String; 3],
@@ -467,6 +472,8 @@ pub(super) struct OpenCADStudio {
     // ── DimStyle Dialog ───────────────────────────────────────────────────
     /// Name of the style currently shown in the dialog.
     dimstyle_selected: String,
+    /// Which colour field currently has its expanded palette open (if any).
+    ds_color_open: Option<DsField>,
     /// Active tab: 0=Lines, 1=Arrows, 2=Text, 3=Scale/Units, 4=Tolerances.
     dimstyle_tab: u8,
     // Edit buffers (strings while typing):
@@ -1171,6 +1178,8 @@ pub enum Message {
         field: &'static str,
         value: String,
     },
+    /// Toggle the expanded colour palette for a table cell colour field.
+    TableColorMore(u8, &'static str),
     /// Toggle background fill on a cell style.
     TableStyleCellToggleFill(u8),
     /// Set the alignment of a cell style from the dropdown.
@@ -1223,6 +1232,8 @@ pub enum Message {
         field: &'static str,
         value: String,
     },
+    /// Toggle the expanded colour palette for an MLeaderStyle colour field.
+    MLeaderColorMore(&'static str),
     MLeaderStyleToggle(&'static str),
     MLeaderStyleSetEnum {
         field: &'static str,
@@ -1254,6 +1265,8 @@ pub enum Message {
     // Field edit messages:
     DsEdit(DsField, String),
     DsToggle(DsField),
+    /// Toggle the expanded colour palette for a DimStyle colour field.
+    DsColorMore(DsField),
     /// Set a block/linetype Handle field on the selected dim style from a
     /// dropdown of available block-records / linetypes (by name).
     DsSetHandle {
@@ -1429,6 +1442,7 @@ impl OpenCADStudio {
             ts_hmargin: "1.5".to_string(),
             ts_vmargin: "1.5".to_string(),
             ts_description: String::new(),
+            ts_color_open: None,
             ts_cell_textstyle: Default::default(),
             ts_cell_height: Default::default(),
             ts_cell_textcolor: Default::default(),
@@ -1443,6 +1457,7 @@ impl OpenCADStudio {
             mlstyle_selected: "Standard".to_string(),
             // MLeaderStyle dialog
             mleaderstyle_selected: "Standard".to_string(),
+            mls_color_open: None,
             mls_landing_distance: String::new(),
             mls_landing_gap: String::new(),
             mls_arrowhead_size: String::new(),
@@ -1465,6 +1480,7 @@ impl OpenCADStudio {
             mls_block_scale_z: String::new(),
             // DimStyle dialog
             dimstyle_selected: "Standard".to_string(),
+            ds_color_open: None,
             dimstyle_tab: 0,
             ds_dimdle: "0".to_string(),
             ds_dimdli: "3.75".to_string(),

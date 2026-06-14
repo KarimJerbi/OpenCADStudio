@@ -126,6 +126,8 @@ pub struct DimStyleValues<'a> {
     // Dropdown option lists shared by the arrowhead / linetype fields.
     pub block_opts: Vec<String>,
     pub lt_opts: Vec<String>,
+    /// Colour field whose expanded palette is currently open.
+    pub color_open: Option<DsField>,
 }
 
 fn tab_btn_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
@@ -290,43 +292,24 @@ pub fn view_window<'a>(
         ("6", "Windows desktop"),
     ];
 
-    // ACI colour swatches (1-9) + ByLayer; reuses the existing DsEdit path
-    // (the chosen index is sent as the field's string value).
-    let color_row = move |label: &'static str, fld: DsField, val: &'a str| -> Element<'a, Message> {
-        let cur: i16 = val.trim().parse().unwrap_or(256);
-        let mut swatches = row![].spacing(2).align_y(iced::Center);
-        for aci in 1u8..=9 {
-            let c = acadrust::types::Color::from_index(aci as i16);
-            let (bg, _) = crate::ui::properties::acad_color_display(c);
-            let sel = cur == aci as i16;
-            swatches = swatches.push(
-                button(text("").width(16).height(14))
-                    .on_press(Message::DsEdit(fld.clone(), aci.to_string()))
-                    .style(move |_: &Theme, _| button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border {
-                            color: if sel { Color::WHITE } else { Color::BLACK },
-                            width: if sel { 2.0 } else { 1.0 },
-                            radius: 2.0.into(),
-                        },
-                        ..Default::default()
-                    }),
-            );
-        }
-        // ByLayer (256) chip.
-        swatches = swatches.push(
-            button(text("ByLayer").size(10))
-                .on_press(Message::DsEdit(fld.clone(), "256".to_string()))
-                .style(move |_: &Theme, _| button::Style {
-                    border: Border {
-                        color: if cur == 256 { Color::WHITE } else { BORDER },
-                        width: if cur == 256 { 2.0 } else { 1.0 },
-                        radius: 2.0.into(),
-                    },
-                    ..Default::default()
-                }),
+    // Shared colour selector (main dropdown + "more" palette), reusing the
+    // existing DsEdit path (the chosen colour is sent as an ACI string).
+    let color_open = vals.color_open.clone();
+    let color_row = move |label: &'static str, fld: DsField, _val: &'a str| -> Element<'a, Message> {
+        let cur = crate::ui::color_select::aci_string_to_color(_val);
+        let open = color_open.as_ref() == Some(&fld);
+        let f_sel = fld.clone();
+        let selector = crate::ui::color_select::color_selector(
+            cur,
+            open,
+            crate::ui::color_select::ColorExtras {
+                by_layer: true,
+                by_block: true,
+            },
+            move |c| Message::DsEdit(f_sel.clone(), crate::ui::color_select::color_to_aci_string(c)),
+            Message::DsColorMore(fld.clone()),
         );
-        row![lbl(label), swatches]
+        row![lbl(label), selector]
             .spacing(8)
             .align_y(iced::Center)
             .into()
