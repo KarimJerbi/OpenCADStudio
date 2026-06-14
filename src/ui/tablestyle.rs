@@ -121,6 +121,53 @@ pub fn view_window<'a>(
             .align_y(iced::Center)
             .into()
         };
+        // ACI swatch row — sends the chosen index through the same cell edit.
+        let cell_color = |label: &'static str, value: &'a str, field: &'static str| -> Element<'a, Message> {
+            let cur: i16 = value.trim().parse().unwrap_or(256);
+            let mut sw = row![].spacing(2).align_y(iced::Center);
+            for aci in 1u8..=9 {
+                let c = acadrust::types::Color::from_index(aci as i16);
+                let (bg, _) = crate::ui::properties::acad_color_display(c);
+                let sel = cur == aci as i16;
+                sw = sw.push(
+                    button(text("").width(16).height(14))
+                        .on_press(Message::TableStyleCellEdit {
+                            row,
+                            field,
+                            value: aci.to_string(),
+                        })
+                        .style(move |_: &Theme, _| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border {
+                                color: if sel { Color::WHITE } else { Color::BLACK },
+                                width: if sel { 2.0 } else { 1.0 },
+                                radius: 2.0.into(),
+                            },
+                            ..Default::default()
+                        }),
+                );
+            }
+            sw = sw.push(
+                button(text("ByLayer").size(10))
+                    .on_press(Message::TableStyleCellEdit {
+                        row,
+                        field,
+                        value: "256".to_string(),
+                    })
+                    .style(move |_: &Theme, _| button::Style {
+                        border: Border {
+                            color: if cur == 256 { Color::WHITE } else { BORDER },
+                            width: if cur == 256 { 2.0 } else { 1.0 },
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    }),
+            );
+            row![text(label).size(11).color(DIM).width(150), sw]
+                .spacing(8)
+                .align_y(iced::Center)
+                .into()
+        };
         let mut col = Column::new()
             .spacing(3)
             .push(text(row_label).size(11).color(ACCENT))
@@ -131,18 +178,8 @@ pub fn view_window<'a>(
                 "textstyle",
             ))
             .push(cell_in("  Text height:", "0.18", &cell_height[r], "height"))
-            .push(cell_in(
-                "  Text color (ACI):",
-                "256",
-                &cell_textcolor[r],
-                "textcolor",
-            ))
-            .push(cell_in(
-                "  Fill color (ACI):",
-                "256",
-                &cell_fillcolor[r],
-                "fillcolor",
-            ))
+            .push(cell_color("  Text color:", &cell_textcolor[r], "textcolor"))
+            .push(cell_color("  Fill color:", &cell_fillcolor[r], "fillcolor"))
             .push(
                 row![
                     text("  Alignment:").size(11).color(DIM).width(150),

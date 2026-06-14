@@ -290,6 +290,48 @@ pub fn view_window<'a>(
         ("6", "Windows desktop"),
     ];
 
+    // ACI colour swatches (1-9) + ByLayer; reuses the existing DsEdit path
+    // (the chosen index is sent as the field's string value).
+    let color_row = move |label: &'static str, fld: DsField, val: &'a str| -> Element<'a, Message> {
+        let cur: i16 = val.trim().parse().unwrap_or(256);
+        let mut swatches = row![].spacing(2).align_y(iced::Center);
+        for aci in 1u8..=9 {
+            let c = acadrust::types::Color::from_index(aci as i16);
+            let (bg, _) = crate::ui::properties::acad_color_display(c);
+            let sel = cur == aci as i16;
+            swatches = swatches.push(
+                button(text("").width(16).height(14))
+                    .on_press(Message::DsEdit(fld.clone(), aci.to_string()))
+                    .style(move |_: &Theme, _| button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            color: if sel { Color::WHITE } else { Color::BLACK },
+                            width: if sel { 2.0 } else { 1.0 },
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    }),
+            );
+        }
+        // ByLayer (256) chip.
+        swatches = swatches.push(
+            button(text("ByLayer").size(10))
+                .on_press(Message::DsEdit(fld.clone(), "256".to_string()))
+                .style(move |_: &Theme, _| button::Style {
+                    border: Border {
+                        color: if cur == 256 { Color::WHITE } else { BORDER },
+                        width: if cur == 256 { 2.0 } else { 1.0 },
+                        radius: 2.0.into(),
+                    },
+                    ..Default::default()
+                }),
+        );
+        row![lbl(label), swatches]
+            .spacing(8)
+            .align_y(iced::Center)
+            .into()
+    };
+
     // Block / linetype Handle dropdown: pick a block-record (arrowheads) or a
     // linetype by name from the available records.
     let hrow = move |label: &'static str,
@@ -348,24 +390,14 @@ pub fn view_window<'a>(
             .align_y(iced::Center),
             chk("Suppress 1st line (DIMSE1)", vals.dimse1, DsField::Dimse1),
             chk("Suppress 2nd line (DIMSE2)", vals.dimse2, DsField::Dimse2),
-            row![
-                lbl("Dim line color ACI (DIMCLRD)"),
-                mk_field(DsField::Dimclrd, vals.dimclrd)
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
+            color_row("Dim line color ACI (DIMCLRD)", DsField::Dimclrd, vals.dimclrd),
             row![
                 lbl("Dim line weight (DIMLWD)"),
                 mk_field(DsField::Dimlwd, vals.dimlwd)
             ]
             .spacing(8)
             .align_y(iced::Center),
-            row![
-                lbl("Ext line color ACI (DIMCLRE)"),
-                mk_field(DsField::Dimclre, vals.dimclre)
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
+            color_row("Ext line color ACI (DIMCLRE)", DsField::Dimclre, vals.dimclre),
             row![
                 lbl("Ext line weight (DIMLWE)"),
                 mk_field(DsField::Dimlwe, vals.dimlwe)
@@ -496,12 +528,7 @@ pub fn view_window<'a>(
             ),
             chk("Horizontal inside (DIMTIH)", vals.dimtih, DsField::Dimtih),
             chk("Horizontal outside (DIMTOH)", vals.dimtoh, DsField::Dimtoh),
-            row![
-                lbl("Text color ACI (DIMCLRT)"),
-                mk_field(DsField::Dimclrt, vals.dimclrt)
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
+            color_row("Text color ACI (DIMCLRT)", DsField::Dimclrt, vals.dimclrt),
             enum_field(
                 "Horizontal just (DIMJUST)",
                 DsField::Dimjust,
@@ -530,12 +557,7 @@ pub fn view_window<'a>(
                     ("2", "Color"),
                 ],
             ),
-            row![
-                lbl("Fill color ACI (DIMTFILLCLR)"),
-                mk_field(DsField::Dimtfillclr, vals.dimtfillclr)
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
+            color_row("Fill color ACI (DIMTFILLCLR)", DsField::Dimtfillclr, vals.dimtfillclr),
             chk(
                 "Left-to-right (DIMTXTDIRECTION)",
                 vals.dimtxtdirection,

@@ -126,6 +126,53 @@ fn num_row<'a>(
     .into()
 }
 
+/// ACI colour swatch row (1-9 + ByLayer). Reuses MLeaderStyleEdit by sending
+/// the chosen index as the field's string value.
+fn color_row<'a>(label: &'static str, value: &'a str, field: &'static str) -> Element<'a, Message> {
+    let cur: i16 = value.trim().parse().unwrap_or(256);
+    let mut swatches = row![].spacing(2).align_y(iced::Center);
+    for aci in 1u8..=9 {
+        let c = acadrust::types::Color::from_index(aci as i16);
+        let (bg, _) = crate::ui::properties::acad_color_display(c);
+        let sel = cur == aci as i16;
+        swatches = swatches.push(
+            button(text("").width(16).height(14))
+                .on_press(Message::MLeaderStyleEdit {
+                    field,
+                    value: aci.to_string(),
+                })
+                .style(move |_: &Theme, _| button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        color: if sel { Color::WHITE } else { Color::BLACK },
+                        width: if sel { 2.0 } else { 1.0 },
+                        radius: 2.0.into(),
+                    },
+                    ..Default::default()
+                }),
+        );
+    }
+    swatches = swatches.push(
+        button(text("ByLayer").size(10))
+            .on_press(Message::MLeaderStyleEdit {
+                field,
+                value: "256".to_string(),
+            })
+            .style(move |_: &Theme, _| button::Style {
+                border: Border {
+                    color: if cur == 256 { Color::WHITE } else { BORDER },
+                    width: if cur == 256 { 2.0 } else { 1.0 },
+                    radius: 2.0.into(),
+                },
+                ..Default::default()
+            }),
+    );
+    row![text(label).size(11).color(DIM).width(150), swatches]
+        .spacing(8)
+        .align_y(iced::Center)
+        .into()
+}
+
 fn enum_row<'a>(
     label: &'static str,
     options: Vec<String>,
@@ -213,7 +260,7 @@ pub fn view_window<'a>(v: MLeaderStyleView<'a>) -> Element<'a, Message> {
                     format!("{:?}", s.path_type),
                     "path_type"
                 ),
-                num_row("Line color (ACI):", "256", v.line_color, "line_color"),
+                color_row("Line color (ACI):", v.line_color, "line_color"),
                 num_row("Line weight:", "-2", v.line_weight, "line_weight"),
                 handle_row(
                     "Line type:",
@@ -289,7 +336,7 @@ pub fn view_window<'a>(v: MLeaderStyleView<'a>) -> Element<'a, Message> {
                     "text_style_handle"
                 ),
                 num_row("Text height:", "0.18", v.text_height, "text_height"),
-                num_row("Text color (ACI):", "256", v.text_color, "text_color"),
+                color_row("Text color (ACI):", v.text_color, "text_color"),
                 enum_row(
                     "Text angle:",
                     opts(&["ParallelToLastLeaderLine", "Horizontal", "Optimized"]),
@@ -342,7 +389,7 @@ pub fn view_window<'a>(v: MLeaderStyleView<'a>) -> Element<'a, Message> {
                     v.block_content_name.clone(),
                     "block_content_handle"
                 ),
-                num_row("Block color (ACI):", "256", v.block_color, "block_color"),
+                color_row("Block color (ACI):", v.block_color, "block_color"),
                 enum_row(
                     "Block connection:",
                     opts(&["BlockExtents", "BasePoint"]),
