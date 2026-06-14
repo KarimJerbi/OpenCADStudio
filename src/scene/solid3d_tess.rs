@@ -15,8 +15,8 @@ use std::f64::consts::TAU;
 
 use acadrust::entities::acis::types::Sense;
 use acadrust::entities::acis::{
-    SabReader, SatCoedge, SatConeSurface, SatDocument, SatEdge, SatFace, SatLoop, SatPlaneSurface,
-    SatPoint, SatPointer, SatSphereSurface, SatTorusSurface, SatVertex,
+    SabReader, SatCoedge, SatConeSurface, SatDocument, SatEdge, SatEllipseCurve, SatFace, SatLoop,
+    SatPlaneSurface, SatPoint, SatPointer, SatSphereSurface, SatTorusSurface, SatVertex,
 };
 use acadrust::entities::{Body, Region, Solid3D};
 
@@ -80,7 +80,15 @@ fn tessellate_sat(
         match surf_rec.entity_type.as_str() {
             "plane-surface" => {
                 if let Some(plane) = SatPlaneSurface::from_record(surf_rec) {
-                    tess_plane_face(sat, &face, &plane, &mut verts, &mut normals, &mut indices);
+                    tess_plane_face(
+                        sat,
+                        &face,
+                        &plane,
+                        lod.circ_segs,
+                        &mut verts,
+                        &mut normals,
+                        &mut indices,
+                    );
                 }
             }
             "cone-surface" => {
@@ -264,11 +272,17 @@ pub fn tessellate_solid3d(solid: &Solid3D, color: [f32; 4], facet_res: f64) -> O
 
 // ── Topology helpers ──────────────────────────────────────────────────────────
 
-/// Walk a face's outer coedge loop and collect ordered 3-D vertex positions.
+/// Walk a face's outer coedge loop and collect ordered 3-D boundary points.
+///
+/// Straight edges contribute their start vertex; curved (ellipse / circle)
+/// edges are sampled into several points so circular boundaries — e.g. the
+/// cap of a cylinder or the rim of a cone — produce a real polygon instead of
+/// a single degenerate vertex. `circ_segs` is the sample count for a full
+/// circle (scaled down for shorter arcs).
 ///
 /// Returns an empty `Vec` when the loop topology is broken or has fewer than
 /// three distinct points.
-fn collect_face_polygon(sat: &SatDocument, face: &SatFace) -> Vec<[f64; 3]> {
+fn collect_face_polygon(sat: &SatDocument, face: &SatFace, circ_segs: usize) -> Vec<[f64; 3]> {
     let loop_ptr = face.first_loop();
     let Some(loop_rec) = sat.resolve(loop_ptr) else {
         return vec![];
@@ -293,20 +307,7 @@ fn collect_face_polygon(sat: &SatDocument, face: &SatFace) -> Vec<[f64; 3]> {
 
         if let Some(ce_rec) = sat.resolve(cur) {
             if let Some(coedge) = SatCoedge::from_record(ce_rec) {
-                // Pick the vertex that this coedge *starts from*, respecting sense.
-                if let Some(edge_rec) = sat.resolve(coedge.edge()) {
-                    if let Some(edge) = SatEdge::from_record(edge_rec) {
-                        let v_ptr = if matches!(coedge.sense(), Sense::Forward) {
-                            edge.start_vertex()
-                        } else {
-                            edge.end_vertex()
-                        };
-
-                        if let Some(pt) = resolve_point(sat, v_ptr) {
-                            pts.push(pt);
-                        }
-                    }
-                }
+                append_coedge_points(sat, &coedge, circ_segs, &mut pts);
 
                 let next = coedge.next();
                 if next == first_ptr {
@@ -320,6 +321,96 @@ fn collect_face_polygon(sat: &SatDocument, face: &SatFace) -> Vec<[f64; 3]> {
     }
 
     pts
+}
+
+/// Append a coedge's boundary points to `pts`. Ellipse/circle curves are
+/// sampled along their parametric arc (excluding the end param so the next
+/// coedge's start point provides the junction); all other curve types fall
+/// back to the single start vertex, respecting coedge sense.
+fn append_coedge_points(
+    sat: &SatDocument,
+    coedge: &SatCoedge,
+    circ_segs: usize,
+    pts: &mut Vec<[f64; 3]>,
+) {
+    let fwd = matches!(coedge.sense(), Sense::Forward);
+    let Some(edge_rec) = sat.resolve(coedge.edge()) else {
+        return;
+    };
+    let Some(edge) = SatEdge::from_record(edge_rec) else {
+        return;
+    };
+
+    if let Some(curve_rec) = sat.resolve(edge.curve()) {
+        if let Some(ellipse) = SatEllipseCurve::from_record(curve_rec) {
+            let mut sampled = sample_ellipse_arc(
+                &ellipse,
+                edge.start_param(),
+                edge.end_param(),
+                circ_segs,
+            );
+            if !sampled.is_empty() {
+                if !fwd {
+                    sampled.reverse();
+                }
+                pts.extend(sampled);
+                return;
+            }
+        }
+    }
+
+    // Straight / unsupported curve: keep the single start vertex.
+    let v_ptr = if fwd {
+        edge.start_vertex()
+    } else {
+        edge.end_vertex()
+    };
+    if let Some(pt) = resolve_point(sat, v_ptr) {
+        pts.push(pt);
+    }
+}
+
+/// Sample points along an ellipse/circle arc from `sp` to `ep` (radians).
+/// Returns points at the start of each segment (the end param is omitted so
+/// adjacent coedges don't double up the shared junction point). Segment count
+/// scales with the arc's angular span relative to a full circle.
+fn sample_ellipse_arc(
+    ellipse: &SatEllipseCurve,
+    sp: f64,
+    ep: f64,
+    circ_segs: usize,
+) -> Vec<[f64; 3]> {
+    let span = ep - sp;
+    if span.abs() < 1e-9 {
+        return vec![];
+    }
+    let center = ellipse.center();
+    let major = ellipse.major_axis();
+    let major_len = (major.0 * major.0 + major.1 * major.1 + major.2 * major.2).sqrt();
+    if major_len < 1e-12 {
+        return vec![];
+    }
+    let major_u = [
+        major.0 / major_len,
+        major.1 / major_len,
+        major.2 / major_len,
+    ];
+    let normal = norm3([ellipse.normal().0, ellipse.normal().1, ellipse.normal().2]);
+    let minor_u = cross3(normal, major_u);
+    let minor_len = major_len * ellipse.ratio();
+
+    let segs = (circ_segs as f64 * (span.abs() / TAU)).round().max(2.0) as usize;
+    let mut out = Vec::with_capacity(segs);
+    for i in 0..segs {
+        let t = sp + span * (i as f64 / segs as f64);
+        let (c, s) = (t.cos(), t.sin());
+        out.push([
+            center.0 + major_u[0] * major_len * c + minor_u[0] * minor_len * s,
+            center.1 + major_u[1] * major_len * c + minor_u[1] * minor_len * s,
+            center.2 + major_u[2] * major_len * c + minor_u[2] * minor_len * s,
+        ]);
+    }
+    out
 }
 
 /// Resolve a vertex pointer all the way to its `[x, y, z]` coordinate.
@@ -359,11 +450,12 @@ fn tess_plane_face(
     sat: &SatDocument,
     face: &SatFace,
     plane: &SatPlaneSurface,
+    circ_segs: usize,
     verts: &mut Vec<[f32; 3]>,
     normals: &mut Vec<[f32; 3]>,
     indices: &mut Vec<u32>,
 ) {
-    let poly = collect_face_polygon(sat, face);
+    let mut poly = collect_face_polygon(sat, face, circ_segs);
     if poly.len() < 3 {
         return;
     }
@@ -376,6 +468,14 @@ fn tess_plane_face(
         (nx, ny, nz)
     };
     let nf = [nx as f32, ny as f32, nz as f32];
+
+    // Wind the polygon so its CCW area normal agrees with the outward face
+    // normal. Curved boundaries are sampled in their curve's own orientation,
+    // which may run either way relative to the face; reversing here keeps the
+    // fan's winding-derived normal (flat shading) matching `nf` (Gouraud).
+    if dot3(newell_normal(&poly), [nx, ny, nz]) < 0.0 {
+        poly.reverse();
+    }
 
     let base = verts.len() as u32;
     for &pt in &poly {
@@ -402,7 +502,7 @@ fn tess_cone_face(
     indices: &mut Vec<u32>,
 ) {
     // Determine the height range and angular span from the boundary polygon.
-    let poly = collect_face_polygon(sat, face);
+    let poly = collect_face_polygon(sat, face, lod.circ_segs);
 
     let (cx, cy, cz) = cone.center();
     let (ax, ay, az) = cone.axis(); // axis direction (unit)
@@ -417,8 +517,23 @@ fn tess_cone_face(
     let v_dir = cross3(axis, u_dir);
 
     // Determine height and angle range from boundary vertices.
-    let (h_min, h_max, theta_min, theta_max, full_circle) =
+    let (mut h_min, mut h_max, mut theta_min, mut theta_max, mut full_circle) =
         angular_range(cx, cy, cz, axis, u_dir, v_dir, &poly);
+
+    // A full cylinder/cone face is bounded by a single closed rim, so the
+    // boundary alone can't span the height — the second extent (top rim or
+    // apex) lives on a different face. When the boundary collapses to one
+    // height, recover the span from the solid's coaxial circle rims plus the
+    // analytic apex of a true cone, and sweep the full revolution.
+    if (h_max - h_min).abs() < 1e-9 {
+        if let Some((vmin, vmax)) = cone_axis_span(sat, cone, axis, [cx, cy, cz]) {
+            h_min = vmin;
+            h_max = vmax;
+            theta_min = 0.0;
+            theta_max = TAU;
+            full_circle = true;
+        }
+    }
 
     let segs_u = lod.circ_segs;
     let segs_v = (segs_u / 4).max(1); // height subdivisions
@@ -454,11 +569,15 @@ fn tess_cone_face(
                 radius
             };
 
+            // Wind the quad so its face (CCW) normal points radially outward,
+            // matching the supplied per-vertex normal `n` below. This keeps
+            // flat-shaded mode (which derives the normal from winding) and
+            // Gouraud mode (which uses `n`) consistent.
             let p = [
                 cone_pt(cx, cy, cz, axis, u_dir, v_dir, r0, a0, t0),
-                cone_pt(cx, cy, cz, axis, u_dir, v_dir, r1, a0, t1),
-                cone_pt(cx, cy, cz, axis, u_dir, v_dir, r1, a1, t1),
                 cone_pt(cx, cy, cz, axis, u_dir, v_dir, r0, a1, t0),
+                cone_pt(cx, cy, cz, axis, u_dir, v_dir, r1, a1, t1),
+                cone_pt(cx, cy, cz, axis, u_dir, v_dir, r1, a0, t1),
             ];
 
             // Outward normal: perpendicular to axis in the radial direction,
@@ -545,6 +664,68 @@ fn angular_range(
     let full = (theta_max - theta_min) > TAU * 0.95;
 
     (h_min, h_max, theta_min, theta_max, full)
+}
+
+/// Recover a cone/cylinder face's height span (along its axis) from the solid's
+/// circular rims when the face boundary collapses to a single height.
+///
+/// Scans every ellipse/circle curve in the document, keeps those coaxial with
+/// this cone (centre on the axis line, normal parallel to the axis), and
+/// projects their centres onto the axis to get rim heights. For a true cone
+/// with a single rim, the tip is added analytically (the height where the
+/// radius reaches zero). Returns `None` when no coaxial rim is found.
+fn cone_axis_span(
+    sat: &SatDocument,
+    cone: &SatConeSurface,
+    axis: [f64; 3],
+    center: [f64; 3],
+) -> Option<(f64, f64)> {
+    let mut heights: Vec<f64> = Vec::new();
+    for rec in &sat.records {
+        if rec.entity_type != "ellipse-curve" {
+            continue;
+        }
+        let Some(e) = SatEllipseCurve::from_record(rec) else {
+            continue;
+        };
+        let ec = e.center();
+        let d = [ec.0 - center[0], ec.1 - center[1], ec.2 - center[2]];
+        let h = dot3(d, axis);
+        // Radial offset from the axis line: must be ~0 to be coaxial.
+        let radial = [
+            d[0] - h * axis[0],
+            d[1] - h * axis[1],
+            d[2] - h * axis[2],
+        ];
+        let radial_len = dot3(radial, radial).sqrt();
+        let n = e.normal();
+        let n_dot = dot3(norm3([n.0, n.1, n.2]), axis).abs();
+        if radial_len < 1e-6 && n_dot > 0.999 {
+            heights.push(h);
+        }
+    }
+    if heights.is_empty() {
+        return None;
+    }
+    heights.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    heights.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+
+    let mut h_min = heights[0];
+    let mut h_max = *heights.last().unwrap();
+
+    // True cone with a single rim: close the surface at its apex (r = 0).
+    let sin_a = cone.sin_half_angle();
+    let cos_a = cone.cos_half_angle();
+    if sin_a.abs() > 1e-6 && heights.len() <= 1 {
+        let apex = -cone.radius() * cos_a / sin_a;
+        h_min = h_min.min(apex);
+        h_max = h_max.max(apex);
+    }
+
+    if (h_max - h_min).abs() < 1e-9 {
+        return None;
+    }
+    Some((h_min, h_max))
 }
 
 // ── Sphere face ───────────────────────────────────────────────────────────────
@@ -711,6 +892,21 @@ fn torus_pt(
 #[inline]
 fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// Area-weighted polygon normal via Newell's method. Robust for non-planar or
+/// slightly noisy loops; its sign encodes the winding direction.
+fn newell_normal(poly: &[[f64; 3]]) -> [f64; 3] {
+    let mut n = [0.0f64; 3];
+    let len = poly.len();
+    for i in 0..len {
+        let a = poly[i];
+        let b = poly[(i + 1) % len];
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    n
 }
 
 #[inline]
