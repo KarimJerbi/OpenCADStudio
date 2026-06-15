@@ -763,6 +763,7 @@ impl OpenCADStudio {
                 Some(overlay::dynamic_input_overlay(
                     tab.last_cursor_screen,
                     tab.last_point_screen,
+                    tab.dyn_ref_screen,
                     tab.dyn_guide,
                     boxes,
                     prompt,
@@ -4084,9 +4085,12 @@ fn dyn_component_value(
     // in `dyn_resolve_point` so the live preview and the committed
     // coordinate use the same frame. See #35.
     let has_base = base.is_some();
+    // Width / Height read as unsigned magnitudes (the sign is taken from the
+    // cursor side on commit), matching the rectangle's two-edge entry.
+    let wh = matches!(f.role, crate::command::DynRole::Width | crate::command::DynRole::Height);
     match f.component {
-        DynComponent::X if has_base => format!("{:.4}", dx),
-        DynComponent::Y if has_base => format!("{:.4}", dy),
+        DynComponent::X if has_base => format!("{:.4}", if wh { dx.abs() } else { dx }),
+        DynComponent::Y if has_base => format!("{:.4}", if wh { dy.abs() } else { dy }),
         DynComponent::Z if has_base => "0.0000".to_string(),
         DynComponent::X => format!("{:.4}", w.x),
         DynComponent::Y => format!("{:.4}", w.y),

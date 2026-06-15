@@ -132,6 +132,11 @@ pub(super) struct DocumentTab {
     /// World-space anchor the current step's values are measured from. `None`
     /// falls back to `App::last_point`.
     pub(super) dyn_anchor: Option<glam::Vec3>,
+    /// Far end of a reference line through `dyn_anchor` (for the `Perp` guide:
+    /// the base edge / major axis the offset is measured square to).
+    pub(super) dyn_ref: Option<glam::Vec3>,
+    /// `dyn_ref` projected to viewport pixels.
+    pub(super) dyn_ref_screen: Option<iced::Point>,
     /// Index of the field that TAB has focused (the one keystrokes edit).
     pub(super) dyn_active: usize,
     pub(super) history: HistoryState,
@@ -195,6 +200,8 @@ impl DocumentTab {
             dyn_fields: Vec::new(),
             dyn_guide: crate::command::DynGuide::Polar,
             dyn_anchor: None,
+            dyn_ref: None,
+            dyn_ref_screen: None,
             dyn_active: 0,
             history: HistoryState::default(),
             active_layer: "0".to_string(),

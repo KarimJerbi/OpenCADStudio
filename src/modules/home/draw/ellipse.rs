@@ -182,6 +182,31 @@ impl CadCommand for EllipseCommand {
             _ => None,
         }
     }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        match &self.step {
+            // Center + major axis endpoint: ordinary point picks (legacy polar
+            // anchored at the previous point).
+            CtrStep::Center | CtrStep::MajorAxis { .. } => None,
+            // Minor axis: half-length measured square to the major axis. Show
+            // the perpendicular drop from the cursor onto the major axis.
+            CtrStep::MinorRatio { center, major } => Some(DynSpec {
+                anchor: DynAnchor::Point(*center),
+                fields: vec![DynFieldSpec::new(DynRole::Distance)],
+                guide: DynGuide::Perp,
+                ref_point: Some(*center + *major),
+            }),
+        }
+    }
+
+    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+        if let CtrStep::MinorRatio { center, major } = &self.step {
+            Some((minor_ratio(*center, *major, cursor) * major.length()) as f64)
+        } else {
+            None
+        }
+    }
 }
 
 // ── 2. Axis, End mode ─────────────────────────────────────────────────────
@@ -268,6 +293,30 @@ impl CadCommand for EllipseAxisCommand {
                 let ratio = minor_ratio(*center, *major, pt).max(0.001);
                 Some(ellipse_wire(*center, *major, ratio, 0.0, TAU))
             }
+        }
+    }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        match &self.step {
+            // Endpoints define the full major axis — legacy polar (anchored at
+            // the previous point) is right.
+            AxisStep::Pt1 | AxisStep::Pt2 { .. } => None,
+            // Minor half-length, square to the major axis.
+            AxisStep::MinorRatio { center, major } => Some(DynSpec {
+                anchor: DynAnchor::Point(*center),
+                fields: vec![DynFieldSpec::new(DynRole::Distance)],
+                guide: DynGuide::Perp,
+                ref_point: Some(*center + *major),
+            }),
+        }
+    }
+
+    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+        if let AxisStep::MinorRatio { center, major } = &self.step {
+            Some((minor_ratio(*center, *major, cursor) * major.length()) as f64)
+        } else {
+            None
         }
     }
 }
@@ -485,6 +534,38 @@ impl CadCommand for EllipseArcCommand {
                 })
             }
             _ => None,
+        }
+    }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        match &self.step {
+            ArcStep::Center | ArcStep::MajorAxis { .. } => None,
+            // Minor half-length, square to the major axis.
+            ArcStep::MinorRatio { center, major } => Some(DynSpec {
+                anchor: DynAnchor::Point(*center),
+                fields: vec![DynFieldSpec::new(DynRole::Distance)],
+                guide: DynGuide::Perp,
+                ref_point: Some(*center + *major),
+            }),
+            // Start / end sweep angles measured at the centre (the last point
+            // is the previous pick, so anchor the angle arc at the centre).
+            ArcStep::StartAngle { center, .. } | ArcStep::EndAngle { center, .. } => {
+                Some(DynSpec {
+                    anchor: DynAnchor::Point(*center),
+                    fields: vec![DynFieldSpec::new(DynRole::Angle)],
+                    guide: DynGuide::Polar,
+                    ref_point: None,
+                })
+            }
+        }
+    }
+
+    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+        if let ArcStep::MinorRatio { center, major } = &self.step {
+            Some((minor_ratio(*center, *major, cursor) * major.length()) as f64)
+        } else {
+            None
         }
     }
 }

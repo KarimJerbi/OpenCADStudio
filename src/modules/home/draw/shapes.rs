@@ -168,6 +168,21 @@ impl CadCommand for RectCommand {
             [a.x, pt.y, a.z],
         ]))
     }
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        // Opposite corner: enter width and height (signed deltas from the first
+        // corner), with the rectangle drawn as the guide. First corner is a
+        // normal point pick.
+        self.a.map(|a| DynSpec {
+            anchor: DynAnchor::Point(a),
+            fields: vec![
+                DynFieldSpec::new(DynRole::Width),
+                DynFieldSpec::new(DynRole::Height),
+            ],
+            guide: DynGuide::RectSides,
+            ref_point: None,
+        })
+    }
 }
 
 // ── Command: Rectangle — Rotated  (RECT_ROT) ──────────────────────────────
@@ -256,6 +271,29 @@ impl CadCommand for RectRotCommand {
             _ => None,
         }
     }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        // Step 0: corner A (point). Step 1: adjacent corner — the base edge,
+        // needs direction + length (legacy polar). Step 2: height — measured
+        // square to the fixed base edge A→B, so show the perpendicular drop
+        // and take the perpendicular distance (no angle).
+        (self.step == 2).then(|| DynSpec {
+            anchor: DynAnchor::Point(self.b),
+            fields: vec![DynFieldSpec::new(DynRole::Distance)],
+            guide: DynGuide::PerpDim,
+            ref_point: Some(self.a),
+        })
+    }
+
+    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+        // Live height = perpendicular distance from the cursor to the base edge.
+        (self.step == 2).then(|| {
+            let dir = (self.b - self.a).normalize_or_zero();
+            let perp = Vec3::new(-dir.y, dir.x, 0.0);
+            (cursor - self.b).dot(perp).abs() as f64
+        })
+    }
 }
 
 // ── Command: Rectangle — Center  (RECT_CEN) ───────────────────────────────
@@ -320,6 +358,20 @@ impl CadCommand for RectCenCommand {
             [c.x - hw, c.y + hh, c.z],
         ]))
     }
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        // Corner from the centre gives the half-width / half-height; show them
+        // on dotted axis legs out of the centre.
+        self.center.map(|c| DynSpec {
+            anchor: DynAnchor::Point(c),
+            fields: vec![
+                DynFieldSpec::new(DynRole::Width),
+                DynFieldSpec::new(DynRole::Height),
+            ],
+            guide: DynGuide::AxisDelta,
+            ref_point: None,
+        })
+    }
 }
 
 // ── Command: Polygon — Inscribed  (POLY) ──────────────────────────────────
@@ -357,6 +409,20 @@ impl CadCommand for PolyCommand {
         } else {
             crate::command::DynField::Point
         }
+    }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        // Vertex on the circle: radius from the centre + rotation angle.
+        (self.step == 2).then(|| DynSpec {
+            anchor: DynAnchor::Point(self.center),
+            fields: vec![
+                DynFieldSpec::new(DynRole::Radius),
+                DynFieldSpec::new(DynRole::Angle),
+            ],
+            guide: DynGuide::Polar,
+            ref_point: None,
+        })
     }
 
     fn on_text_input(&mut self, text: &str) -> Option<CmdResult> {
@@ -467,6 +533,20 @@ impl CadCommand for PolyCCommand {
         }
         self.step = 1;
         Some(CmdResult::NeedPoint)
+    }
+
+    fn dyn_spec(&self) -> Option<crate::command::DynSpec> {
+        use crate::command::{DynAnchor, DynFieldSpec, DynGuide, DynRole, DynSpec};
+        // Edge-midpoint distance (apothem) from the centre + rotation.
+        (self.step == 2).then(|| DynSpec {
+            anchor: DynAnchor::Point(self.center),
+            fields: vec![
+                DynFieldSpec::new(DynRole::Radius),
+                DynFieldSpec::new(DynRole::Angle),
+            ],
+            guide: DynGuide::Polar,
+            ref_point: None,
+        })
     }
 
     fn prompt(&self) -> String {

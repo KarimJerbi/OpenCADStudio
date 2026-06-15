@@ -2545,14 +2545,16 @@ impl OpenCADStudio {
                     // Project the step anchor (an explicit `dyn_anchor` or the
                     // last point) so the dynamic-input overlay can place its
                     // guide geometry and labels.
-                    let anchor = self.tabs[i].dyn_anchor.or(self.last_point);
-                    self.tabs[i].last_point_screen = anchor.map(|bp| {
+                    let project = |bp: glam::Vec3| {
                         let ndc = view_proj.project_point3(bp);
                         iced::Point::new(
                             (ndc.x + 1.0) * 0.5 * bounds.width,
                             (1.0 - ndc.y) * 0.5 * bounds.height,
                         )
-                    });
+                    };
+                    let anchor = self.tabs[i].dyn_anchor.or(self.last_point);
+                    self.tabs[i].last_point_screen = anchor.map(project);
+                    self.tabs[i].dyn_ref_screen = self.tabs[i].dyn_ref.map(project);
 
                     // Entity-pick previews (TRIM/EXTEND/FILLET…) compare the
                     // cursor against WCS document entities and return WCS wires.
@@ -7590,6 +7592,7 @@ impl OpenCADStudio {
             _ => crate::command::DynGuide::None,
         };
         self.tabs[i].dyn_anchor = self.last_point;
+        self.tabs[i].dyn_ref = None;
     }
 
     /// Apply an explicit per-step [`DynSpec`](crate::command::DynSpec): rebuild
@@ -7611,6 +7614,7 @@ impl OpenCADStudio {
             crate::command::DynAnchor::LastPoint => self.last_point,
             crate::command::DynAnchor::Point(p) => Some(p),
         };
+        self.tabs[i].dyn_ref = spec.ref_point;
     }
 
     /// Track cursor dwell over a selected entity's grip. Sets
@@ -7783,15 +7787,29 @@ impl OpenCADStudio {
             .or(self.last_point)
             .unwrap_or(glam::Vec3::ZERO);
         // Buffer value parsed as f32 (de-scaled by the role so a typed diameter
-        // becomes a radius), or the supplied geometric live value.
+        // becomes a radius), or the supplied geometric live value. Width/Height
+        // are shown unsigned, so a typed value takes the sign of the cursor's
+        // delta on that axis (`live` is the signed delta in the cartesian arms).
         let val = |idx: usize, live: f32| -> f32 {
-            fields[idx]
+            match fields[idx]
                 .buffer
                 .as_ref()
                 .map(|s| s.trim().replace(',', "."))
                 .and_then(|s| crate::app::expr_eval::eval_number(&s).map(|v| v as f32))
                 .map(|v| v / fields[idx].role.value_scale())
-                .unwrap_or(live)
+            {
+                Some(v) => {
+                    if matches!(
+                        fields[idx].role,
+                        crate::command::DynRole::Width | crate::command::DynRole::Height
+                    ) {
+                        v.abs().copysign(live)
+                    } else {
+                        v
+                    }
+                }
+                None => live,
+            }
         };
         let dx = w.x - base.x;
         let dy = w.y - base.y;
@@ -7812,6 +7830,28 @@ impl OpenCADStudio {
             }
         };
         let comps: Vec<DynComponent> = fields.iter().map(|f| f.component).collect();
+        // Perpendicular offset: a single distance measured square to the
+        // reference line (anchor → dyn_ref). The committed point lies on the
+        // perpendicular through the anchor at that offset; the command projects
+        // it. Untyped tracks the cursor's signed offset; typed takes the
+        // cursor's side.
+        if let (Some(ref_pt), [DynComponent::Distance]) =
+            (self.tabs[i].dyn_ref, comps.as_slice())
+        {
+            let axis = (ref_pt - base).normalize_or_zero();
+            let perp = glam::Vec3::new(-axis.y, axis.x, 0.0);
+            let signed = (w - base).dot(perp);
+            let typed = fields[0]
+                .buffer
+                .as_ref()
+                .map(|s| s.trim().replace(',', "."))
+                .and_then(|s| crate::app::expr_eval::eval_number(&s).map(|v| v as f32));
+            let h = match typed {
+                Some(v) => v.abs().copysign(signed),
+                None => signed,
+            };
+            return Some(base + perp * h);
+        }
         // DYN-on defaults to RELATIVE coordinates when a base point is set
         // (see #26 / #35). The live cartesian fallback is the cursor
         // position relative to base; typed values are relative deltas.

@@ -278,7 +278,8 @@ pub enum DynRole {
     Height,
     /// Typed-only scale factor.
     Factor,
-    /// Typed-only integer count.
+    /// Typed-only integer count. Reserved for upcoming command migrations.
+    #[allow(dead_code)]
     Count,
 }
 
@@ -321,12 +322,21 @@ pub enum DynGuide {
     Radius,
     /// The two rectangle sides (width × height) from the anchor corner.
     RectSides,
+    /// A line from the anchor, perpendicular to the reference line (anchor →
+    /// `DynSpec::ref_point`), reaching the cursor's perpendicular offset — the
+    /// measured semi-axis (ellipse minor). The value is that offset.
+    Perp,
+    /// Like `Perp` but drawn as a dimension: the measured segment is offset off
+    /// the edge with extension lines back to its endpoints (rectangle height).
+    PerpDim,
 }
 
 /// Where a step's values are measured from.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum DynAnchor {
-    /// The previous committed point (`App::last_point`).
+    /// The previous committed point (`App::last_point`). Reserved — current
+    /// specs pass the anchor explicitly via `Point`.
+    #[allow(dead_code)]
     LastPoint,
     /// An explicit world point.
     Point(Vec3),
@@ -352,6 +362,9 @@ pub struct DynSpec {
     pub anchor: DynAnchor,
     pub fields: Vec<DynFieldSpec>,
     pub guide: DynGuide,
+    /// Far end of a reference line through `anchor` (only used by
+    /// [`DynGuide::Perp`]); `None` otherwise.
+    pub ref_point: Option<Vec3>,
 }
 
 // ── Trait ─────────────────────────────────────────────────────────────────

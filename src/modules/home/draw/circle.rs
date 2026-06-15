@@ -201,6 +201,7 @@ impl CadCommand for CircleCommand {
                 anchor: DynAnchor::Point(c),
                 fields: vec![DynFieldSpec::new(DynRole::Radius)],
                 guide: DynGuide::Radius,
+                ref_point: None,
             }),
         }
     }
@@ -288,6 +289,7 @@ impl CadCommand for CircleCDCommand {
                 anchor: DynAnchor::Point(c),
                 fields: vec![DynFieldSpec::new(DynRole::Diameter)],
                 guide: DynGuide::Radius,
+                ref_point: None,
             }),
         }
     }

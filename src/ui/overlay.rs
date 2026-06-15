@@ -1217,6 +1217,7 @@ pub struct DynBox {
 pub fn dynamic_input_overlay<'a>(
     cursor_screen: Point,
     base_screen: Option<Point>,
+    ref_screen: Option<Point>,
     guide: DynGuide,
     boxes: Vec<DynBox>,
     prompt: String,
@@ -1224,6 +1225,7 @@ pub fn dynamic_input_overlay<'a>(
     canvas(DynInputCanvas {
         cursor_screen,
         base_screen,
+        ref_screen,
         guide,
         boxes,
         prompt,
@@ -1238,6 +1240,8 @@ struct DynInputCanvas {
     /// Step anchor in viewport pixels (projected `dyn_anchor`). Guided layouts
     /// (polar / radius / axis-delta) need it; `None` falls back to a cursor row.
     base_screen: Option<Point>,
+    /// Far end of the reference line (projected `dyn_ref`) — for `Perp`.
+    ref_screen: Option<Point>,
     guide: DynGuide,
     boxes: Vec<DynBox>,
     /// The active command's current prompt, drawn just above the boxes.
@@ -1351,6 +1355,22 @@ impl DynInputCanvas {
         }
         let corner = Point { x: cursor.x, y: base.y }; // axis-delta elbow
 
+        // Perp / PerpDim: perpendicular direction to the reference line, the
+        // measured endpoint along it (`end`), and an offset dimension segment
+        // (`off_base`→`off_end`) drawn clear of the edge for PerpDim.
+        let perp_info = self.ref_screen.map(|r| {
+            let (ax, ay) = (r.x - base.x, r.y - base.y);
+            let al = (ax * ax + ay * ay).sqrt().max(1.0);
+            let (ux, uy) = (ax / al, ay / al); // axis unit (base → ref)
+            let (px, py) = (-uy, ux); // perpendicular unit
+            let signed = (cursor.x - base.x) * px + (cursor.y - base.y) * py;
+            let end = Point { x: base.x + px * signed, y: base.y + py * signed };
+            const OFF: f32 = 16.0; // dimension offset, away from the reference
+            let off_base = Point { x: base.x - ux * OFF, y: base.y - uy * OFF };
+            let off_end = Point { x: end.x - ux * OFF, y: end.y - uy * OFF };
+            (end, off_base, off_end)
+        });
+
         // ── Guide geometry ──
         match self.guide {
             DynGuide::Polar => {
@@ -1382,6 +1402,34 @@ impl DynInputCanvas {
                     p.line_to(cursor);
                 });
                 frame.stroke(&line, Self::dotted());
+            }
+            DynGuide::Perp => {
+                if let Some((end, _, _)) = perp_info {
+                    // The measured semi-axis: anchor → perpendicular endpoint.
+                    let line = canvas::Path::new(|p| {
+                        p.move_to(base);
+                        p.line_to(end);
+                    });
+                    frame.stroke(&line, Self::dotted());
+                }
+            }
+            DynGuide::PerpDim => {
+                if let Some((end, ob, oe)) = perp_info {
+                    // Dimension segment offset off the edge, with extension
+                    // lines back to the two measured corners.
+                    let dim = canvas::Path::new(|p| {
+                        p.move_to(ob);
+                        p.line_to(oe);
+                    });
+                    frame.stroke(&dim, Self::dotted());
+                    let ext = canvas::Path::new(|p| {
+                        p.move_to(base);
+                        p.line_to(ob);
+                        p.move_to(end);
+                        p.line_to(oe);
+                    });
+                    frame.stroke(&ext, Self::dotted());
+                }
             }
             DynGuide::AxisDelta | DynGuide::RectSides => {
                 // Dotted legs from the anchor along its axes to the cursor.
@@ -1422,6 +1470,17 @@ impl DynInputCanvas {
                     x: corner.x + 18.0,
                     y: (base.y + cursor.y) * 0.5,
                 },
+                // Perpendicular measure: on the measured segment / dim line.
+                _ if matches!(self.guide, DynGuide::Perp | DynGuide::PerpDim)
+                    && perp_info.is_some() =>
+                {
+                    let (end, ob, oe) = perp_info.unwrap();
+                    if self.guide == DynGuide::PerpDim {
+                        Point { x: (ob.x + oe.x) * 0.5 + 8.0, y: (ob.y + oe.y) * 0.5 }
+                    } else {
+                        Point { x: (base.x + end.x) * 0.5 + 8.0, y: (base.y + end.y) * 0.5 }
+                    }
+                }
                 // Distance / Radius / Diameter and anything else ride the line.
                 _ => Point {
                     x: base.x + dx * len * 0.5 + nx * 16.0,
