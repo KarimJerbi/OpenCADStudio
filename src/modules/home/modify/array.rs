@@ -383,17 +383,31 @@ impl CadCommand for ArrayPolarCommand {
 //   → Returns BatchCopy with Translate transforms derived from path samples.
 
 use acadrust::EntityType;
+use std::f32::consts::PI as FPI;
 use std::f32::consts::TAU as FTAU;
 
 // ── Path geometry helpers ──────────────────────────────────────────────────
 
-/// Tessellate an LwPolyline.
+/// Tessellate an LwPolyline into dense WCS points, matching the renderer:
+/// bulge arcs use the canonical `BulgeArc` (correct centre side + signed
+/// sweep) and every point is mapped OCS→WCS via the polyline's normal. The
+/// previous ad-hoc bulge math placed the arc centre on the wrong side of the
+/// chord and ignored the extrusion, so arc-segment paths came out mirrored.
 fn lw_dense_pts(p: &acadrust::entities::LwPolyline) -> Vec<Vec3> {
-    let z = p.elevation as f32;
+    use crate::entities::common::BulgeArc;
+    use crate::scene::transform::ocs_point_to_wcs;
+
     let verts = &p.vertices;
     if verts.is_empty() {
         return vec![];
     }
+    let normal = (p.normal.x, p.normal.y, p.normal.z);
+    let elev = p.elevation;
+    let to_wcs = |x: f64, y: f64| -> Vec3 {
+        let (wx, wy, wz) = ocs_point_to_wcs((x, y, elev), normal);
+        Vec3::new(wx as f32, wy as f32, wz as f32)
+    };
+
     let n = verts.len();
     let segs = if p.is_closed { n } else { n.saturating_sub(1) };
     let mut out: Vec<Vec3> = vec![];
@@ -401,58 +415,26 @@ fn lw_dense_pts(p: &acadrust::entities::LwPolyline) -> Vec<Vec3> {
     for i in 0..segs {
         let v0 = &verts[i];
         let v1 = &verts[(i + 1) % n];
-        let x0 = v0.location.x as f32;
-        let y0 = v0.location.y as f32;
-        let x1 = v1.location.x as f32;
-        let y1 = v1.location.y as f32;
+        let p0 = [v0.location.x, v0.location.y];
+        let p1 = [v1.location.x, v1.location.y];
 
         if out.is_empty() {
-            out.push(Vec3::new(x0, y0, z));
+            out.push(to_wcs(p0[0], p0[1]));
         }
 
-        let bulge = v0.bulge as f32;
-        if bulge.abs() < 1e-9 {
-            out.push(Vec3::new(x1, y1, z));
-        } else {
-            let dx = x1 - x0;
-            let dy = y1 - y0;
-            let d = (dx * dx + dy * dy).sqrt();
-            if d < 1e-9 {
-                out.push(Vec3::new(x1, y1, z));
-                continue;
-            }
-            let angle = 4.0 * bulge.atan();
-            let r = (d * 0.5) / (angle * 0.5).sin().abs();
-            let mx = (x0 + x1) * 0.5;
-            let my = (y0 + y1) * 0.5;
-            let inv = 1.0 / d;
-            let (px, py) = (-dy * inv, dx * inv);
-            let sign = if bulge > 0.0 { 1.0f32 } else { -1.0 };
-            let h_val = r - (r * r - d * d * 0.25).max(0.0).sqrt();
-            let (cx, cy) = (mx - sign * px * (r - h_val), my - sign * py * (r - h_val));
-            let a0 = (y0 - cy).atan2(x0 - cx);
-            let a1 = (y1 - cy).atan2(x1 - cx);
-            // Signed span: CCW for bulge > 0, CW (negative) for bulge < 0.
-            let span = if bulge > 0.0 {
-                let s = a1 - a0;
-                if s <= 0.0 {
-                    s + FTAU
-                } else {
-                    s
+        let bulge = v0.bulge;
+        match (bulge.abs() >= 1e-9)
+            .then(|| BulgeArc::from_bulge(p0, p1, bulge))
+            .flatten()
+        {
+            Some(arc) => {
+                let steps = ((arc.radius * arc.sweep.abs() / 2.0).ceil() as usize).clamp(4, 64);
+                for j in 1..=steps {
+                    let s = arc.sample(j as f64 / steps as f64);
+                    out.push(to_wcs(s[0], s[1]));
                 }
-            } else {
-                let s = a1 - a0;
-                if s >= 0.0 {
-                    s - FTAU
-                } else {
-                    s
-                }
-            };
-            let steps = ((r * span.abs() / 2.0).ceil() as usize).clamp(4, 64);
-            for j in 1..=steps {
-                let ang = a0 + span * (j as f32 / steps as f32);
-                out.push(Vec3::new(cx + r * ang.cos(), cy + r * ang.sin(), z));
             }
+            None => out.push(to_wcs(p1[0], p1[1])),
         }
     }
     out
@@ -533,7 +515,6 @@ impl ArrayPathCommand {
         if count == 0 {
             return vec![];
         }
-        let fn_norm = |x: f32| -> f32 { ((x % FTAU) + FTAU) % FTAU };
         match entity {
             EntityType::Line(l) => {
                 let p0 = Vec3::new(l.start.x as f32, l.start.y as f32, 0.0);
@@ -542,31 +523,48 @@ impl ArrayPathCommand {
                 (0..count).map(|i| p0.lerp(p1, i as f32 / d)).collect()
             }
             EntityType::Arc(a) => {
-                let (cx, cy, r) = (a.center.x as f32, a.center.y as f32, a.radius as f32);
-                let a0 = a.start_angle as f32;
-                let a1 = a.end_angle as f32;
-                let span = {
-                    let s = fn_norm(a1) - fn_norm(a0);
-                    if s <= 0.0 {
-                        s + FTAU
-                    } else {
-                        s
-                    }
-                };
-                let d = (count - 1).max(1) as f32;
+                // Sample in WCS via the arc's OCS basis so flipped-normal arcs
+                // (normal = -Z) are traced on the same side the renderer draws,
+                // matching `entities::arc::to_truck`. Sampling the raw centre +
+                // angle ignores the extrusion and lands on the mirrored arc.
+                use crate::scene::transform::{ocs_axes, ocs_point_to_wcs};
+                let normal = (a.normal.x, a.normal.y, a.normal.z);
+                let (ax, ay) = ocs_axes(normal);
+                let (cx, cy, cz) =
+                    ocs_point_to_wcs((a.center.x, a.center.y, a.center.z), normal);
+                let r = a.radius;
+                let (sa, ea) = (a.start_angle, a.end_angle);
+                let end = if ea >= sa { ea } else { ea + std::f64::consts::TAU };
+                let span = end - sa;
+                let d = (count - 1).max(1) as f64;
                 (0..count)
                     .map(|i| {
-                        let ang = fn_norm(a0) + span * (i as f32 / d);
-                        Vec3::new(cx + r * ang.cos(), cy + r * ang.sin(), 0.0)
+                        let ang = sa + span * (i as f64 / d);
+                        let (c, s) = (ang.cos(), ang.sin());
+                        Vec3::new(
+                            (cx + r * c * ax.0 + r * s * ay.0) as f32,
+                            (cy + r * c * ax.1 + r * s * ay.1) as f32,
+                            (cz + r * c * ax.2 + r * s * ay.2) as f32,
+                        )
                     })
                     .collect()
             }
             EntityType::Circle(c) => {
-                let (cx, cy, r) = (c.center.x as f32, c.center.y as f32, c.radius as f32);
+                use crate::scene::transform::{ocs_axes, ocs_point_to_wcs};
+                let normal = (c.normal.x, c.normal.y, c.normal.z);
+                let (ax, ay) = ocs_axes(normal);
+                let (cx, cy, cz) =
+                    ocs_point_to_wcs((c.center.x, c.center.y, c.center.z), normal);
+                let r = c.radius;
                 (0..count)
                     .map(|i| {
-                        let ang = i as f32 / count as f32 * FTAU;
-                        Vec3::new(cx + r * ang.cos(), cy + r * ang.sin(), 0.0)
+                        let ang = i as f64 / count as f64 * std::f64::consts::TAU;
+                        let (cs, sn) = (ang.cos(), ang.sin());
+                        Vec3::new(
+                            (cx + r * cs * ax.0 + r * sn * ay.0) as f32,
+                            (cy + r * cs * ax.1 + r * sn * ay.1) as f32,
+                            (cz + r * cs * ax.2 + r * sn * ay.2) as f32,
+                        )
                     })
                     .collect()
             }
@@ -575,16 +573,85 @@ impl ArrayPathCommand {
         }
     }
 
-    /// Build Translate transforms: delta from pts[0] to each subsequent point.
+    /// Continuous path-tangent angle (XY) at each sample, via central
+    /// differences and unwrapped so the sequence stays smooth across an arc
+    /// that turns more than ±π in total.
+    fn tangents(pts: &[Vec3]) -> Vec<f32> {
+        let n = pts.len();
+        let mut a = vec![0.0f32; n];
+        for i in 0..n {
+            let prev = if i > 0 { pts[i - 1] } else { pts[i] };
+            let next = if i + 1 < n { pts[i + 1] } else { pts[i] };
+            let d = next - prev;
+            a[i] = if d.x.abs() < 1e-12 && d.y.abs() < 1e-12 {
+                if i > 0 {
+                    a[i - 1]
+                } else {
+                    0.0
+                }
+            } else {
+                d.y.atan2(d.x)
+            };
+        }
+        // Unwrap to remove ±2π jumps.
+        for i in 1..n {
+            while a[i] - a[i - 1] > FPI {
+                a[i] -= FTAU;
+            }
+            while a[i] - a[i - 1] <= -FPI {
+                a[i] += FTAU;
+            }
+        }
+        a
+    }
+
+    /// Build per-copy transforms that array the selection along the path with
+    /// the items aligned to the path tangent (the first item keeps its drawn
+    /// orientation; each copy rotates by the tangent change at its sample).
+    /// On a straight path the tangent never changes, so every copy is a pure
+    /// `Translate` — identical to a non-aligned array.
     fn build_transforms(pts: &[Vec3]) -> Vec<EntityTransform> {
         if pts.len() < 2 {
             return vec![];
         }
-        let origin = pts[0];
-        pts[1..]
-            .iter()
-            .map(|&p| EntityTransform::Translate(p - origin))
+        let p0 = pts[0];
+        let tans = Self::tangents(pts);
+        let t0 = tans[0];
+        pts.iter()
+            .enumerate()
+            .skip(1)
+            .map(|(i, &p)| {
+                let dth = tans[i] - t0;
+                if dth.abs() < 1e-5 {
+                    EntityTransform::Translate(p - p0)
+                } else {
+                    // The aligned copy is the rigid motion x' = p + R(x - p0),
+                    // which is a pure rotation by `dth` about its fixed point.
+                    let center = Self::rigid_center(p0, p, dth);
+                    EntityTransform::Rotate {
+                        center,
+                        angle_rad: dth,
+                    }
+                }
+            })
             .collect()
+    }
+
+    /// Fixed point of the rigid motion `x' = pi + R(dth)·(x - p0)`; rotating an
+    /// entity by `dth` about this point reproduces that motion exactly.
+    fn rigid_center(p0: Vec3, pi: Vec3, dth: f32) -> Vec3 {
+        let (s, c) = dth.sin_cos();
+        // b = pi - R·p0
+        let bx = pi.x - (c * p0.x - s * p0.y);
+        let by = pi.y - (s * p0.x + c * p0.y);
+        // c = (I - R)^{-1} · b,  with (I-R)^{-1} = 1/(2(1-c)) [[1-c, -s],[s, 1-c]]
+        let one_c = 1.0 - c;
+        let det = 2.0 * one_c;
+        Vec3::new(
+            (one_c * bx - s * by) / det,
+            (s * bx + one_c * by) / det,
+            p0.z,
+        )
     }
 }
 
@@ -692,15 +759,18 @@ impl CadCommand for ArrayPathCommand {
         let transforms = Self::build_transforms(&pts);
         transforms
             .iter()
-            .flat_map(|t| {
-                if let EntityTransform::Translate(delta) = t {
-                    self.wire_models
-                        .iter()
-                        .map(|w| w.translated(*delta))
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![]
-                }
+            .flat_map(|t| match t {
+                EntityTransform::Translate(delta) => self
+                    .wire_models
+                    .iter()
+                    .map(|w| w.translated(*delta))
+                    .collect::<Vec<_>>(),
+                EntityTransform::Rotate { center, angle_rad } => self
+                    .wire_models
+                    .iter()
+                    .map(|w| w.rotated(*center, *angle_rad))
+                    .collect::<Vec<_>>(),
+                _ => vec![],
             })
             .collect()
     }
