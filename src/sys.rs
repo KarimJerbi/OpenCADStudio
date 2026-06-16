@@ -59,3 +59,33 @@ pub fn download_bytes(name: &str, bytes: &[u8]) {
     }
     let _ = web_sys::Url::revoke_object_url(&url);
 }
+
+/// Short platform string for bug reports: OS + architecture on the desktop,
+/// the browser user-agent on the web.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn platform_info() -> String {
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn platform_info() -> String {
+    web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .map(|ua| format!("Web — {ua}"))
+        .unwrap_or_else(|| "Web (wasm)".to_string())
+}
+
+/// Percent-encode `s` for use in a URL query value (e.g. a GitHub issue
+/// `?body=`). Encodes everything outside the unreserved set.
+pub fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}

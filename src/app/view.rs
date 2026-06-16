@@ -3779,7 +3779,7 @@ pub(super) fn start_page_view<'a>() -> Element<'a, Message> {
     .spacing(12)
     .align_y(iced::Center);
 
-    let secondary_row = row![
+    let mut secondary_row = row![
         outline_btn(
             "Send Feedback",
             Message::RibbonToolClick {
@@ -3795,10 +3795,50 @@ pub(super) fn start_page_view<'a>() -> Element<'a, Message> {
             },
         ),
         outline_btn("Plugins", Message::PluginManagerOpen),
-        outline_btn("About", Message::AboutOpen),
-    ]
-    .spacing(12)
-    .align_y(iced::Center);
+    ];
+    // The web build is already in the browser, so only the desktop offers a
+    // link to the web version.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Bright ribbon blue (matches the active-tool accent), filled.
+        secondary_row = secondary_row.push(
+            button(text("OCS Web").size(14).color(Color::WHITE))
+                .on_press(Message::RibbonToolClick {
+                    tool_id: "WEBVERSION".to_string(),
+                    event: crate::modules::ModuleEvent::Command("WEBVERSION".to_string()),
+                })
+                .padding([10, 22])
+                .style(|_: &Theme, status| button::Style {
+                    background: Some(Background::Color(match status {
+                        button::Status::Hovered => Color {
+                            r: 0.15,
+                            g: 0.45,
+                            b: 0.78,
+                            a: 1.0,
+                        },
+                        _ => Color {
+                            r: 0.20,
+                            g: 0.55,
+                            b: 0.90,
+                            a: 1.0,
+                        },
+                    })),
+                    text_color: Color::WHITE,
+                    border: Border {
+                        color: Color {
+                            r: 0.20,
+                            g: 0.55,
+                            b: 0.90,
+                            a: 1.0,
+                        },
+                        width: 1.0,
+                        radius: 6.0.into(),
+                    },
+                    ..Default::default()
+                }),
+        );
+    }
+    let secondary_row = secondary_row.spacing(12).align_y(iced::Center);
 
     let card_section = |heading: &'static str, sub: &'static str, body: &'static str| {
         container(

@@ -36,7 +36,7 @@ impl OpenCADStudio {
             && !matches!(
                 cmd,
                 "NEW" | "OPEN" | "EXIT" | "QUIT" | "REPORT" | "CHANGELOG" | "ABOUT"
-                    | "PLUGINS" | "PLUGINMANAGER" | "DONATE"
+                    | "PLUGINS" | "PLUGINMANAGER" | "DONATE" | "WEBVERSION"
             )
         {
             self.command_line
@@ -2505,6 +2505,11 @@ impl OpenCADStudio {
                 self.command_line.push_info("Opening Patreon page...");
             }
 
+            "WEBVERSION" => {
+                crate::sys::open_url("https://hakanseven12.github.io/OpenCADStudio/");
+                self.command_line.push_info("Opening OCS Web...");
+            }
+
             // ── DWGPROPS — print round-trip-only HeaderVariables ─────────
             // No UI dialog for these yet; the command surfaces them so
             // users can confirm the values that the parser populated and
@@ -2681,7 +2686,19 @@ impl OpenCADStudio {
             }
 
             "REPORT" => {
-                crate::sys::open_url("https://github.com/HakanSeven12/OpenCADStudio/issues/new");
+                // Pre-fill the GitHub issue body with version + platform so
+                // reports arrive with the basics already filled in.
+                let body = format!(
+                    "<!-- Describe the issue and the steps to reproduce it. -->\n\n\n\
+                     ---\n- Open CAD Studio: v{}\n- Platform: {}\n",
+                    env!("CARGO_PKG_VERSION"),
+                    crate::sys::platform_info(),
+                );
+                let url = format!(
+                    "https://github.com/HakanSeven12/OpenCADStudio/issues/new?body={}",
+                    crate::sys::percent_encode(&body)
+                );
+                crate::sys::open_url(&url);
                 self.command_line.push_info("Opening feedback page...");
             }
 
