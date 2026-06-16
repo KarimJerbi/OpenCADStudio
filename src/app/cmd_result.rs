@@ -1674,12 +1674,17 @@ impl OpenCADStudio {
         self.focus_cmd_input()
     }
 
-    /// Restore the tangent snap state that was in effect before the command started.
+    /// Restore the tangent-snap / ortho state that was in effect before the command started.
     fn restore_pre_cmd_tangent(&mut self) {
         if let Some(was_on) = self.pre_cmd_tangent.take() {
             if !was_on {
                 self.snapper.enabled.remove(&crate::snap::SnapType::Tangent);
             }
+        }
+        if self.rect_suppressed_ortho {
+            self.rect_suppressed_ortho = false;
+            self.ortho_mode = true;
+            self.polar_mode = false;
         }
     }
 }

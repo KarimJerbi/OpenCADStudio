@@ -4120,6 +4120,10 @@ impl OpenCADStudio {
                 if self.ortho_mode {
                     self.polar_mode = false;
                 }
+                // If the user manually toggles ortho during a command that
+                // suppressed it (e.g. RECTANG), the toggle is permanent —
+                // don't restore the pre-command state when the command ends.
+                self.rect_suppressed_ortho = false;
                 Task::none()
             }
             Message::ToggleLineweightDisplay => {

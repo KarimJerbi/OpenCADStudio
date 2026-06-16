@@ -209,6 +209,8 @@ pub(super) struct OpenCADStudio {
     otrack_active: Option<(glam::Vec3, glam::Vec3)>,
     /// Whether Tangent snap was enabled before a tangent-pick command started.
     pre_cmd_tangent: Option<bool>,
+    /// Whether Ortho mode was temporarily suppressed by a command (e.g. RECTANG).
+    rect_suppressed_ortho: bool,
     /// Orthogonal drawing constraint (F8): constrains picks to 0°/90°/180°/270°.
     ortho_mode: bool,
     /// Polar tracking (F10): constrains picks to configurable angle increments.
@@ -1371,6 +1373,7 @@ impl OpenCADStudio {
             perf_hud: false,
             cycle_candidates: None,
             pre_cmd_tangent: None,
+            rect_suppressed_ortho: false,
             ortho_mode: false,
             polar_mode: false,
             polar_increment_deg: 45.0,

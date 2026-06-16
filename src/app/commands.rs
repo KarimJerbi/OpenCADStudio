@@ -1006,18 +1006,30 @@ impl OpenCADStudio {
                 use crate::modules::draw::draw::shapes::RectCommand;
                 let new_cmd = RectCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
+                if self.ortho_mode {
+                    self.rect_suppressed_ortho = true;
+                    self.ortho_mode = false;
+                }
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "RECT_ROT" => {
                 use crate::modules::draw::draw::shapes::RectRotCommand;
                 let new_cmd = RectRotCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
+                if self.ortho_mode {
+                    self.rect_suppressed_ortho = true;
+                    self.ortho_mode = false;
+                }
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "RECT_CEN" => {
                 use crate::modules::draw::draw::shapes::RectCenCommand;
                 let new_cmd = RectCenCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
+                if self.ortho_mode {
+                    self.rect_suppressed_ortho = true;
+                    self.ortho_mode = false;
+                }
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "POLY" | "POLYGON" | "POL" => {
