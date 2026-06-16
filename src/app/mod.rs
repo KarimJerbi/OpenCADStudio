@@ -277,33 +277,18 @@ pub(super) struct OpenCADStudio {
     /// Last point committed by a drawing command — used as ortho/polar base.
     last_point: Option<glam::Vec3>,
     /// OS window Id for the floating Layer Properties Manager (None when closed).
-    layer_window: Option<window::Id>,
     /// OS window Id of the primary application window.
     main_window: Option<window::Id>,
     // ── Floating panel windows ────────────────────────────────────────────
-    page_setup_window: Option<window::Id>,
-    textstyle_window: Option<window::Id>,
-    tablestyle_window: Option<window::Id>,
-    mlstyle_window: Option<window::Id>,
-    mleaderstyle_window: Option<window::Id>,
-    layout_manager_window: Option<window::Id>,
-    plotstyle_window: Option<window::Id>,
-    dimstyle_window: Option<window::Id>,
     /// Standalone "Select Color" palette window + the field it targets.
-    color_pick_window: Option<window::Id>,
     color_pick_target: Option<ColorPickTarget>,
-    shortcuts_window: Option<window::Id>,
-    about_window: Option<window::Id>,
     /// The open in-canvas modal dialog, if any (Plan B: shared overlay instead
     /// of OS windows).
     active_modal: Option<ModalKind>,
-    plugin_manager_window: Option<window::Id>,
     /// New-release notification window — opened on startup when the
     /// GitHub releases API reports a newer version than this build.
-    update_notice_window: Option<window::Id>,
     /// First-launch "make Open CAD Studio the default for .dwg/.dxf?" prompt
     /// window. Shown once, gated on `default_assoc_prompted`.
-    assoc_prompt_window: Option<window::Id>,
     /// Whether the one-time default-association prompt has already been shown.
     /// Persisted via [`settings::UserSettings`] so it survives restarts.
     default_assoc_prompted: bool,
@@ -334,7 +319,6 @@ pub(super) struct OpenCADStudio {
     last_vp_click_time: Option<Instant>,
     /// Screen position of the previous viewport left-click release.
     last_vp_click_pos: Option<Point>,
-    // page_setup_open: moved to page_setup_window: Option<window::Id>
     /// Editable paper width buffer for the Page Setup panel (string while typing).
     page_setup_w: String,
     /// Editable paper height buffer for the Page Setup panel (string while typing).
@@ -462,11 +446,9 @@ pub(super) struct OpenCADStudio {
     /// Set when the user tries to close a tab or quit while there are unsaved changes.
     pending_close: Option<PendingClose>,
     /// OS window for the unsaved-changes confirmation dialog.
-    unsaved_dialog_window: Option<window::Id>,
 
     // ── Custom Save-As dialog ─────────────────────────────────────────────
     /// OS window for the custom Save As dialog.
-    save_dialog_window: Option<window::Id>,
     /// Currently selected format string, e.g. "DWG 2013".
     save_dialog_format: String,
     /// Editable filename (without path), e.g. "drawing.dwg".
@@ -1429,24 +1411,9 @@ impl OpenCADStudio {
             show_file_tabs: true,
             show_layout_tabs: true,
             last_point: None,
-            layer_window: None,
             main_window: None,
-            page_setup_window: None,
-            textstyle_window: None,
-            tablestyle_window: None,
-            mlstyle_window: None,
-            mleaderstyle_window: None,
-            layout_manager_window: None,
-            plotstyle_window: None,
-            dimstyle_window: None,
-            color_pick_window: None,
             color_pick_target: None,
-            shortcuts_window: None,
-            about_window: None,
             active_modal: None,
-            plugin_manager_window: None,
-            update_notice_window: None,
-            assoc_prompt_window: None,
             default_assoc_prompted: false,
             update_notice_version: None,
             update_notice_body: None,
@@ -1469,8 +1436,6 @@ impl OpenCADStudio {
             page_setup_scale: "Fit".to_string(),
             opening: None,
             pending_close: None,
-            unsaved_dialog_window: None,
-            save_dialog_window: None,
             save_dialog_format: "DWG 2018".to_string(),
             save_dialog_filename: "drawing.dwg".to_string(),
             save_dialog_folder: std::env::var("HOME")
@@ -1722,57 +1687,7 @@ pub fn run() -> iced::Result {
     )
     .subscription(OpenCADStudio::subscription)
     .title(|state: &OpenCADStudio, window_id: window::Id| {
-        if Some(window_id) == state.layer_window {
-            return "Layer Properties Manager".into();
-        }
-        if Some(window_id) == state.color_pick_window {
-            return "Select Color".into();
-        }
-        if Some(window_id) == state.page_setup_window {
-            return "Page Setup".into();
-        }
-        if Some(window_id) == state.textstyle_window {
-            return "Text Style".into();
-        }
-        if Some(window_id) == state.tablestyle_window {
-            return "Table Style".into();
-        }
-        if Some(window_id) == state.mlstyle_window {
-            return "Multiline Style".into();
-        }
-        if Some(window_id) == state.mleaderstyle_window {
-            return "Multileader Style".into();
-        }
-        if Some(window_id) == state.layout_manager_window {
-            return "Layout Manager".into();
-        }
-        if Some(window_id) == state.plotstyle_window {
-            return "Plot Style Table Editor".into();
-        }
-        if Some(window_id) == state.dimstyle_window {
-            return "Dimension Style Manager".into();
-        }
-        if Some(window_id) == state.shortcuts_window {
-            return "Keyboard Shortcuts".into();
-        }
-        if Some(window_id) == state.about_window {
-            return "About Open CAD Studio".into();
-        }
-        if Some(window_id) == state.plugin_manager_window {
-            return "Plugin Manager".into();
-        }
-        if Some(window_id) == state.update_notice_window {
-            return "Update Available".into();
-        }
-        if Some(window_id) == state.assoc_prompt_window {
-            return "Set Default Application".into();
-        }
-        if Some(window_id) == state.unsaved_dialog_window {
-            return "Unsaved Changes".into();
-        }
-        if Some(window_id) == state.save_dialog_window {
-            return "Save As".into();
-        }
+        let _ = window_id; // all dialogs are in-canvas modals now
         if let Some(tab) = state.tabs.get(state.active_tab) {
             let dot = if tab.dirty { "● " } else { "" };
             let name = tab.tab_display_name();

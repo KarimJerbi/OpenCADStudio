@@ -13,7 +13,6 @@ use crate::ui::PropertiesPanel;
 use acadrust::types::Color as AcadColor;
 use acadrust::{EntityType as AcadEntityType, Handle};
 use iced::time::Instant;
-use iced::window;
 use iced::{mouse, Task};
 
 const VIEWCUBE_HIT_SIZE: f32 = VIEWCUBE_DRAW_PX;
@@ -1665,100 +1664,10 @@ impl OpenCADStudio {
             }
 
             Message::OsWindowClosed(id) => {
+                // Only the main window exists now; all dialogs are in-canvas
+                // modals (Plan B). Closing it exits.
                 if self.main_window == Some(id) {
-                    // Main window was explicitly closed by us — exit.
                     return iced::exit();
-                }
-                if self.unsaved_dialog_window == Some(id) {
-                    // User closed the dialog window via OS ✕ — treat as Cancel.
-                    self.unsaved_dialog_window = None;
-                    self.pending_close = None;
-                    return Task::none();
-                }
-                if self.save_dialog_window == Some(id) {
-                    self.save_dialog_window = None;
-                    return Task::none();
-                }
-                // A style manager closed via OS ✕ counts as Cancel: discard any
-                // staged (not-yet-applied) changes by restoring the snapshot
-                // taken when it opened.
-                if self.textstyle_window == Some(id)
-                    || self.dimstyle_window == Some(id)
-                    || self.tablestyle_window == Some(id)
-                    || self.mleaderstyle_window == Some(id)
-                    || self.mlstyle_window == Some(id)
-                {
-                    self.style_stage_discard();
-                }
-                // Each popup window that's launched from a ribbon tool
-                // also turns that tool blue (`activate_tool`); when the
-                // window closes, the matching tool needs to be cleared
-                // or the button stays highlighted with no window behind
-                // it. The mapped IDs are the ribbon `ToolDef.id`s that
-                // dispatched the open in the first place. See #40.
-                if self.layer_window == Some(id) {
-                    self.layer_window = None;
-                    self.ribbon.deactivate_tool_if("LAYERS");
-                }
-                if self.page_setup_window == Some(id) {
-                    self.page_setup_window = None;
-                    self.ribbon.deactivate_tool_if("PAGESETUP");
-                }
-                if self.textstyle_window == Some(id) {
-                    self.textstyle_window = None;
-                    self.ribbon.deactivate_tool_if("STYLE");
-                    self.ribbon.deactivate_tool_if("TEXTSTYLE");
-                }
-                if self.tablestyle_window == Some(id) {
-                    self.tablestyle_window = None;
-                    self.ribbon.deactivate_tool_if("TABLESTYLE");
-                }
-                if self.mlstyle_window == Some(id) {
-                    self.mlstyle_window = None;
-                    self.ribbon.deactivate_tool_if("MLSTYLE");
-                }
-                if self.mleaderstyle_window == Some(id) {
-                    self.mleaderstyle_window = None;
-                    self.ribbon.deactivate_tool_if("MLEADERSTYLE");
-                }
-                if self.layout_manager_window == Some(id) {
-                    self.layout_manager_window = None;
-                    self.ribbon.deactivate_tool_if("LAYOUTMANAGER");
-                    self.ribbon.deactivate_tool_if("LAYOUTPANEL");
-                }
-                if self.plotstyle_window == Some(id) {
-                    self.plotstyle_window = None;
-                    self.ribbon.deactivate_tool_if("PLOTSTYLE");
-                    self.ribbon.deactivate_tool_if("STYLESMANAGER");
-                }
-                if self.dimstyle_window == Some(id) {
-                    self.dimstyle_window = None;
-                    self.ribbon.deactivate_tool_if("DIMSTYLE");
-                }
-                if self.color_pick_window == Some(id) {
-                    self.color_pick_window = None;
-                    self.color_pick_target = None;
-                }
-                if self.shortcuts_window == Some(id) {
-                    self.shortcuts_window = None;
-                    self.ribbon.deactivate_tool_if("SHORTCUTS");
-                    self.ribbon.deactivate_tool_if("KEYBOARD");
-                }
-                if self.about_window == Some(id) {
-                    self.about_window = None;
-                    self.ribbon.deactivate_tool_if("ABOUT");
-                }
-                if self.plugin_manager_window == Some(id) {
-                    self.plugin_manager_window = None;
-                }
-                if self.update_notice_window == Some(id) {
-                    self.update_notice_window = None;
-                }
-                // Closing the default-association prompt via the window chrome
-                // counts as answering it — never nag again.
-                if self.assoc_prompt_window == Some(id) {
-                    self.assoc_prompt_window = None;
-                    self.mark_assoc_prompted();
                 }
                 Task::none()
             }
@@ -5960,9 +5869,7 @@ impl OpenCADStudio {
                          center={center}  rot={rotation}°"
                     ));
                 }
-                if let Some(id) = self.page_setup_window.take() {
-                    return window::close(id);
-                }
+                self.active_modal = None;
                 Task::none()
             }
 
@@ -6522,9 +6429,6 @@ impl OpenCADStudio {
                     })
                     .unwrap_or_else(|| "Standard".to_string());
                 self.load_tablestyle_bufs(i);
-                if let Some(id) = self.tablestyle_window {
-                    return window::gain_focus(id);
-                }
                 self.active_modal = Some(super::ModalKind::TableStyle);
                 self.style_stage_begin();
                 Task::none()
@@ -6926,9 +6830,6 @@ impl OpenCADStudio {
                         .unwrap_or_else(|| "Standard".to_string())
                 };
                 self.load_mleaderstyle_bufs(i);
-                if let Some(id) = self.mleaderstyle_window {
-                    return window::gain_focus(id);
-                }
                 self.active_modal = Some(super::ModalKind::MLeaderStyle);
                 self.style_stage_begin();
                 Task::none()
@@ -7274,9 +7175,6 @@ impl OpenCADStudio {
                 };
                 self.dimstyle_selected = selected.clone();
                 self.load_dimstyle_bufs(i);
-                if let Some(id) = self.dimstyle_window {
-                    return window::gain_focus(id);
-                }
                 self.active_modal = Some(super::ModalKind::DimStyle);
                 self.style_stage_begin();
                 Task::none()
@@ -8513,9 +8411,6 @@ impl OpenCADStudio {
 
     /// Populate edit buffers from the currently selected text style.
     fn open_save_dialog_window(&mut self, tab_idx: usize) -> Task<Message> {
-        if let Some(id) = self.save_dialog_window {
-            return window::gain_focus(id);
-        }
         // Pre-fill filename and folder from current path or defaults.
         if let Some(p) = &self.tabs[tab_idx].current_path.clone() {
             if let Some(name) = p.file_name() {
