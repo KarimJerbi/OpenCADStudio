@@ -396,7 +396,9 @@ fn recent_item_btn(path: &PathBuf) -> Element<'_, Message> {
         .align_y(iced::Center)
         .spacing(6),
     )
-    .on_press(Message::Command(format!("OPEN_RECENT:{path_str}")))
+    .on_press(Message::CloseAppMenuAndRun(format!(
+        "OPEN_RECENT:{path_str}"
+    )))
     .style(|_: &Theme, status| button::Style {
         background: Some(Background::Color(match status {
             button::Status::Hovered => ITEM_HOVER,
