@@ -2045,7 +2045,7 @@ impl Scene {
             for sub in ins
                 .explode_from_document(&self.document)
                 .into_iter()
-                .map(crate::modules::home::modify::explode::normalize_insert_entity)
+                .map(crate::modules::draw::modify::explode::normalize_insert_entity)
             {
                 let EntityType::Hatch(dxf) = sub else {
                     continue;
@@ -3572,7 +3572,7 @@ impl Scene {
         let local = EntityTransform::Translate(-base);
         for (old_handle, mut entity) in source_entities {
             view::dispatch::apply_transform(&mut entity, &local);
-            entity = crate::modules::home::modify::explode::normalize_entity_for_block(entity);
+            entity = crate::modules::draw::modify::explode::normalize_entity_for_block(entity);
             entity.common_mut().handle = Handle::NULL;
             entity.common_mut().owner_handle = br_handle;
             self.document
@@ -3697,7 +3697,7 @@ impl Scene {
             // bakes its transform into the children it returns, so nested
             // hatches land in the correct world position. A depth guard keeps
             // a malformed cyclic block reference from looping forever.
-            let normalize = crate::modules::home::modify::explode::normalize_insert_entity;
+            let normalize = crate::modules::draw::modify::explode::normalize_insert_entity;
             let mut stack: Vec<(EntityType, usize)> = ins
                 .explode_from_document(&self.document)
                 .into_iter()
@@ -7392,7 +7392,7 @@ fn tessellate_entity(
             .explode_from_document(document)
             .iter()
             .cloned()
-            .map(crate::modules::home::modify::explode::normalize_insert_entity)
+            .map(crate::modules::draw::modify::explode::normalize_insert_entity)
             .flat_map(|sub| {
                 let (sub_color, sub_pattern_length, sub_pattern, sub_line_weight_px, sub_aci) =
                     view::render::render_style_for_block_sub(

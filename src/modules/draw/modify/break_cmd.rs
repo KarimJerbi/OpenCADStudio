@@ -7,7 +7,7 @@
 //
 //   BREAK @ (at-sign as second point) → Break at a single point (splits without gap).
 
-use crate::modules::home::modify::spline_ops::{
+use crate::modules::draw::modify::spline_ops::{
     bspline_to_spline, spline_nearest_t, spline_to_bspline,
 };
 use acadrust::entities::{

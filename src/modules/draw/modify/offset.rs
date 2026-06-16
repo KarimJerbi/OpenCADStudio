@@ -11,7 +11,7 @@
 
 use std::f64::consts::TAU;
 
-use crate::modules::home::modify::spline_ops::{spline_pts_wire, spline_sample_xy};
+use crate::modules::draw::modify::spline_ops::{spline_pts_wire, spline_sample_xy};
 use acadrust::entities::LwVertex;
 use acadrust::entities::{
     Arc as ArcEnt, Circle as CircleEnt, Ellipse as EllipseEnt, Line as LineEnt, LwPolyline,
@@ -21,7 +21,7 @@ use acadrust::{EntityType, Handle};
 use glam::Vec3;
 
 use crate::command::{CadCommand, CmdResult};
-use crate::modules::home::defaults;
+use crate::modules::draw::defaults;
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
 

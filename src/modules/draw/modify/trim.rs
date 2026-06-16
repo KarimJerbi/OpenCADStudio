@@ -20,7 +20,7 @@ use glam::Vec3;
 use truck_modeling::base::{BoundedCurve, Cut, ParametricCurve};
 
 use crate::command::{CadCommand, CmdResult};
-use crate::modules::home::modify::spline_ops::{
+use crate::modules::draw::modify::spline_ops::{
     bspline_to_spline, spline_nearest_t, spline_pts_wire, spline_sample_xy, spline_to_bspline,
     t_to_rel,
 };
@@ -281,7 +281,7 @@ fn build_geos(entities: &[EntityType]) -> Vec<Geo> {
             | EntityType::Polyline(_)
             | EntityType::Polyline2D(_)
             | EntityType::Polyline3D(_) => {
-                for seg in crate::modules::home::modify::explode::explode_polyline_segments(e) {
+                for seg in crate::modules::draw::modify::explode::explode_polyline_segments(e) {
                     if let Some(g) = geo_from_entity(h, &seg) {
                         out.push(g);
                     }

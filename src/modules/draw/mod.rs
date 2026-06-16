@@ -1,4 +1,4 @@
-// Home module — Draw, Modify, Annotation and Layer tools.
+// Draw module — Draw, Modify, Annotation and Layer tools.
 
 mod about;
 mod changelog;
@@ -16,11 +16,11 @@ pub mod select;
 
 use crate::modules::{CadModule, RibbonGroup, RibbonItem};
 
-pub struct HomeModule;
+pub struct DrawModule;
 
-impl CadModule for HomeModule {
+impl CadModule for DrawModule {
     fn id(&self) -> &'static str {
-        "home"
+        "draw"
     }
     fn title(&self) -> &'static str {
         "Draw"
@@ -220,7 +220,7 @@ impl CadModule for HomeModule {
                 ],
             },
             // Support group lives on the Start tab now (see view.rs:
-            // start_page_view). Removed from the Home ribbon to declutter.
+            // start_page_view). Removed from the Draw ribbon to declutter.
         ]
     }
 }

@@ -1328,7 +1328,7 @@ impl MultiLeaderTess for MultiLeader {
                 let _ = ml.block_connection_type;
                 for sub in synth_ins.explode_from_document(document) {
                     let normalized =
-                        crate::modules::home::modify::explode::normalize_insert_entity(sub);
+                        crate::modules::draw::modify::explode::normalize_insert_entity(sub);
                     let mut sub_wires = tessellate(
                         document,
                         handle,

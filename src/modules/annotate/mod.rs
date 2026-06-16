@@ -38,7 +38,7 @@ impl CadModule for AnnotateModule {
     }
 
     fn ribbon_groups(&self) -> Vec<RibbonGroup> {
-        use crate::modules::home::draw::{revcloud, wipeout};
+        use crate::modules::draw::draw::{revcloud, wipeout};
 
         vec![
             // ── Text ─────────────────────────────────────────────────────

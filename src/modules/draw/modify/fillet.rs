@@ -17,7 +17,7 @@ use glam::Vec3;
 const TAU: f64 = std::f64::consts::TAU;
 
 use crate::command::{CadCommand, CmdResult};
-use crate::modules::home::defaults;
+use crate::modules::draw::defaults;
 use crate::modules::IconKind;
 use crate::scene::model::wire_model::WireModel;
 

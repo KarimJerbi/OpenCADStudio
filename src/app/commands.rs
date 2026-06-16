@@ -145,7 +145,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("LAYOFF");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -180,7 +180,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("LAYFRZ");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -215,7 +215,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("LAYLCK");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -242,7 +242,7 @@ impl OpenCADStudio {
             "LAYMCUR" => {
                 let entities = self.tabs[i].scene.selected_entities();
                 if entities.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("LAYMCUR");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -319,7 +319,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("LAYULK");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -439,7 +439,7 @@ impl OpenCADStudio {
             }
 
             "LAYMATCH" | "LAYMCH" => {
-                use crate::modules::home::layers::match_layer::LayMatchCommand;
+                use crate::modules::draw::layers::match_layer::LayMatchCommand;
                 let dest: Vec<_> = self.tabs[i]
                     .scene
                     .selected_entities()
@@ -452,7 +452,7 @@ impl OpenCADStudio {
             }
 
             "MATCHPROP" | "MA" => {
-                use crate::modules::home::properties::match_prop::MatchPropCommand;
+                use crate::modules::draw::properties::match_prop::MatchPropCommand;
                 self.tabs[i].scene.deselect_all();
                 let cmd = MatchPropCommand::new();
                 self.command_line.push_info(&cmd.prompt());
@@ -467,13 +467,13 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("GROUP");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
                     let auto_name = super::helpers::next_group_auto_name(&self.tabs[i].scene);
-                    use crate::modules::home::groups::group::GroupCommand;
+                    use crate::modules::draw::groups::group::GroupCommand;
                     let cmd = GroupCommand::new(handles, auto_name);
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -488,7 +488,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::groups::ungroup::UngroupCommand;
+                    use crate::modules::draw::groups::ungroup::UngroupCommand;
                     let cmd = UngroupCommand::new();
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -514,7 +514,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("COPYCLIP");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -542,7 +542,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("CUTCLIP");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -571,7 +571,7 @@ impl OpenCADStudio {
                     self.command_line.push_error("Clipboard is empty.");
                 } else {
                     let wires = self.tabs[i].scene.wires_for_entities(&self.clipboard);
-                    use crate::modules::home::clipboard::paste::PasteCommand;
+                    use crate::modules::draw::clipboard::paste::PasteCommand;
                     let cmd = PasteCommand::new(wires, self.clipboard_centroid);
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -605,7 +605,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("BLOCK");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -723,14 +723,14 @@ impl OpenCADStudio {
 
             // ── Draw commands ──────────────────────────────────────────────
             "LINE" | "L" => {
-                use crate::modules::home::draw::line::LineCommand;
+                use crate::modules::draw::draw::line::LineCommand;
                 let new_cmd = LineCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "MLINE" | "ML" => {
-                use crate::modules::home::draw::mline::MlineCommand;
+                use crate::modules::draw::draw::mline::MlineCommand;
                 let style = self.tabs[i].scene.document.header.multiline_style.clone();
                 let cmd_obj = MlineCommand::with_style(style);
                 self.command_line.push_info(&cmd_obj.prompt());
@@ -738,7 +738,7 @@ impl OpenCADStudio {
             }
 
             cmd if cmd == "WIPEOUT" || cmd == "WO" || cmd.starts_with("WIPEOUT ") => {
-                use crate::modules::home::draw::wipeout::WipeoutCommand;
+                use crate::modules::draw::draw::wipeout::WipeoutCommand;
                 let args = cmd
                     .split_once(' ')
                     .map(|(_, r)| r.trim().to_uppercase())
@@ -757,14 +757,14 @@ impl OpenCADStudio {
             }
 
             "REVCLOUD" => {
-                use crate::modules::home::draw::revcloud::RevCloudCommand;
+                use crate::modules::draw::draw::revcloud::RevCloudCommand;
                 let cmd = RevCloudCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "ATTDEF" => {
-                use crate::modules::home::draw::attdef::AttdefCommand;
+                use crate::modules::draw::draw::attdef::AttdefCommand;
                 let cmd = AttdefCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -894,38 +894,38 @@ impl OpenCADStudio {
             }
 
             "DONUT" | "DO" => {
-                use crate::modules::home::draw::donut::DonutCommand;
+                use crate::modules::draw::draw::donut::DonutCommand;
                 let cmd = DonutCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "CIRCLE" | "C" => {
-                use crate::modules::home::draw::circle::CircleCommand;
+                use crate::modules::draw::draw::circle::CircleCommand;
                 let new_cmd = CircleCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "CIRCLE_CD" => {
-                use crate::modules::home::draw::circle::CircleCDCommand;
+                use crate::modules::draw::draw::circle::CircleCDCommand;
                 let new_cmd = CircleCDCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "CIRCLE_2P" => {
-                use crate::modules::home::draw::circle::Circle2PCommand;
+                use crate::modules::draw::draw::circle::Circle2PCommand;
                 let new_cmd = Circle2PCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "CIRCLE_3P" => {
-                use crate::modules::home::draw::circle::Circle3PCommand;
+                use crate::modules::draw::draw::circle::Circle3PCommand;
                 let new_cmd = Circle3PCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "CIRCLE_TTR" => {
-                use crate::modules::home::draw::circle::CircleTTRCommand;
+                use crate::modules::draw::draw::circle::CircleTTRCommand;
                 let new_cmd = CircleTTRCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.pre_cmd_tangent = Some(self.snapper.is_on(crate::snap::SnapType::Tangent));
@@ -933,7 +933,7 @@ impl OpenCADStudio {
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "CIRCLE_TTT" => {
-                use crate::modules::home::draw::circle::CircleTTTCommand;
+                use crate::modules::draw::draw::circle::CircleTTTCommand;
                 let new_cmd = CircleTTTCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.pre_cmd_tangent = Some(self.snapper.is_on(crate::snap::SnapType::Tangent));
@@ -942,105 +942,105 @@ impl OpenCADStudio {
             }
 
             "ARC" | "A" => {
-                use crate::modules::home::draw::arc::ArcCommand;
+                use crate::modules::draw::draw::arc::ArcCommand;
                 let new_cmd = ArcCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_3P" => {
-                use crate::modules::home::draw::arc::Arc3PCommand;
+                use crate::modules::draw::draw::arc::Arc3PCommand;
                 let new_cmd = Arc3PCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SCE" => {
-                use crate::modules::home::draw::arc::ArcSCECommand;
+                use crate::modules::draw::draw::arc::ArcSCECommand;
                 let new_cmd = ArcSCECommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SCA" => {
-                use crate::modules::home::draw::arc::ArcSCACommand;
+                use crate::modules::draw::draw::arc::ArcSCACommand;
                 let new_cmd = ArcSCACommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SCL" => {
-                use crate::modules::home::draw::arc::ArcSCLCommand;
+                use crate::modules::draw::draw::arc::ArcSCLCommand;
                 let new_cmd = ArcSCLCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SEA" => {
-                use crate::modules::home::draw::arc::ArcSEACommand;
+                use crate::modules::draw::draw::arc::ArcSEACommand;
                 let new_cmd = ArcSEACommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SER" => {
-                use crate::modules::home::draw::arc::ArcSERCommand;
+                use crate::modules::draw::draw::arc::ArcSERCommand;
                 let new_cmd = ArcSERCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_SED" => {
-                use crate::modules::home::draw::arc::ArcSEDCommand;
+                use crate::modules::draw::draw::arc::ArcSEDCommand;
                 let new_cmd = ArcSEDCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_CSA" => {
-                use crate::modules::home::draw::arc::ArcCSACommand;
+                use crate::modules::draw::draw::arc::ArcCSACommand;
                 let new_cmd = ArcCSACommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "ARC_CSL" => {
-                use crate::modules::home::draw::arc::ArcCSLCommand;
+                use crate::modules::draw::draw::arc::ArcCSLCommand;
                 let new_cmd = ArcCSLCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "RECT" | "RECTANG" | "REC" => {
-                use crate::modules::home::draw::shapes::RectCommand;
+                use crate::modules::draw::draw::shapes::RectCommand;
                 let new_cmd = RectCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "RECT_ROT" => {
-                use crate::modules::home::draw::shapes::RectRotCommand;
+                use crate::modules::draw::draw::shapes::RectRotCommand;
                 let new_cmd = RectRotCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "RECT_CEN" => {
-                use crate::modules::home::draw::shapes::RectCenCommand;
+                use crate::modules::draw::draw::shapes::RectCenCommand;
                 let new_cmd = RectCenCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "POLY" | "POLYGON" | "POL" => {
-                use crate::modules::home::draw::shapes::PolyCommand;
+                use crate::modules::draw::draw::shapes::PolyCommand;
                 let new_cmd = PolyCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "POLY_C" => {
-                use crate::modules::home::draw::shapes::PolyCCommand;
+                use crate::modules::draw::draw::shapes::PolyCCommand;
                 let new_cmd = PolyCCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
             "POLY_E" => {
-                use crate::modules::home::draw::shapes::PolyECommand;
+                use crate::modules::draw::draw::shapes::PolyECommand;
                 let new_cmd = PolyECommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "PLINE" | "PL" => {
-                use crate::modules::home::draw::polyline::PlineCommand;
+                use crate::modules::draw::draw::polyline::PlineCommand;
                 let new_cmd = PlineCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
@@ -1055,12 +1055,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("MOVE");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::translate::MoveCommand;
+                    use crate::modules::draw::modify::translate::MoveCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = MoveCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1076,12 +1076,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("COPY");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::copy::CopyCommand;
+                    use crate::modules::draw::modify::copy::CopyCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = CopyCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1097,12 +1097,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ROTATE");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::rotate::RotateCommand;
+                    use crate::modules::draw::modify::rotate::RotateCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = RotateCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1111,28 +1111,28 @@ impl OpenCADStudio {
             }
 
             "POINT" | "PO" => {
-                use crate::modules::home::draw::point::PointCommand;
+                use crate::modules::draw::draw::point::PointCommand;
                 let new_cmd = PointCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "RAY" => {
-                use crate::modules::home::draw::ray::RayCommand;
+                use crate::modules::draw::draw::ray::RayCommand;
                 let new_cmd = RayCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "XLINE" | "XL" | "CONSTRUCTIONLINE" => {
-                use crate::modules::home::draw::ray::XLineCommand;
+                use crate::modules::draw::draw::ray::XLineCommand;
                 let new_cmd = XLineCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "HATCH" | "H" => {
-                use crate::modules::home::draw::hatch::HatchCommand;
+                use crate::modules::draw::draw::hatch::HatchCommand;
                 let outlines = self.tabs[i].scene.closed_outlines();
                 let new_cmd = HatchCommand::new(outlines);
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1140,7 +1140,7 @@ impl OpenCADStudio {
             }
 
             "HATCHEDIT" | "HE" => {
-                use crate::modules::home::draw::hatchedit::HatcheditCommand;
+                use crate::modules::draw::draw::hatchedit::HatcheditCommand;
                 // If a single hatch is already selected, skip the pick step.
                 let sel = self.tabs[i].scene.selected_entities();
                 if sel.len() == 1 {
@@ -1166,7 +1166,7 @@ impl OpenCADStudio {
             }
 
             "GRADIENT" => {
-                use crate::modules::home::draw::hatch::GradientCommand;
+                use crate::modules::draw::draw::hatch::GradientCommand;
                 let outlines = self.tabs[i].scene.closed_outlines();
                 let new_cmd = GradientCommand::new(outlines);
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1174,7 +1174,7 @@ impl OpenCADStudio {
             }
 
             "BOUNDARY" => {
-                use crate::modules::home::draw::hatch::BoundaryCommand;
+                use crate::modules::draw::draw::hatch::BoundaryCommand;
                 let outlines = self.tabs[i].scene.closed_outlines();
                 let new_cmd = BoundaryCommand::new(outlines);
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1182,28 +1182,28 @@ impl OpenCADStudio {
             }
 
             "ELLIPSE" | "EL" => {
-                use crate::modules::home::draw::ellipse::EllipseCommand;
+                use crate::modules::draw::draw::ellipse::EllipseCommand;
                 let new_cmd = EllipseCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "ELLIPSE_AXIS" => {
-                use crate::modules::home::draw::ellipse::EllipseAxisCommand;
+                use crate::modules::draw::draw::ellipse::EllipseAxisCommand;
                 let new_cmd = EllipseAxisCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "ELLIPSE_ARC" => {
-                use crate::modules::home::draw::ellipse::EllipseArcCommand;
+                use crate::modules::draw::draw::ellipse::EllipseArcCommand;
                 let new_cmd = EllipseArcCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
             "SPLINE" | "SPL" => {
-                use crate::modules::home::draw::spline::SplineCommand;
+                use crate::modules::draw::draw::spline::SplineCommand;
                 let new_cmd = SplineCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
@@ -1217,12 +1217,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("SCALE");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::scale::ScaleCommand;
+                    use crate::modules::draw::modify::scale::ScaleCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = ScaleCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1238,12 +1238,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("MIRROR");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::mirror::MirrorCommand;
+                    use crate::modules::draw::modify::mirror::MirrorCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = MirrorCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1259,7 +1259,7 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ERASE");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -1561,12 +1561,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("STRETCH");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::stretch::StretchCommand;
+                    use crate::modules::draw::modify::stretch::StretchCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = StretchCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1575,7 +1575,7 @@ impl OpenCADStudio {
             }
 
             "FILLET" | "F" => {
-                use crate::modules::home::modify::fillet::FilletCommand;
+                use crate::modules::draw::modify::fillet::FilletCommand;
                 let entities: Vec<_> = self.tabs[i]
                     .scene
                     .entity_wires()
@@ -1592,7 +1592,7 @@ impl OpenCADStudio {
                     .collect();
                 let all_entities: Vec<_> = entities.into_iter().map(|(_, e)| e).collect();
                 let new_cmd = FilletCommand::new(
-                    crate::modules::home::defaults::get_fillet_radius(),
+                    crate::modules::draw::defaults::get_fillet_radius(),
                     all_entities,
                 );
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1607,12 +1607,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ARRAYRECT");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::array::ArrayRectCommand;
+                    use crate::modules::draw::modify::array::ArrayRectCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = ArrayRectCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1628,12 +1628,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ARRAYPOLAR");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::array::ArrayPolarCommand;
+                    use crate::modules::draw::modify::array::ArrayPolarCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let new_cmd = ArrayPolarCommand::new(handles, wires);
                     self.command_line.push_info(&new_cmd.prompt());
@@ -1649,12 +1649,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ARRAYPATH");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::array::ArrayPathCommand;
+                    use crate::modules::draw::modify::array::ArrayPathCommand;
                     let wires = self.tabs[i].scene.wire_models_for(&handles);
                     let all_entities: Vec<_> = self.tabs[i]
                         .scene
@@ -1679,12 +1679,12 @@ impl OpenCADStudio {
                     .map(|(h, _)| h)
                     .collect();
                 if handles.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("ARRAY3D");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
-                    use crate::modules::home::modify::array::Array3DCommand;
+                    use crate::modules::draw::modify::array::Array3DCommand;
                     let new_cmd = Array3DCommand::new(handles);
                     self.command_line.push_info(&new_cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(new_cmd));
@@ -1692,7 +1692,7 @@ impl OpenCADStudio {
             }
 
             "CHAMFER" | "CHA" => {
-                use crate::modules::home::modify::fillet::ChamferCommand;
+                use crate::modules::draw::modify::fillet::ChamferCommand;
                 let entities: Vec<_> = self.tabs[i]
                     .scene
                     .entity_wires()
@@ -1709,7 +1709,7 @@ impl OpenCADStudio {
                     .collect();
                 let all_entities: Vec<_> = entities.into_iter().map(|(_, e)| e).collect();
                 let new_cmd = ChamferCommand::new(
-                    crate::modules::home::defaults::get_chamfer_dist1(),
+                    crate::modules::draw::defaults::get_chamfer_dist1(),
                     all_entities,
                 );
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1717,10 +1717,10 @@ impl OpenCADStudio {
             }
 
             "EXPLODE" | "X" => {
-                use crate::modules::home::modify::explode::explode_entity;
+                use crate::modules::draw::modify::explode::explode_entity;
                 let entities: Vec<_> = self.tabs[i].scene.selected_entities().into_iter().collect();
                 if entities.is_empty() {
-                    use crate::modules::home::select::SelectObjectsCommand;
+                    use crate::modules::draw::select::SelectObjectsCommand;
                     let cmd = SelectObjectsCommand::new("EXPLODE");
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -1759,7 +1759,7 @@ impl OpenCADStudio {
             }
 
             "OFFSET" | "O" => {
-                use crate::modules::home::modify::offset::OffsetCommand;
+                use crate::modules::draw::modify::offset::OffsetCommand;
                 let all_entities: Vec<_> = self.tabs[i]
                     .scene
                     .entity_wires()
@@ -1775,7 +1775,7 @@ impl OpenCADStudio {
             }
 
             "TRIM" | "TR" => {
-                use crate::modules::home::modify::trim::TrimCommand;
+                use crate::modules::draw::modify::trim::TrimCommand;
                 let entities: Vec<_> = self.tabs[i]
                     .scene
                     .entity_wires()
@@ -1797,7 +1797,7 @@ impl OpenCADStudio {
             }
 
             "EXTEND" | "EX" => {
-                use crate::modules::home::modify::trim::ExtendCommand;
+                use crate::modules::draw::modify::trim::ExtendCommand;
                 let entities: Vec<_> = self.tabs[i]
                     .scene
                     .entity_wires()
@@ -1901,42 +1901,42 @@ impl OpenCADStudio {
 
             // ── Break / Join ─────────────────────────────────────────────────
             "JOIN" | "J" => {
-                use crate::modules::home::modify::join::JoinCommand;
+                use crate::modules::draw::modify::join::JoinCommand;
                 let cmd = JoinCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "BREAK" | "BR" => {
-                use crate::modules::home::modify::break_cmd::BreakInteractiveCommand;
+                use crate::modules::draw::modify::break_cmd::BreakInteractiveCommand;
                 let cmd = BreakInteractiveCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "BREAKATPOINT" | "BAP" => {
-                use crate::modules::home::modify::break_cmd::BreakAtPointCommand;
+                use crate::modules::draw::modify::break_cmd::BreakAtPointCommand;
                 let cmd = BreakAtPointCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "PEDIT" | "PE" => {
-                use crate::modules::home::modify::pedit::PeditCommand;
+                use crate::modules::draw::modify::pedit::PeditCommand;
                 let cmd_obj = PeditCommand::new();
                 self.command_line.push_info(&cmd_obj.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd_obj));
             }
 
             "SPLINEDIT" | "SPE" => {
-                use crate::modules::home::modify::splinedit::SplineditCommand;
+                use crate::modules::draw::modify::splinedit::SplineditCommand;
                 let cmd_obj = SplineditCommand::new();
                 self.command_line.push_info(&cmd_obj.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd_obj));
             }
 
             "ATTEDIT" | "ATE" | "-ATTEDIT" => {
-                use crate::modules::home::modify::attedit::AtteditCommand;
+                use crate::modules::draw::modify::attedit::AtteditCommand;
                 let cmd_obj = AtteditCommand::new();
                 self.command_line.push_info(&cmd_obj.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd_obj));
@@ -1944,7 +1944,7 @@ impl OpenCADStudio {
 
             // ── REFEDIT — in-place block editing ─────────────────────────────
             "REFEDIT" => {
-                use crate::modules::home::modify::refedit::RefEditPickCommand;
+                use crate::modules::draw::modify::refedit::RefEditPickCommand;
                 // If a session is already active, tell the user.
                 if self.tabs[i].refedit_session.is_some() {
                     self.command_line
@@ -1971,7 +1971,7 @@ impl OpenCADStudio {
             }
 
             cmd if cmd.starts_with("REFEDIT_BEGIN:") => {
-                use crate::modules::home::modify::refedit::{
+                use crate::modules::draw::modify::refedit::{
                     apply_insert_transform, RefEditSession,
                 };
                 use acadrust::Handle;
@@ -2079,7 +2079,7 @@ impl OpenCADStudio {
                     "REFEDIT: Editing block \"{}\". Use REFCLOSE when done.",
                     insert.block_name
                 ));
-                use crate::modules::home::modify::refedit::RefCloseCommand;
+                use crate::modules::draw::modify::refedit::RefCloseCommand;
                 let cmd_obj = RefCloseCommand::new();
                 self.command_line.push_info(&cmd_obj.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd_obj));
@@ -2087,7 +2087,7 @@ impl OpenCADStudio {
 
             "REFCLOSE" => {
                 if self.tabs[i].refedit_session.is_some() {
-                    use crate::modules::home::modify::refedit::RefCloseCommand;
+                    use crate::modules::draw::modify::refedit::RefCloseCommand;
                     let cmd_obj = RefCloseCommand::new();
                     self.command_line.push_info(&cmd_obj.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd_obj));
@@ -2098,8 +2098,8 @@ impl OpenCADStudio {
             }
 
             "REFCLOSE_SAVE" => {
-                use crate::modules::home::modify::explode::normalize_entity_for_block;
-                use crate::modules::home::modify::refedit::apply_insert_inverse_transform;
+                use crate::modules::draw::modify::explode::normalize_entity_for_block;
+                use crate::modules::draw::modify::refedit::apply_insert_inverse_transform;
 
                 let session = match self.tabs[i].refedit_session.take() {
                     Some(s) => s,
@@ -2188,28 +2188,28 @@ impl OpenCADStudio {
             }
 
             "ALIGN" | "AL" => {
-                use crate::modules::home::modify::align::AlignCommand;
+                use crate::modules::draw::modify::align::AlignCommand;
                 let cmd = AlignCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "LENGTHEN" | "LEN" => {
-                use crate::modules::home::modify::lengthen::LengthenCommand;
+                use crate::modules::draw::modify::lengthen::LengthenCommand;
                 let cmd = LengthenCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "DIVIDE" | "DIV" => {
-                use crate::modules::home::inquiry::divide::DivideCommand;
+                use crate::modules::draw::inquiry::divide::DivideCommand;
                 let cmd = DivideCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "MEASURE" | "ME" => {
-                use crate::modules::home::inquiry::divide::MeasureCommand;
+                use crate::modules::draw::inquiry::divide::MeasureCommand;
                 let cmd = MeasureCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -2217,21 +2217,21 @@ impl OpenCADStudio {
 
             // ── Inquiry ──────────────────────────────────────────────────────
             "DIST" | "DI" => {
-                use crate::modules::home::inquiry::dist::DistCommand;
+                use crate::modules::draw::inquiry::dist::DistCommand;
                 let cmd = DistCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "ID" => {
-                use crate::modules::home::inquiry::id::IdCommand;
+                use crate::modules::draw::inquiry::id::IdCommand;
                 let cmd = IdCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
             "AREA" => {
-                use crate::modules::home::inquiry::area::AreaCommand;
+                use crate::modules::draw::inquiry::area::AreaCommand;
                 let cmd = AreaCommand::new();
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));

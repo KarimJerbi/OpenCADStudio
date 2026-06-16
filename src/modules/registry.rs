@@ -7,7 +7,7 @@ use crate::modules::CadModule;
 /// Called once at startup by `Ribbon::new()`.
 pub fn all_modules() -> Vec<Box<dyn CadModule>> {
 	vec![
-		Box::new(super::home::HomeModule),
+		Box::new(super::draw::DrawModule),
 		Box::new(super::model::ModelModule),
 		Box::new(super::insert::InsertModule),
 		Box::new(super::annotate::AnnotateModule),

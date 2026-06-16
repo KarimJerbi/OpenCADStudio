@@ -129,7 +129,7 @@ pub enum CmdResult {
     /// Apply a polyline-edit operation to one entity; keep command active.
     PeditOp {
         handle: Handle,
-        op: crate::modules::home::modify::pedit::PeditOp,
+        op: crate::modules::draw::modify::pedit::PeditOp,
     },
     /// Place Point entities at N equal intervals along the entity.
     DivideEntity { handle: Handle, n: usize },
@@ -139,7 +139,7 @@ pub enum CmdResult {
     LengthenEntity {
         handle: Handle,
         pick_pt: Vec3,
-        mode: crate::modules::home::modify::lengthen::LenMode,
+        mode: crate::modules::draw::modify::lengthen::LenMode,
     },
     /// Align selected entities: translate to dst1, rotate by angle_rad, optional scale.
     AlignSelected {

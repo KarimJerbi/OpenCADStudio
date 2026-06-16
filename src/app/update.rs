@@ -375,7 +375,7 @@ impl OpenCADStudio {
 
             Message::ImagePickResult(Ok((path, pw, ph))) => {
                 use crate::command::CadCommand;
-                use crate::modules::home::draw::raster_image::ImageCommand;
+                use crate::modules::draw::draw::raster_image::ImageCommand;
                 let path_str = path.to_string_lossy().into_owned();
                 let short = std::path::Path::new(&path_str)
                     .file_name()
@@ -3220,7 +3220,7 @@ impl OpenCADStudio {
                                     self.tabs[i].scene.hatches.get(&handle).cloned()
                                 {
                                     use crate::command::CadCommand;
-                                    use crate::modules::home::draw::hatchedit::HatcheditCommand;
+                                    use crate::modules::draw::draw::hatchedit::HatcheditCommand;
                                     let cmd: Box<dyn CadCommand> =
                                         Box::new(HatcheditCommand::with_handle(
                                             handle,

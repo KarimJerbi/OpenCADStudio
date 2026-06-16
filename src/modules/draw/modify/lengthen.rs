@@ -7,7 +7,7 @@
 //
 // The entity is modified at whichever end is closest to the pick point.
 
-use crate::modules::home::modify::spline_ops::{bspline_to_spline, spline_to_bspline};
+use crate::modules::draw::modify::spline_ops::{bspline_to_spline, spline_to_bspline};
 use acadrust::entities::{
     Arc as ArcEnt, Ellipse as EllipseEnt, Line as LineEnt, LwPolyline, Spline as SplineEnt,
 };

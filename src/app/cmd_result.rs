@@ -291,7 +291,7 @@ impl OpenCADStudio {
                         if let Some(encoded) = layer.strip_prefix("__ATTEDIT__") {
                             let label = self.history_label_from_active_cmd(i, "ATTEDIT");
                             self.push_undo_snapshot(i, label);
-                            crate::modules::home::modify::attedit::apply_attedit(
+                            crate::modules::draw::modify::attedit::apply_attedit(
                                 &mut self.tabs[i].scene.document,
                                 handle,
                                 encoded,
@@ -313,7 +313,7 @@ impl OpenCADStudio {
                         if op.starts_with("__SPLINEDIT_") {
                             let label = self.history_label_from_active_cmd(i, "SPLINEDIT");
                             self.push_undo_snapshot(i, label);
-                            crate::modules::home::modify::splinedit::apply_spline_op(
+                            crate::modules::draw::modify::splinedit::apply_spline_op(
                                 &mut self.tabs[i].scene.document,
                                 handle,
                                 &op,
@@ -772,7 +772,7 @@ impl OpenCADStudio {
                 pick_pt,
                 mode,
             } => {
-                use crate::modules::home::modify::lengthen::lengthen_entity;
+                use crate::modules::draw::modify::lengthen::lengthen_entity;
                 let result = self.tabs[i]
                     .scene
                     .document
@@ -799,7 +799,7 @@ impl OpenCADStudio {
                 self.restore_pre_cmd_tangent();
             }
             CmdResult::DivideEntity { handle, n } => {
-                use crate::modules::home::inquiry::divide::divide_entity;
+                use crate::modules::draw::inquiry::divide::divide_entity;
                 let pts = self.tabs[i]
                     .scene
                     .document
@@ -828,7 +828,7 @@ impl OpenCADStudio {
                 handle,
                 segment_length,
             } => {
-                use crate::modules::home::inquiry::divide::measure_entity;
+                use crate::modules::draw::inquiry::divide::measure_entity;
                 let pts = self.tabs[i]
                     .scene
                     .document
@@ -854,7 +854,7 @@ impl OpenCADStudio {
                 self.restore_pre_cmd_tangent();
             }
             CmdResult::PeditOp { handle, op } => {
-                use crate::modules::home::modify::pedit::apply_pedit;
+                use crate::modules::draw::modify::pedit::apply_pedit;
                 let changed = self.tabs[i]
                     .scene
                     .document
@@ -875,7 +875,7 @@ impl OpenCADStudio {
                     .push_info("PEDIT  Enter option [C=Close O=Open W=Width X=Exit]:");
             }
             CmdResult::JoinEntities(handles) => {
-                use crate::modules::home::modify::join::join_entities;
+                use crate::modules::draw::modify::join::join_entities;
                 let pairs: Vec<_> = handles
                     .iter()
                     .filter_map(|&h| self.tabs[i].scene.document.get_entity(h).map(|e| (h, e)))
@@ -912,7 +912,7 @@ impl OpenCADStudio {
                 }
             }
             CmdResult::BreakEntity { handle, p1, p2 } => {
-                use crate::modules::home::modify::break_cmd::break_entity;
+                use crate::modules::draw::modify::break_cmd::break_entity;
                 let replacement = self.tabs[i]
                     .scene
                     .document
