@@ -42,6 +42,7 @@ struct InstanceIn {
     @location(7) pat0:           vec4<f32>,
     @location(8) pat1:           vec4<f32>,
     @location(9) draw_depth:     f32,
+    @location(10) min_elem:      f32,
 }
 
 // Draw-order depth bias: shifts clip-space z so 2D entities of different
@@ -77,6 +78,24 @@ struct VertexOut {
     let clip_a = u.view_proj * vec4<f32>(in.pos_a, 1.0);
     let clip_b = u.view_proj * vec4<f32>(in.pos_b, 1.0);
 
+    // Frustum early-out: both endpoints outside the same clip plane
+    // → segment can't cross the viewport. Emit degenerate to skip fragments.
+    if (clip_a.x < -clip_a.w && clip_b.x < -clip_b.w) ||
+       (clip_a.x >  clip_a.w && clip_b.x >  clip_b.w) ||
+       (clip_a.y < -clip_a.w && clip_b.y < -clip_b.w) ||
+       (clip_a.y >  clip_a.w && clip_b.y >  clip_b.w)
+    {
+        var degen: VertexOut;
+        degen.clip_pos = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        degen.color = vec4<f32>(0.0);
+        degen.distance = 0.0;
+        degen.pattern_length = 0.0;
+        degen.pat0 = vec4<f32>(0.0);
+        degen.pat1 = vec4<f32>(0.0);
+        degen.min_elem = 0.0;
+        return degen;
+    }
+
     // NDC of both endpoints.
     let ndc_a = clip_a.xy / clip_a.w;
     let ndc_b = clip_b.xy / clip_b.w;
@@ -109,18 +128,7 @@ struct VertexOut {
     let ndc_offset = perp_ndc * hw * side;
     let final_clip = clip_pos + vec4<f32>(ndc_offset * clip_pos.w, 0.0, 0.0);
 
-    // Smallest non-zero dash / gap element, in world units. Used by
-    // the fragment stage to decide when the pattern's finest feature
-    // would render below one pixel and should collapse to a solid line.
-    var min_elem: f32 = in.pattern_length;
-    let elems = array<f32, 8>(
-        in.pat0.x, in.pat0.y, in.pat0.z, in.pat0.w,
-        in.pat1.x, in.pat1.y, in.pat1.z, in.pat1.w,
-    );
-    for (var i = 0u; i < 8u; i++) {
-        let e = abs(elems[i]);
-        if e > 0.0 && e < min_elem { min_elem = e; }
-    }
+    let min_elem = in.min_elem;
 
     var out: VertexOut;
     out.clip_pos       = final_clip;

@@ -74,6 +74,7 @@ pub struct WireInstance {
     /// Normalized draw-order depth in (0,1); applied as a small clip-z bias
     /// in the shader so this wire orders against other entity types.
     pub draw_depth: f32,
+    pub min_elem: f32,
 }
 
 impl WireInstance {
@@ -132,6 +133,11 @@ impl WireInstance {
                     shader_location: 9,
                     format: wgpu::VertexFormat::Float32,
                 }, // draw_depth
+                wgpu::VertexAttribute {
+                    offset: 80,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32,
+                }, // min_elem
             ],
         }
     }
@@ -166,7 +172,7 @@ fn pack_color(color: [f32; 4]) -> [u8; 4] {
     ]
 }
 
-fn emit_wire_instances(wire: &WireModel, color: [f32; 4], draw_depth: f32) -> Vec<WireInstance> {
+pub fn emit_wire_instances(wire: &WireModel, color: [f32; 4], draw_depth: f32) -> Vec<WireInstance> {
     let color_u8 = pack_color(color);
     let pat0 = [
         wire.pattern[0],
@@ -181,6 +187,15 @@ fn emit_wire_instances(wire: &WireModel, color: [f32; 4], draw_depth: f32) -> Ve
         wire.pattern[7],
     ];
     let half_width = wire.line_weight_px * 0.5;
+
+    // Smallest non-zero dash / gap element, in world units.
+    let mut min_elem = wire.pattern_length;
+    for &elem in &wire.pattern {
+        let e = elem.abs();
+        if e > 0.0 && e < min_elem {
+            min_elem = e;
+        }
+    }
 
     let n = wire.points.len();
     let seg_count = n.saturating_sub(1);
@@ -259,6 +274,7 @@ fn emit_wire_instances(wire: &WireModel, color: [f32; 4], draw_depth: f32) -> Ve
             pat0,
             pat1,
             draw_depth,
+            min_elem,
         });
     }
     instances

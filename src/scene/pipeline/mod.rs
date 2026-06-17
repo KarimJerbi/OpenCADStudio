@@ -1242,10 +1242,10 @@ impl Pipeline {
             a: a as f64,
         };
 
-        // ── Pass 1: hatch fills ────────────────────────────────────────────
+        // ── Main Geometry Pass (merged passes 1-7) ─────────────────────────
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("hatch.render_pass"),
+                label: Some("geometry.render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: msaa,
                     depth_slice: None,
@@ -1269,12 +1269,8 @@ impl Pipeline {
             });
             // MSAA texture is clip-bounds-sized, so viewport starts at (0, 0).
             pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            // Phase 4-B — single batched draw covers every hatch.
-            // Vertex shader culls per-instance via the `visibility`
-            // buffer (sub-pixel LOD + frustum cull written each frame
-            // by `compute_hatch_lod`). Per-hatch viewport scissor
-            // (paper-space MSPACE) isn't ported to the batched path
-            // yet — follow-up if it shows up as a visual issue.
+
+            // Hatch fills (Pass 1)
             if let (Some(batch), Some(pipeline)) =
                 (&self.gpu_hatch_batched, &self.hatch_batched_pipeline)
             {
@@ -1284,176 +1280,59 @@ impl Pipeline {
                 pass.set_vertex_buffer(0, batch.vertex_buffer.slice(..));
                 pass.draw(0..batch.vertex_count, 0..1);
             }
-        }
 
-        // ── Pass 2: raster images ─────────────────────────────────────────
-        if !self.gpu_images.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("image.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.image_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            let mut scissor_active = false;
-            for (i, img) in self.gpu_images.iter().enumerate() {
-                match self.image_pixel_scissors.get(i) {
-                    Some(Some([x, y, w, h])) => {
-                        pass.set_scissor_rect(*x, *y, *w, *h);
-                        scissor_active = true;
+            // Raster images (Pass 2)
+            if !self.gpu_images.is_empty() {
+                pass.set_pipeline(&self.image_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                let mut scissor_active = false;
+                for (i, img) in self.gpu_images.iter().enumerate() {
+                    match self.image_pixel_scissors.get(i) {
+                        Some(Some([x, y, w, h])) => {
+                            pass.set_scissor_rect(*x, *y, *w, *h);
+                            scissor_active = true;
+                        }
+                        _ if scissor_active => {
+                            pass.set_scissor_rect(0, 0, vp.width, vp.height);
+                            scissor_active = false;
+                        }
+                        _ => {}
                     }
-                    _ if scissor_active => {
-                        pass.set_scissor_rect(0, 0, vp.width, vp.height);
-                        scissor_active = false;
-                    }
-                    _ => {}
+                    pass.set_bind_group(1, &img.bind_group, &[]);
+                    pass.set_vertex_buffer(0, img.vertex_buffer.slice(..));
+                    pass.draw(0..6, 0..1);
                 }
-                pass.set_bind_group(1, &img.bind_group, &[]);
-                pass.set_vertex_buffer(0, img.vertex_buffer.slice(..));
-                pass.draw(0..6, 0..1);
+                if scissor_active {
+                    pass.set_scissor_rect(0, 0, vp.width, vp.height);
+                }
             }
-            if scissor_active {
-                pass.set_scissor_rect(0, 0, vp.width, vp.height);
-            }
-        }
 
-        // ── Pass 4: solid meshes ──────────────────────────────────────────
-        if !self.gpu_meshes.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("mesh.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            // Four draw paths share this pass:
-            //  - Solid:           `mesh_pipeline` + triangle index buf.
-            //  - Wireframe:       `mesh_wireframe_pipeline` + the
-            //                     pre-built `wire_index_buffer`.
-            //  - HiddenLine:      depth prepass (`mesh_depth_pipeline`,
-            //                     writes Z, no colour) → wire overlay.
-            //  - Solid+Edges:     `mesh_pipeline` shaded fill → wire
-            //                     overlay; LessEqual depth test on the
-            //                     wire pass keeps the edges crisp on
-            //                     top of the shaded surface.
-            let want_solid_with_edges = !hidden_line && !mesh_wireframe && show_3d_edges;
-            if hidden_line {
-                pass.set_pipeline(&self.mesh_depth_pipeline);
-                for (i, set) in self.gpu_meshes.iter().enumerate() {
-                    if !self.mesh_visible.get(i).copied().unwrap_or(true) {
-                        continue;
+            // Solid meshes (Pass 4)
+            if !self.gpu_meshes.is_empty() {
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                let want_solid_with_edges = !hidden_line && !mesh_wireframe && show_3d_edges;
+                if hidden_line {
+                    pass.set_pipeline(&self.mesh_depth_pipeline);
+                    for (i, set) in self.gpu_meshes.iter().enumerate() {
+                        if !self.mesh_visible.get(i).copied().unwrap_or(true) {
+                            continue;
+                        }
+                        let level = self
+                            .mesh_lod_levels
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0)
+                            .min(set.lods.len().saturating_sub(1));
+                        let Some(mesh) = set.lods.get(level) else {
+                            continue;
+                        };
+                        if mesh.index_count == 0 {
+                            continue;
+                        }
+                        pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                        pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                     }
-                    let level = self
-                        .mesh_lod_levels
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0)
-                        .min(set.lods.len().saturating_sub(1));
-                    let Some(mesh) = set.lods.get(level) else {
-                        continue;
-                    };
-                    if mesh.index_count == 0 {
-                        continue;
-                    }
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                }
-                pass.set_pipeline(&self.mesh_wireframe_pipeline);
-                for (i, set) in self.gpu_meshes.iter().enumerate() {
-                    if !self.mesh_visible.get(i).copied().unwrap_or(true) {
-                        continue;
-                    }
-                    let level = self
-                        .mesh_lod_levels
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0)
-                        .min(set.lods.len().saturating_sub(1));
-                    let Some(mesh) = set.lods.get(level) else {
-                        continue;
-                    };
-                    if mesh.wire_index_count == 0 {
-                        continue;
-                    }
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(
-                        mesh.wire_index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
-                    );
-                    pass.draw_indexed(0..mesh.wire_index_count, 0, 0..1);
-                }
-            } else {
-                if mesh_wireframe {
-                    pass.set_pipeline(&self.mesh_wireframe_pipeline);
-                } else {
-                    pass.set_pipeline(&self.mesh_pipeline);
-                }
-                for (i, set) in self.gpu_meshes.iter().enumerate() {
-                    if !self.mesh_visible.get(i).copied().unwrap_or(true) {
-                        continue;
-                    }
-                    let level = self
-                        .mesh_lod_levels
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0)
-                        .min(set.lods.len().saturating_sub(1));
-                    let Some(mesh) = set.lods.get(level) else {
-                        continue;
-                    };
-                    let (ibuf, icount) = if mesh_wireframe {
-                        (&mesh.wire_index_buffer, mesh.wire_index_count)
-                    } else {
-                        (&mesh.index_buffer, mesh.index_count)
-                    };
-                    if icount == 0 {
-                        continue;
-                    }
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..icount, 0, 0..1);
-                }
-                // *WithEdges variants: overlay wire-edge segments on top
-                // of the shaded fill. The LessEqual depth test on the
-                // wireframe pipeline keeps the edges visible at the
-                // fragments that just got written by the solid pass.
-                if want_solid_with_edges {
                     pass.set_pipeline(&self.mesh_wireframe_pipeline);
                     for (i, set) in self.gpu_meshes.iter().enumerate() {
                         if !self.mesh_visible.get(i).copied().unwrap_or(true) {
@@ -1478,119 +1357,100 @@ impl Pipeline {
                         );
                         pass.draw_indexed(0..mesh.wire_index_count, 0, 0..1);
                     }
-                }
-            }
-        }
-
-        // ── Pass 5a: 3DFACE fills (3D + 2D split) ─────────────────────────
-        // 3D quads + PolyfaceMesh face tris go through the depth-only
-        // pipeline in HiddenLine so wires hidden behind them disappear.
-        // 2D fills (text greek, MultiLeader bg) always draw with colour.
-        if let Some(ref fill) = self.gpu_face3d_fill {
-            if fill.vertex_count_3d > 0 || fill.vertex_count_2d > 0 {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("face3d.render_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: msaa,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-                if fill.vertex_count_3d > 0 {
-                    if hidden_line {
-                        pass.set_pipeline(&self.face3d_depth_pipeline);
+                } else {
+                    if mesh_wireframe {
+                        pass.set_pipeline(&self.mesh_wireframe_pipeline);
                     } else {
-                        pass.set_pipeline(&self.face3d_pipeline);
+                        pass.set_pipeline(&self.mesh_pipeline);
                     }
-                    pass.set_vertex_buffer(0, fill.vertex_buffer_3d.slice(..));
-                    pass.draw(0..fill.vertex_count_3d, 0..1);
-                }
-                if fill.vertex_count_2d > 0 {
-                    pass.set_pipeline(&self.face3d_pipeline);
-                    pass.set_vertex_buffer(0, fill.vertex_buffer_2d.slice(..));
-                    pass.draw(0..fill.vertex_count_2d, 0..1);
+                    for (i, set) in self.gpu_meshes.iter().enumerate() {
+                        if !self.mesh_visible.get(i).copied().unwrap_or(true) {
+                            continue;
+                        }
+                        let level = self
+                            .mesh_lod_levels
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0)
+                            .min(set.lods.len().saturating_sub(1));
+                        let Some(mesh) = set.lods.get(level) else {
+                            continue;
+                        };
+                        let (ibuf, icount) = if mesh_wireframe {
+                            (&mesh.wire_index_buffer, mesh.wire_index_count)
+                        } else {
+                            (&mesh.index_buffer, mesh.index_count)
+                        };
+                        if icount == 0 {
+                            continue;
+                        }
+                        pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                        pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..icount, 0, 0..1);
+                    }
+                    if want_solid_with_edges {
+                        pass.set_pipeline(&self.mesh_wireframe_pipeline);
+                        for (i, set) in self.gpu_meshes.iter().enumerate() {
+                            if !self.mesh_visible.get(i).copied().unwrap_or(true) {
+                                continue;
+                            }
+                            let level = self
+                                .mesh_lod_levels
+                                .get(i)
+                                .copied()
+                                .unwrap_or(0)
+                                .min(set.lods.len().saturating_sub(1));
+                            let Some(mesh) = set.lods.get(level) else {
+                                continue;
+                            };
+                            if mesh.wire_index_count == 0 {
+                                continue;
+                            }
+                            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                            pass.set_index_buffer(
+                                mesh.wire_index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+                            pass.draw_indexed(0..mesh.wire_index_count, 0, 0..1);
+                        }
+                    }
                 }
             }
-        }
 
-        // ── Pass 5b: 3DFACE edges (batched, possibly multiple chunks) ────
-        // FlatShaded / GouraudShaded hide the 3DFACE outline (the user
-        // chose a clean shaded look); every other mode keeps it.
-        if show_3d_edges && !self.gpu_face3d_edges.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("face3d_edges.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.wire_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            for edges in &self.gpu_face3d_edges {
-                if edges.instance_count > 0 {
-                    pass.set_vertex_buffer(0, edges.instance_buffer.slice(..));
-                    pass.draw(0..6, 0..edges.instance_count);
+            // 3DFACE fills (Pass 5a)
+            if let Some(ref fill) = self.gpu_face3d_fill {
+                if fill.vertex_count_3d > 0 || fill.vertex_count_2d > 0 {
+                    pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                    if fill.vertex_count_3d > 0 {
+                        if hidden_line {
+                            pass.set_pipeline(&self.face3d_depth_pipeline);
+                        } else {
+                            pass.set_pipeline(&self.face3d_pipeline);
+                        }
+                        pass.set_vertex_buffer(0, fill.vertex_buffer_3d.slice(..));
+                        pass.draw(0..fill.vertex_count_3d, 0..1);
+                    }
+                    if fill.vertex_count_2d > 0 {
+                        pass.set_pipeline(&self.face3d_pipeline);
+                        pass.set_vertex_buffer(0, fill.vertex_buffer_2d.slice(..));
+                        pass.draw(0..fill.vertex_count_2d, 0..1);
+                    }
                 }
             }
-        }
 
-        // ── Pass 5: wires ─────────────────────────────────────────────────
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("wire.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
+            // 3DFACE edges (Pass 5b)
+            if show_3d_edges && !self.gpu_face3d_edges.is_empty() {
+                pass.set_pipeline(&self.wire_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                for edges in &self.gpu_face3d_edges {
+                    if edges.instance_count > 0 {
+                        pass.set_vertex_buffer(0, edges.instance_buffer.slice(..));
+                        pass.draw(0..6, 0..edges.instance_count);
+                    }
+                }
+            }
+
+            // Wires (Pass 5)
             pass.set_pipeline(&self.wire_pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             let mut scissor_active = false;
@@ -1598,12 +1458,6 @@ impl Pipeline {
                 if wire.instance_count == 0 {
                     continue;
                 }
-                // PolyfaceMesh / PolygonMesh outline edges live in
-                // `gpu_wires` (their `WireModel` has both `points` and
-                // `fill_tris`). In FlatShaded / GouraudShaded the user
-                // wants a clean shaded surface, so the wire pass skips
-                // these instances; the *WithEdges and pure wireframe
-                // modes leave the flag at true and draw them.
                 if !show_3d_edges && wire.is_3d_mesh_edge {
                     continue;
                 }
@@ -1624,101 +1478,51 @@ impl Pipeline {
             if scissor_active {
                 pass.set_scissor_rect(0, 0, vp.width, vp.height);
             }
-            // Live overlay wires (command preview / interim / grip drag) on top
-            // of the base pass, same pipeline + depth test. No scissor.
             for pw in &self.gpu_preview_wires {
                 if pw.instance_count > 0 {
                     pass.set_vertex_buffer(0, pw.instance_buffer.slice(..));
                     pass.draw(0..6, 0..pw.instance_count);
                 }
             }
-        }
 
-        // ── Pass 6: wipeout fills (drawn after wires to mask them) ────────
-        if !self.gpu_wipeouts.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("wipeout.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.hatch_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            let mut scissor_active = false;
-            for (i, wipeout) in self.gpu_wipeouts.iter().enumerate() {
-                if self.wipeout_skip_flags.get(i).copied().unwrap_or(false) {
-                    continue;
-                }
-                match self.wipeout_pixel_scissors.get(i) {
-                    Some(Some([x, y, w, h])) => {
-                        pass.set_scissor_rect(*x, *y, *w, *h);
-                        scissor_active = true;
+            // Wipeout fills (Pass 6)
+            if !self.gpu_wipeouts.is_empty() {
+                pass.set_pipeline(&self.hatch_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                let mut scissor_active = false;
+                for (i, wipeout) in self.gpu_wipeouts.iter().enumerate() {
+                    if self.wipeout_skip_flags.get(i).copied().unwrap_or(false) {
+                        continue;
                     }
-                    _ if scissor_active => {
-                        pass.set_scissor_rect(0, 0, vp.width, vp.height);
-                        scissor_active = false;
+                    match self.wipeout_pixel_scissors.get(i) {
+                        Some(Some([x, y, w, h])) => {
+                            pass.set_scissor_rect(*x, *y, *w, *h);
+                            scissor_active = true;
+                        }
+                        _ if scissor_active => {
+                            pass.set_scissor_rect(0, 0, vp.width, vp.height);
+                            scissor_active = false;
+                        }
+                        _ => {}
                     }
-                    _ => {}
+                    pass.set_bind_group(1, &wipeout.bind_group, &[]);
+                    pass.set_vertex_buffer(0, wipeout.vertex_buffer.slice(..));
+                    pass.draw(0..6, 0..1);
                 }
-                pass.set_bind_group(1, &wipeout.bind_group, &[]);
-                pass.set_vertex_buffer(0, wipeout.vertex_buffer.slice(..));
-                pass.draw(0..6, 0..1);
+                if scissor_active {
+                    pass.set_scissor_rect(0, 0, vp.width, vp.height);
+                }
             }
-            if scissor_active {
-                pass.set_scissor_rect(0, 0, vp.width, vp.height);
-            }
-        }
 
-        // ── Pass 7: selected wire overlay pass ───────────────────────────
-        // Redraws selected wires with depth_compare=Always so they appear on
-        // top of all other geometry at full brightness.
-        if !self.gpu_selected_wires.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("wire_xray.render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: msaa,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_viewport(0.0, 0.0, vp.width as f32, vp.height as f32, 0.0, 1.0);
-            pass.set_pipeline(&self.wire_xray_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            for wire in &self.gpu_selected_wires {
-                if wire.instance_count > 0 {
-                    pass.set_vertex_buffer(0, wire.instance_buffer.slice(..));
-                    pass.draw(0..6, 0..wire.instance_count);
+            // Selected wire overlay (Pass 7)
+            if !self.gpu_selected_wires.is_empty() {
+                pass.set_pipeline(&self.wire_xray_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                for wire in &self.gpu_selected_wires {
+                    if wire.instance_count > 0 {
+                        pass.set_vertex_buffer(0, wire.instance_buffer.slice(..));
+                        pass.draw(0..6, 0..wire.instance_count);
+                    }
                 }
             }
         }
