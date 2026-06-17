@@ -200,15 +200,22 @@ impl Snapper {
                 if is_same {
                     self.dwell_count += 1;
                     if self.dwell_count == DWELL_THRESHOLD {
-                        // Acquire this point (max 4 tracked points).
-                        if !self.tracking_points.iter().any(|t| {
+                        // Dwelling over an already-acquired point removes it;
+                        // otherwise acquire it (max 4 tracked points).
+                        let existing = self.tracking_points.iter().position(|t| {
                             let d = (*t - p).length();
                             d < self.grid_spacing * 0.1
-                        }) {
-                            if self.tracking_points.len() >= 4 {
-                                self.tracking_points.remove(0);
+                        });
+                        match existing {
+                            Some(idx) => {
+                                self.tracking_points.remove(idx);
                             }
-                            self.tracking_points.push(p);
+                            None => {
+                                if self.tracking_points.len() >= 4 {
+                                    self.tracking_points.remove(0);
+                                }
+                                self.tracking_points.push(p);
+                            }
                         }
                     }
                 } else {
