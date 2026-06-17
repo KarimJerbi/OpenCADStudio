@@ -203,7 +203,7 @@ version = "0.1.0"
 description = "…"
 
 [opencad]
-api_version = 1
+api_version = 2
 ribbon_order = 50
 command_prefixes = ["EX_"]
 xdata_apps = []
@@ -224,6 +224,24 @@ tool fires `ModuleEvent::Command("EX_FOO")`, which round-trips to
 `ModuleEvent::PluginFileDialog { command, title, filter_name, extensions }` lets a
 tool request a native file picker; on selection the host dispatches
 `"<command> <path>"` back with the path's original case preserved.
+
+### Interactive (click-to-place) commands
+
+For tools that collect points — placing a structure, drawing a pipe — call
+`host.start_interactive(Box::new(my_cmd))` from `dispatch`, where `my_cmd`
+implements `ocs_plugin_api::host::InteractiveCommand`:
+
+```rust
+fn on_point(&mut self, pt: [f64; 3]) -> CommandStep {
+    // … return NeedPoint, Commit(entity), CommitAndEnd(entity), Done, or Cancel
+}
+```
+
+The host drives it through its normal point-collection flow, so the **same**
+command works by clicking in the viewport and by feeding coordinates over the
+`--serve` automation API (`run "MY_CMD 0,0 10,10"`). This is what bumped the
+API to **v2** — the added `HostApi` method changes the contract's vtable, so v1
+binaries are refused at load.
 
 ### XDATA — domain persistence
 

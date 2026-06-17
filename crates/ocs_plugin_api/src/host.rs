@@ -29,6 +29,38 @@ pub trait BuiltinPlugin: Send + Sync {
     fn dispatch(&self, host: &mut dyn HostApi, cmd: &str) -> bool;
 }
 
+/// A point-driven interactive command a plugin starts via
+/// [`HostApi::start_interactive`]. The host shows the prompt, collects points —
+/// clicked in the viewport, or fed as coordinates over the `--serve` automation
+/// API — and commits the entities the command yields, exactly like a built-in
+/// tool. This is the plugin-facing slice of the host's command machinery; it
+/// covers click-to-place placement without exposing the host's internal command
+/// trait.
+pub trait InteractiveCommand: Send {
+    /// Prompt for the next point.
+    fn prompt(&self) -> String;
+    /// A point was supplied (clicked or typed `x,y[,z]`). Returns the next step.
+    fn on_point(&mut self, pt: [f64; 3]) -> CommandStep;
+    /// Enter pressed with no point — e.g. to finish a multi-point command.
+    fn on_enter(&mut self) -> CommandStep {
+        CommandStep::Cancel
+    }
+}
+
+/// The outcome of an [`InteractiveCommand`] step.
+pub enum CommandStep {
+    /// Need another point; keep the command active.
+    NeedPoint,
+    /// Commit an entity to the document and keep collecting points.
+    Commit(EntityType),
+    /// Commit an entity and end the command.
+    CommitAndEnd(EntityType),
+    /// End the command without committing.
+    Done,
+    /// Cancel the command.
+    Cancel,
+}
+
 /// Export a `BuiltinPlugin` from a `cdylib` so the host can load it at runtime.
 ///
 /// Emits the two C symbols the loader looks for: `ocs_plugin_api_version`
@@ -89,6 +121,10 @@ pub trait HostApi {
     fn push_info(&mut self, msg: &str);
     fn push_output(&mut self, msg: &str);
     fn push_error(&mut self, msg: &str);
+
+    /// Start a plugin-defined interactive (click-to-place) command on the active
+    /// tab. The host drives it through its normal point-collection flow.
+    fn start_interactive(&mut self, command: Box<dyn InteractiveCommand>);
 
     // ── Per-tab plugin state (object-safe; use the typed helpers below) ──────
     fn plugin_state_any(&self, plugin_id: &str) -> Option<&(dyn Any + Send + Sync)>;

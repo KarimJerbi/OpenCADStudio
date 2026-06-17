@@ -179,6 +179,13 @@ impl HostApi for HostSession<'_> {
     fn push_error(&mut self, msg: &str) {
         self.push_error(msg)
     }
+    fn start_interactive(
+        &mut self,
+        command: Box<dyn ocs_plugin_api::host::InteractiveCommand>,
+    ) {
+        self.app.tabs[self.tab].active_cmd =
+            Some(Box::new(PluginInteractiveAdapter { inner: command }));
+    }
     fn plugin_state_any(&self, plugin_id: &str) -> Option<&(dyn Any + Send + Sync)> {
         self.app.tabs[self.tab]
             .plugin_state
@@ -204,6 +211,42 @@ impl HostApi for HostSession<'_> {
             .entry(plugin_id)
             .or_insert_with(|| init())
             .as_mut()
+    }
+}
+
+/// Bridges a plugin's [`InteractiveCommand`](ocs_plugin_api::host::InteractiveCommand)
+/// to the host's internal `CadCommand`, so a plugin tool drives the host's
+/// point-collection flow (viewport clicks or `--serve` coordinates) just like a
+/// built-in tool.
+struct PluginInteractiveAdapter {
+    inner: Box<dyn ocs_plugin_api::host::InteractiveCommand>,
+}
+
+impl crate::command::CadCommand for PluginInteractiveAdapter {
+    fn name(&self) -> &'static str {
+        "PLUGIN"
+    }
+    fn prompt(&self) -> String {
+        self.inner.prompt()
+    }
+    fn on_point(&mut self, pt: glam::Vec3) -> crate::command::CmdResult {
+        plugin_step_to_result(self.inner.on_point([pt.x as f64, pt.y as f64, pt.z as f64]))
+    }
+    fn on_enter(&mut self) -> crate::command::CmdResult {
+        plugin_step_to_result(self.inner.on_enter())
+    }
+}
+
+fn plugin_step_to_result(
+    step: ocs_plugin_api::host::CommandStep,
+) -> crate::command::CmdResult {
+    use crate::command::CmdResult;
+    use ocs_plugin_api::host::CommandStep;
+    match step {
+        CommandStep::NeedPoint => CmdResult::NeedPoint,
+        CommandStep::Commit(e) => CmdResult::CommitEntity(e),
+        CommandStep::CommitAndEnd(e) => CmdResult::CommitAndExit(e),
+        CommandStep::Done | CommandStep::Cancel => CmdResult::Cancel,
     }
 }
 
@@ -257,5 +300,44 @@ mod tests {
         assert_eq!(*host::plugin_state::<u32>(&*host, "opencad.demo").unwrap(), 8);
         *host::plugin_state_mut::<u32>(host, "opencad.demo").unwrap() = 100;
         assert_eq!(*host::plugin_state::<u32>(&*host, "opencad.demo").unwrap(), 100);
+    }
+
+    /// A plugin command: second point commits a Point and ends.
+    struct PlacePoint {
+        got_first: bool,
+    }
+    impl ocs_plugin_api::host::InteractiveCommand for PlacePoint {
+        fn prompt(&self) -> String {
+            "Pick a point".into()
+        }
+        fn on_point(&mut self, pt: [f64; 3]) -> ocs_plugin_api::host::CommandStep {
+            use ocs_plugin_api::host::CommandStep;
+            if self.got_first {
+                let p = acadrust::entities::Point::at(acadrust::types::Vector3::new(
+                    pt[0], pt[1], pt[2],
+                ));
+                CommandStep::CommitAndEnd(acadrust::EntityType::Point(p))
+            } else {
+                self.got_first = true;
+                CommandStep::NeedPoint
+            }
+        }
+    }
+
+    #[test]
+    fn plugin_interactive_command_drives_host_flow() {
+        let mut app = OpenCADStudio::new_for_test();
+        app.tabs[0].is_start = false;
+        {
+            let mut host = HostSession::new(&mut app, 0);
+            host.start_interactive(Box::new(PlacePoint { got_first: false }));
+        }
+        assert!(app.tabs[0].active_cmd.is_some());
+        for pt in [glam::Vec3::new(0.0, 0.0, 0.0), glam::Vec3::new(5.0, 5.0, 0.0)] {
+            let r = app.tabs[0].active_cmd.as_mut().unwrap().on_point(pt);
+            let _ = app.apply_cmd_result(r);
+        }
+        assert_eq!(app.tabs[0].scene.document.entities().count(), 1);
+        assert!(app.tabs[0].active_cmd.is_none(), "command should have ended");
     }
 }
