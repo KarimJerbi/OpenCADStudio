@@ -567,6 +567,7 @@ impl OpenCADStudio {
                 self.tabs[i].scene.hatches = caches.hatches;
                 self.tabs[i].scene.images = caches.images;
                 self.tabs[i].scene.meshes = caches.meshes;
+                self.tabs[i].scene.block_meshes = caches.block_meshes;
                 // Invalidate the wire cache so the new document is tessellated.
                 self.tabs[i].scene.bump_geometry();
                 self.tabs[i].scene.selected = rustc_hash::FxHashSet::default();

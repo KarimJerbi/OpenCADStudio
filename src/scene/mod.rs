@@ -97,6 +97,8 @@ pub struct DerivedCaches {
     pub hatches: HashMap<Handle, HatchModel>,
     pub images: HashMap<Handle, ImageModel>,
     pub meshes: HashMap<Handle, MeshLodSet>,
+    /// Block-definition solid meshes, block-local frame (instanced per INSERT). (#123)
+    pub block_meshes: HashMap<Handle, MeshLodSet>,
     /// Number of entities removed by the corrupt-entity guard during load.
     /// Reported back to the UI so the user knows when a file had parser-junk
     /// entities silently dropped.
@@ -227,17 +229,43 @@ pub fn build_derived_caches(doc: &CadDocument) -> DerivedCaches {
     // meshes (parallel tessellation). FACETRES (header.facet_resolution)
     // scales the per-LOD segment counts so users with finer drawings get
     // smoother solids; clamped to AutoCAD's [0.01, 10.0] range inside.
+    // Top-level (layout-owned) solids are offset into the render frame; block
+    // definition solids keep block-local coords for per-INSERT instancing. (#123)
     let facet_res = doc.header.facet_resolution;
-    let meshes: HashMap<Handle, MeshLodSet> = mesh_handles
+    // Real layout blocks come from the Layout objects' block_record handles —
+    // `BlockRecord::is_layout()` is unreliable here (it flags ordinary blocks).
+    let layout_blocks: std::collections::HashSet<Handle> = doc
+        .objects
+        .values()
+        .filter_map(|o| match o {
+            acadrust::objects::ObjectType::Layout(l) if !l.block_record.is_null() => {
+                Some(l.block_record)
+            }
+            _ => None,
+        })
+        .collect();
+    let built: Vec<(Handle, MeshLodSet, bool)> = mesh_handles
         .par_iter()
         .filter_map(|&handle| {
             let e = doc.get_entity(handle)?;
             let (raw, ..) = view::render::render_style_for(doc, e);
             let color = view::render::adapt_to_bg(raw, LOAD_BG);
-            crate::entities::solid3d::tessellate_volume(e, color, facet_res)
-                .map(|m| (handle, offset_mesh_lod_set(m, world_offset)))
+            let top_level = layout_blocks.contains(&e.common().owner_handle);
+            crate::entities::solid3d::tessellate_volume(e, color, facet_res).map(|m| {
+                let m = if top_level { offset_mesh_lod_set(m, world_offset) } else { m };
+                (handle, m, top_level)
+            })
         })
         .collect();
+    let mut meshes: HashMap<Handle, MeshLodSet> = HashMap::default();
+    let mut block_meshes: HashMap<Handle, MeshLodSet> = HashMap::default();
+    for (handle, m, top_level) in built {
+        if top_level {
+            meshes.insert(handle, m);
+        } else {
+            block_meshes.insert(handle, m);
+        }
+    }
 
     DerivedCaches {
         world_offset,
@@ -245,6 +273,7 @@ pub fn build_derived_caches(doc: &CadDocument) -> DerivedCaches {
         hatches,
         images,
         meshes,
+        block_meshes,
         corrupt_dropped: 0,
         timings: OpenTimings::default(),
     }
@@ -546,6 +575,49 @@ fn offset_mesh_lod_set(mut set: MeshLodSet, world_offset: [f64; 3]) -> MeshLodSe
     set
 }
 
+/// Instance a block-local mesh into the render frame: apply the accumulated
+/// INSERT transform (block-local → world/DXF) then subtract world_offset, so a
+/// block scaled at the INSERT renders at the right size. Normals are rotated by
+/// the transform's linear part and re-normalized. (#123)
+fn transform_block_mesh_lod_set(
+    set: &MeshLodSet,
+    xform: &acadrust::types::Transform,
+    world_offset: [f64; 3],
+) -> MeshLodSet {
+    use acadrust::types::Vector3;
+    let [ox, oy, oz] = world_offset;
+    let mut out = set.clone();
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for lod in &mut out.lods {
+        for v in &mut lod.verts {
+            let w = xform.apply(Vector3::new(v[0] as f64, v[1] as f64, v[2] as f64));
+            v[0] = (w.x - ox) as f32;
+            v[1] = (w.y - oy) as f32;
+            v[2] = (w.z - oz) as f32;
+            if v[0] < min_x { min_x = v[0]; }
+            if v[1] < min_y { min_y = v[1]; }
+            if v[0] > max_x { max_x = v[0]; }
+            if v[1] > max_y { max_y = v[1]; }
+        }
+        for n in &mut lod.normals {
+            let d = xform.apply_rotation(Vector3::new(n[0] as f64, n[1] as f64, n[2] as f64));
+            let len = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+            if len > 1e-12 {
+                n[0] = (d.x / len) as f32;
+                n[1] = (d.y / len) as f32;
+                n[2] = (d.z / len) as f32;
+            }
+        }
+    }
+    if min_x.is_finite() {
+        out.world_aabb = [min_x, min_y, max_x, max_y];
+    }
+    out
+}
+
 /// Stable hash of a `Camera`'s pose for use as a per-tile cache key.
 /// Two cameras with bit-identical target / rotation / distance hash the
 /// same; any orbit / pan / zoom on a tile bumps it.
@@ -685,7 +757,14 @@ pub struct Scene {
     /// GPU render data for hatch fills, keyed by the DXF entity Handle.
     pub hatches: HashMap<Handle, HatchModel>,
     /// GPU render data for solid meshes (truck Shell/Solid tessellation).
+    /// Top-level (layout-owned) solids only, stored in the offset-relative
+    /// render frame and drawn flat.
     pub meshes: HashMap<Handle, MeshLodSet>,
+    /// Meshes of block-definition solids, kept in *block-local* coordinates
+    /// (no world_offset). They are not drawn directly; each INSERT of the
+    /// owning block emits a transformed instance so a block placed at an
+    /// INSERT scale renders at the right size. (#123)
+    pub block_meshes: HashMap<Handle, MeshLodSet>,
     /// Live truck B-reps for solids created this session by the Model tab,
     /// keyed by entity handle. Backs the Design-group boolean tools (a solid
     /// must be here to be combined). Not persisted — rebuilt only by creating
@@ -828,6 +907,7 @@ impl Scene {
             current_layout: "Model".to_string(),
             hatches: HashMap::default(),
             meshes: HashMap::default(),
+            block_meshes: HashMap::default(),
             solid_models: HashMap::default(),
             images: HashMap::default(),
             active_viewport: None,
@@ -1973,9 +2053,63 @@ impl Scene {
                 }
             }
         }
-        let arc = Arc::new(self.meshes.values().cloned().collect());
+        let mut all: Vec<MeshLodSet> = self.meshes.values().cloned().collect();
+        // Block-definition solids are instanced per model-space INSERT so a
+        // block placed at an INSERT scale renders at the right size. (#123)
+        all.extend(self.instanced_block_meshes(self.model_space_block_handle()));
+        let arc = Arc::new(all);
         *self.mesh_cache.borrow_mut() = Some((self.geometry_epoch, Arc::clone(&arc)));
         arc
+    }
+
+    /// One transformed mesh per block-definition solid instance reached from an
+    /// INSERT owned by `layout_block`. Nested INSERTs accumulate their
+    /// transform. Empty when no block solids exist. (#123)
+    fn instanced_block_meshes(&self, layout_block: Handle) -> Vec<MeshLodSet> {
+        if self.block_meshes.is_empty() {
+            return Vec::new();
+        }
+        let woff = self.world_offset;
+        let mut out = Vec::new();
+        for e in self.document.entities() {
+            if e.common().owner_handle != layout_block {
+                continue;
+            }
+            if let EntityType::Insert(ins) = e {
+                self.expand_block_meshes(&ins.block_name, &ins.get_transform(), 0, woff, &mut out);
+            }
+        }
+        out
+    }
+
+    /// Recursively emit transformed instances of a block's solid meshes,
+    /// composing nested-INSERT transforms. (#123)
+    fn expand_block_meshes(
+        &self,
+        block_name: &str,
+        accum: &acadrust::types::Transform,
+        depth: usize,
+        woff: [f64; 3],
+        out: &mut Vec<MeshLodSet>,
+    ) {
+        if depth > 16 {
+            return;
+        }
+        let Some(br) = self.document.block_records.get(block_name) else {
+            return;
+        };
+        let handles: Vec<Handle> = br.entity_handles.clone();
+        for h in handles {
+            let Some(e) = self.document.get_entity(h) else {
+                continue;
+            };
+            if let EntityType::Insert(ins) = e {
+                let composed = ins.get_transform().then(accum);
+                self.expand_block_meshes(&ins.block_name, &composed, depth + 1, woff, out);
+            } else if let Some(set) = self.block_meshes.get(&h) {
+                out.push(transform_block_mesh_lod_set(set, accum, woff));
+            }
+        }
     }
 
     /// Hatches eligible for click / box / lasso hit-testing in the current
@@ -4412,17 +4546,33 @@ impl Scene {
     /// `Solid3D` entity is represented in the mesh cache.
     pub fn populate_meshes_from_document(&mut self) {
         self.meshes.clear();
+        self.block_meshes.clear();
+        // BLOCK-entity handles of the layout (model + paper) blocks. A solid
+        // owned by one of these is top-level; anything else lives in a block
+        // definition and is instanced per INSERT instead. (#123)
+        let layout_blocks: std::collections::HashSet<Handle> = self
+            .document
+            .objects
+            .values()
+            .filter_map(|o| match o {
+                acadrust::objects::ObjectType::Layout(l) if !l.block_record.is_null() => {
+                    Some(l.block_record)
+                }
+                _ => None,
+            })
+            .collect();
         // Resolve color through `render_style` so the same bg adaptation
         // wires use kicks in (pure black on dark bg → white, pure white
         // on light bg → black). Without this, ACIS meshes ignore
         // `adapt_to_bg` and stay invisible against matching bg colours.
-        let entries: Vec<(Handle, EntityType, [f32; 4])> = self
+        let entries: Vec<(Handle, EntityType, [f32; 4], bool)> = self
             .document
             .entities()
             .filter_map(|e| match e {
                 EntityType::Solid3D(_) | EntityType::Region(_) | EntityType::Body(_) | EntityType::Surface(_) => {
                     let color = self.render_style(e).0;
-                    Some((e.common().handle, e.clone(), color))
+                    let top_level = layout_blocks.contains(&e.common().owner_handle);
+                    Some((e.common().handle, e.clone(), color, top_level))
                 }
                 _ => None,
             })
@@ -4431,13 +4581,25 @@ impl Scene {
         use crate::par::prelude::*;
         let facet_res = self.document.header.facet_resolution;
         let woff = self.world_offset;
-        self.meshes = entries
+        // Top-level solids: offset into the render frame, drawn flat.
+        // Block-definition solids: keep block-local coords for per-INSERT
+        // instancing (no offset applied here).
+        let built: Vec<(Handle, MeshLodSet, bool)> = entries
             .into_par_iter()
-            .filter_map(|(handle, entity, color)| {
-                crate::entities::solid3d::tessellate_volume(&entity, color, facet_res)
-                    .map(|m| (handle, offset_mesh_lod_set(m, woff)))
+            .filter_map(|(handle, entity, color, top_level)| {
+                crate::entities::solid3d::tessellate_volume(&entity, color, facet_res).map(|m| {
+                    let m = if top_level { offset_mesh_lod_set(m, woff) } else { m };
+                    (handle, m, top_level)
+                })
             })
             .collect();
+        for (handle, m, top_level) in built {
+            if top_level {
+                self.meshes.insert(handle, m);
+            } else {
+                self.block_meshes.insert(handle, m);
+            }
+        }
 
         self.bump_geometry();
     }
