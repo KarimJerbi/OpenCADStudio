@@ -8896,7 +8896,22 @@ impl OpenCADStudio {
 
     fn open_unsaved_dialog_window(&mut self) -> Task<Message> {
         self.active_modal = Some(super::ModalKind::Unsaved);
-        Task::none()
+        // The unsaved-changes prompt renders inside the main window, so bring
+        // that window to the foreground — a close signal can arrive while the
+        // app is backgrounded, leaving the prompt unseen behind other windows.
+        // `gain_focus` alone is ignored by most Linux WMs (focus-stealing
+        // prevention), so pair it with an urgency hint so the window is at
+        // least flagged for attention when the compositor blocks the raise.
+        match self.main_window {
+            Some(id) => Task::batch([
+                iced::window::gain_focus(id),
+                iced::window::request_user_attention(
+                    id,
+                    Some(iced::window::UserAttention::Critical),
+                ),
+            ]),
+            None => Task::none(),
+        }
     }
 
     fn close_unsaved_dialog_window(&mut self) -> Task<Message> {
