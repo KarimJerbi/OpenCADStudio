@@ -618,6 +618,10 @@ impl OpenCADStudio {
                     for h in new_handles {
                         self.tabs[i].scene.select_entity(h, false);
                     }
+                    // Tessellate any pasted ACIS solids — top-level ones and
+                    // those inside a recreated block definition — so they
+                    // render instead of staying invisible. (#135)
+                    self.tabs[i].scene.populate_meshes_from_document();
                     self.tabs[i].dirty = true;
                     self.refresh_properties();
                     self.command_line
