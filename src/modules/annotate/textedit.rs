@@ -39,6 +39,9 @@ pub struct TexteditCommand {
     mode: TextEditMode,
     edit_count: usize,
     step: Step,
+    /// Set when the last Mode entry was unrecognized, so the next prompt
+    /// leads with the error instead of silently re-asking.
+    invalid_mode: bool,
 }
 
 impl TexteditCommand {
@@ -52,6 +55,7 @@ impl TexteditCommand {
             mode,
             edit_count: 0,
             step: Step::PickObject,
+            invalid_mode: false,
         }
     }
 }
@@ -71,8 +75,13 @@ impl CadCommand for TexteditCommand {
                 }
             }
             Step::EnterMode => {
+                let prefix = if self.invalid_mode {
+                    "Requires Single or Multiple. "
+                } else {
+                    ""
+                };
                 format!(
-                    "TEXTEDIT Enter text edit mode [Single/Multiple] <{}>:",
+                    "{prefix}TEXTEDIT Enter text edit mode [Single/Multiple] <{}>:",
                     match self.mode {
                         TextEditMode::Single => "Single",
                         TextEditMode::Multiple => "Multiple",
@@ -126,17 +135,24 @@ impl CadCommand for TexteditCommand {
             }
             Step::EnterMode => {
                 if text.is_empty() {
+                    self.invalid_mode = false;
                     self.step = Step::PickObject;
                     return Some(CmdResult::NeedPoint);
                 }
 
-                let lower = text.to_lowercase();
-                if lower == "s" || lower == "single" || lower == "1" {
-                    self.mode = TextEditMode::Single;
-                    self.step = Step::PickObject;
-                } else if lower == "m" || lower == "multiple" || lower == "0" {
-                    self.mode = TextEditMode::Multiple;
-                    self.step = Step::PickObject;
+                match parse_texteditmode(text) {
+                    Some(single) => {
+                        self.mode = if single {
+                            TextEditMode::Single
+                        } else {
+                            TextEditMode::Multiple
+                        };
+                        self.invalid_mode = false;
+                        self.step = Step::PickObject;
+                    }
+                    // Unrecognized value: stay on the Mode step and re-prompt
+                    // with the error rather than silently ignoring it.
+                    None => self.invalid_mode = true,
                 }
 
                 Some(CmdResult::NeedPoint)
