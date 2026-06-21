@@ -6461,7 +6461,13 @@ impl OpenCADStudio {
                     let rotation: i16 = self.page_setup_rotation.parse().unwrap_or(0);
                     let scale_str = self.page_setup_scale.clone();
 
-                    // Update the Layout object's limits.
+                    // Update the Layout object's limits AND its embedded
+                    // PlotSettings fields. `paper_limits()` (sheet rendering) and
+                    // the DWG writer both read these from the Layout, so a page
+                    // setup that only touched a side PlotSettings object would not
+                    // reflect on screen or survive a save. The dialog's w/h are
+                    // the final sheet dimensions, so store them verbatim with no
+                    // further rotation swap (#156).
                     for obj in self.tabs[i].scene.document.objects.values_mut() {
                         if let acadrust::objects::ObjectType::Layout(l) = obj {
                             if l.name == layout_name {
@@ -6469,6 +6475,14 @@ impl OpenCADStudio {
                                 l.max_limits = (w, h);
                                 l.min_extents = (0.0, 0.0, 0.0);
                                 l.max_extents = (w, h, 0.0);
+                                l.paper_width = w;
+                                l.paper_height = h;
+                                l.plot_rotation = 0;
+                                l.plot_paper_units = 1; // millimetres
+                                l.plot_origin_x = offset_x;
+                                l.plot_origin_y = offset_y;
+                                // Custom dimensions no longer match a named size.
+                                l.paper_size = String::new();
                                 break;
                             }
                         }
@@ -6542,6 +6556,9 @@ impl OpenCADStudio {
                     }
 
                     self.tabs[i].dirty = true;
+                    // The paper sheet fill is cached; bump geometry so the new
+                    // sheet size re-tessellates and shows immediately.
+                    self.tabs[i].scene.bump_geometry();
                     self.command_line.push_info(&format!(
                         "Page setup: {w:.1}×{h:.1} mm  area={plot_area}  \
                          center={center}  rot={rotation}°"
@@ -6569,24 +6586,13 @@ impl OpenCADStudio {
             Message::PlotExportPath(Some(path)) => {
                 let i = self.active_tab;
                 let scene = &self.tabs[i].scene;
-                let layout_name = scene.current_layout.clone();
                 let wires = scene.entity_wires();
                 let hatches = scene.paper_canvas_hatches();
                 let wipeouts = scene.paper_canvas_wipeouts();
 
                 // Read PlotSettings for current layout (if available).
-                use acadrust::objects::{ObjectType, PlotType};
-                let ps_snap = scene.document.objects.values().find_map(|obj| {
-                    if let ObjectType::PlotSettings(ps) = obj {
-                        if ps.page_name == layout_name {
-                            Some(ps.clone())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                });
+                use acadrust::objects::PlotType;
+                let ps_snap = scene.effective_plot_settings();
 
                 // Determine paper size and drawing offset.
                 let (paper_w, paper_h, mut draw_ox, mut draw_oy, rotation_deg) =
@@ -6691,22 +6697,11 @@ impl OpenCADStudio {
             Message::PrintToPrinter => {
                 let i = self.active_tab;
                 let scene = &self.tabs[i].scene;
-                let layout_name = scene.current_layout.clone();
                 let wires = scene.entity_wires();
                 let hatches: Vec<_> = scene.paper_canvas_hatches().as_ref().clone();
                 let wipeouts: Vec<_> = scene.paper_canvas_wipeouts().as_ref().clone();
-                use acadrust::objects::{ObjectType, PlotType};
-                let ps_snap = scene.document.objects.values().find_map(|obj| {
-                    if let ObjectType::PlotSettings(ps) = obj {
-                        if ps.page_name == layout_name {
-                            Some(ps.clone())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                });
+                use acadrust::objects::PlotType;
+                let ps_snap = scene.effective_plot_settings();
                 let (paper_w, paper_h, draw_ox, draw_oy, rotation_deg) =
                     if let Some(((x0, y0), (x1, y1))) = scene.paper_limits() {
                         let (pw, ph) = (x1 - x0, y1 - y0);

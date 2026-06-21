@@ -1435,6 +1435,119 @@ impl Scene {
         })
     }
 
+    /// Dashed rectangle marking the printable area — the paper inset by the
+    /// layout's plot margins. AutoCAD draws this guide on every layout; with the
+    /// margins now preserved we can reflect it too. `None` in model space, when
+    /// the layout has no margins, or when the inset would be degenerate.
+    pub(super) fn printable_area_wire(&self) -> Option<WireModel> {
+        if self.current_layout == "Model" {
+            return None;
+        }
+        let ((x0, y0), (x1, y1)) = self.paper_limits()?;
+        let (left, bottom, right, top, rot) =
+            self.document.objects.values().find_map(|obj| {
+                if let ObjectType::Layout(l) = obj {
+                    if l.name == self.current_layout {
+                        return Some((
+                            l.plot_margin_left,
+                            l.plot_margin_bottom,
+                            l.plot_margin_right,
+                            l.plot_margin_top,
+                            l.plot_rotation,
+                        ));
+                    }
+                }
+                None
+            })?;
+        // `paper_limits()` already swaps the sheet for a 90°/270° rotation, so the
+        // margins must rotate to the same edges: a margin on a physical side moves
+        // to the displayed side that side rotates onto.
+        let (ml, mb, mr, mt) = match rot {
+            1 | 3 => (bottom, left, top, right),
+            2 => (right, top, left, bottom),
+            _ => (left, bottom, right, top),
+        };
+        // Nothing to show when there are no margins (printable area == sheet).
+        if ml <= 0.0 && mb <= 0.0 && mr <= 0.0 && mt <= 0.0 {
+            return None;
+        }
+        let (px0, py0, px1, py1) = (x0 + ml, y0 + mb, x1 - mr, y1 - mt);
+        if px1 - px0 < 1e-3 || py1 - py0 < 1e-3 {
+            return None;
+        }
+        let (px0, py0, px1, py1) = (px0 as f32, py0 as f32, px1 as f32, py1 as f32);
+        let mut wire = WireModel::solid(
+            "paper_printable_area".to_string(),
+            vec![
+                [px0, py0, 0.0],
+                [px1, py0, 0.0],
+                [px1, py1, 0.0],
+                [px0, py1, 0.0],
+                [px0, py0, 0.0],
+            ],
+            [0.5, 0.5, 0.5, 1.0],
+            false,
+        );
+        // Dashed: 4 mm dash, 3 mm gap.
+        wire.pattern_length = 7.0;
+        wire.pattern = [4.0, -3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        Some(wire)
+    }
+
+    /// The effective plot settings for the current layout: a standalone
+    /// PlotSettings page setup if one exists, otherwise the settings embedded in
+    /// the LAYOUT object (paper size, margins, origin, rotation, scale). Loaded
+    /// AutoCAD files keep their settings embedded, so without this fallback the
+    /// plot/PDF path would ignore the file's rotation, origin and scale.
+    pub fn effective_plot_settings(&self) -> Option<acadrust::objects::PlotSettings> {
+        use acadrust::objects::{
+            ObjectType, PaperMargin, PlotPaperUnits, PlotRotation, PlotSettings, PlotType,
+            PlotWindow, ScaledType,
+        };
+        let name = &self.current_layout;
+        if let Some(ps) = self.document.objects.values().find_map(|o| {
+            if let ObjectType::PlotSettings(ps) = o {
+                if &ps.page_name == name {
+                    return Some(ps.clone());
+                }
+            }
+            None
+        }) {
+            return Some(ps);
+        }
+        self.document.objects.values().find_map(|o| {
+            let ObjectType::Layout(l) = o else { return None };
+            if &l.name != name {
+                return None;
+            }
+            let mut ps = PlotSettings::new(l.name.clone());
+            ps.paper_width = l.paper_width;
+            ps.paper_height = l.paper_height;
+            ps.paper_size = l.paper_size.clone();
+            ps.margins = PaperMargin::new(
+                l.plot_margin_left,
+                l.plot_margin_bottom,
+                l.plot_margin_right,
+                l.plot_margin_top,
+            );
+            ps.origin_x = l.plot_origin_x;
+            ps.origin_y = l.plot_origin_y;
+            ps.plot_window = PlotWindow::new(
+                l.plot_window_min_x,
+                l.plot_window_min_y,
+                l.plot_window_max_x,
+                l.plot_window_max_y,
+            );
+            ps.paper_units = PlotPaperUnits::from_code(l.plot_paper_units);
+            ps.rotation = PlotRotation::from_code(l.plot_rotation);
+            ps.plot_type = PlotType::from_code(l.plot_type);
+            ps.scale_type = ScaledType::from_code(l.plot_scale_type);
+            ps.scale_numerator = l.plot_scale_numerator;
+            ps.scale_denominator = l.plot_scale_denominator;
+            Some(ps)
+        })
+    }
+
     pub fn paper_limits(&self) -> Option<((f64, f64), (f64, f64))> {
         if self.current_layout == "Model" {
             return None;
@@ -1869,6 +1982,10 @@ impl Scene {
             self.paper_bg_color
         };
         self.apply_refedit_fade(&mut wires, bg);
+        // Printable-area guide (paper inset by plot margins), paper space only.
+        if let Some(pa) = self.printable_area_wire() {
+            wires.push(pa);
+        }
         let arc = Arc::new(wires);
         *self.paper_sheet_cache.borrow_mut() = Some((key, Arc::clone(&arc)));
         arc
@@ -6333,8 +6450,14 @@ impl Scene {
 
                 if let Some(handle) = sheet_handle {
                     if let Some(EntityType::Viewport(vp)) = self.document.get_entity_mut(handle) {
-                        vp.view_target = target_wcs;
-                        vp.view_center = acadrust::types::Vector3::ZERO;
+                        // AutoCAD stores the paper-space view position in
+                        // `view_center` (DCS) with `view_target` at the origin —
+                        // writing it the other way round shifts the layout and
+                        // crashes nothing but renders the sheet off-place. Paper
+                        // space is always a plan view, so DCS == WCS XY here.
+                        vp.view_center =
+                            acadrust::types::Vector3::new(target_wcs.x, target_wcs.y, 0.0);
+                        vp.view_target = acadrust::types::Vector3::ZERO;
                         vp.view_direction = vd3;
                         vp.view_height = view_height as f64;
                     }
