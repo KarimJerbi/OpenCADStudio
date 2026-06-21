@@ -5347,6 +5347,32 @@ impl Scene {
                 }
             }
         }
+        // A dimension's final geometry is baked into a per-instance `*D`
+        // block, and the render draws those sub-entities directly (not the
+        // definition points). Transform them with the dimension, or it would
+        // stay drawn in place while only its def points move.
+        let dim_block_subs: Vec<Handle> = handles
+            .iter()
+            .filter_map(|&h| match self.document.get_entity(h) {
+                Some(EntityType::Dimension(d)) => {
+                    let bn = d.base().block_name.clone();
+                    if bn.trim().is_empty() {
+                        None
+                    } else {
+                        Some(bn)
+                    }
+                }
+                _ => None,
+            })
+            .filter_map(|bn| {
+                self.document
+                    .block_records
+                    .iter()
+                    .find(|br| br.name.eq_ignore_ascii_case(&bn))
+                    .map(|br| br.entity_handles.clone())
+            })
+            .flatten()
+            .collect();
         for &h in handles {
             if let Some(entity) = self.document.get_entity_mut(h) {
                 view::dispatch::apply_transform(entity, t);
@@ -5382,6 +5408,12 @@ impl Scene {
                         _ => {}
                     }
                 }
+            }
+        }
+        // Move the baked dimension-block sub-entities too (collected above).
+        for h in &dim_block_subs {
+            if let Some(entity) = self.document.get_entity_mut(*h) {
+                view::dispatch::apply_transform(entity, t);
             }
         }
         // Only the transformed entities changed (a top-level move/rotate/scale/
