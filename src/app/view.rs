@@ -138,6 +138,20 @@ impl OpenCADStudio {
             // stay independent: model tiles in model space; the sheet plus each
             // floating viewport (clipped to its rectangle) in paper space. One
             // enumeration for both, shared with the renderer.
+            // Align the model grid to the active UCS (origin in wire space, world
+            // axis directions); paper space stays plain WCS.
+            let (grid_origin, grid_axes) = if is_paper {
+                (glam::Vec3::ZERO, (glam::Vec3::X, glam::Vec3::Y, glam::Vec3::Z))
+            } else {
+                let (o, ux, uy, uz) = tab.ucs_xform().axes();
+                let wo = tab.scene.world_offset;
+                let o_wire = glam::Vec3::new(
+                    o.x - wo[0] as f32,
+                    o.y - wo[1] as f32,
+                    o.z - wo[2] as f32,
+                );
+                (o_wire, (ux, uy, uz))
+            };
             let grid: Vec<overlay::GridParams> = tab
                 .scene
                 .grid_views(vw, vh)
@@ -148,6 +162,8 @@ impl OpenCADStudio {
                         view_proj: cam.view_proj(bounds),
                         bounds,
                         plane,
+                        origin: grid_origin,
+                        axes: grid_axes,
                     }
                 })
                 .collect();

@@ -51,6 +51,11 @@ pub struct GridParams {
     pub view_proj: Mat4,
     pub bounds: iced::Rectangle,
     pub plane: GridPlane,
+    /// Grid origin in render (wire) space and the active UCS axis directions.
+    /// The grid rules along these instead of world X/Y/Z, so it aligns to the
+    /// user's coordinate system. Plain WCS passes `(ZERO, X, Y, Z)`.
+    pub origin: Vec3,
+    pub axes: (Vec3, Vec3, Vec3),
 }
 
 /// Compute the adaptive grid step size (world units) that the grid renderer
@@ -308,7 +313,9 @@ impl canvas::Program<Message> for SelectionCanvas {
             };
             // Project with the full viewport rect `gb` so the grid stays aligned;
             // only the clip is clamped.
-            frame.with_clip(clip, |f| draw_grid(f, g.view_proj, g.plane, gb));
+            frame.with_clip(clip, |f| {
+                draw_grid(f, g.view_proj, g.plane, gb, g.origin, g.axes)
+            });
         }
 
         if let (Some(a), Some(b)) = (self.selection.box_anchor, self.selection.box_current) {
@@ -855,7 +862,14 @@ impl canvas::Program<Message> for SelectionCanvas {
 /// Minimum pixel gap between adjacent grid lines before stepping up to next spacing.
 const MIN_GRID_PX: f32 = 20.0;
 
-fn draw_grid(frame: &mut canvas::Frame, vp: Mat4, plane: GridPlane, bounds: iced::Rectangle) {
+fn draw_grid(
+    frame: &mut canvas::Frame,
+    vp: Mat4,
+    plane: GridPlane,
+    bounds: iced::Rectangle,
+    grid_origin: Vec3,
+    grid_axes: (Vec3, Vec3, Vec3),
+) {
     // World → canvas screen: include bounds origin so the grid lands in the
     // active tile's rectangle (the screen → world unproject below stays
     // tile-local, which is what feeds the visible-extent computation).
@@ -867,18 +881,20 @@ fn draw_grid(frame: &mut canvas::Frame, vp: Mat4, plane: GridPlane, bounds: iced
         )
     };
 
-    // Plane-tangent axes: axis1 and axis2 span the grid plane.
+    // Plane-tangent axes: axis1 and axis2 span the grid plane, taken from the
+    // active UCS basis so the grid aligns to the user's coordinate system.
+    let (gx, gy, gz) = grid_axes;
     let (axis1, axis2) = match plane {
-        GridPlane::Xz => (Vec3::X, Vec3::Z),
-        GridPlane::Xy => (Vec3::X, Vec3::Y),
-        GridPlane::Yz => (Vec3::Y, Vec3::Z),
+        GridPlane::Xz => (gx, gz),
+        GridPlane::Xy => (gx, gy),
+        GridPlane::Yz => (gy, gz),
     };
 
     // Adaptive spacing: measure pixels per 1-unit step along each axis,
     // then find the smallest power-of-5 multiple that gives ≥ MIN_GRID_PX.
-    let o = w2s(Vec3::ZERO);
-    let a1s = w2s(axis1);
-    let a2s = w2s(axis2);
+    let o = w2s(grid_origin);
+    let a1s = w2s(grid_origin + axis1);
+    let a2s = w2s(grid_origin + axis2);
     let px1 = ((a1s.x - o.x).powi(2) + (a1s.y - o.y).powi(2)).sqrt();
     let px2 = ((a2s.x - o.x).powi(2) + (a2s.y - o.y).powi(2)).sqrt();
     let px_per_unit = px1.max(px2);
@@ -909,7 +925,7 @@ fn draw_grid(frame: &mut canvas::Frame, vp: Mat4, plane: GridPlane, bounds: iced
         unproject(bounds.width, bounds.height),
     ];
     let range = |ax: Vec3| -> (f32, f32) {
-        let vals: Vec<f32> = corners.iter().map(|p| p.dot(ax)).collect();
+        let vals: Vec<f32> = corners.iter().map(|p| (*p - grid_origin).dot(ax)).collect();
         (
             vals.iter().cloned().fold(f32::INFINITY, f32::min),
             vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
@@ -941,8 +957,8 @@ fn draw_grid(frame: &mut canvas::Frame, vp: Mat4, plane: GridPlane, bounds: iced
     // Lines parallel to axis2 (varying axis1 position)
     for i in n1_s..=n1_e {
         let v = i as f32 * s;
-        let p0 = w2s(axis1 * v + axis2 * (min2 - s));
-        let p1 = w2s(axis1 * v + axis2 * (max2 + s));
+        let p0 = w2s(grid_origin + axis1 * v + axis2 * (min2 - s));
+        let p1 = w2s(grid_origin + axis1 * v + axis2 * (max2 + s));
         frame.stroke(
             &canvas::Path::new(|b| {
                 b.move_to(p0);
@@ -954,8 +970,8 @@ fn draw_grid(frame: &mut canvas::Frame, vp: Mat4, plane: GridPlane, bounds: iced
     // Lines parallel to axis1 (varying axis2 position)
     for i in n2_s..=n2_e {
         let v = i as f32 * s;
-        let p0 = w2s(axis2 * v + axis1 * (min1 - s));
-        let p1 = w2s(axis2 * v + axis1 * (max1 + s));
+        let p0 = w2s(grid_origin + axis2 * v + axis1 * (min1 - s));
+        let p1 = w2s(grid_origin + axis2 * v + axis1 * (max1 + s));
         frame.stroke(
             &canvas::Path::new(|b| {
                 b.move_to(p0);
