@@ -284,19 +284,18 @@ impl Camera {
     /// Result: small tilts collapse onto the nearest world axis (so the
     /// view always lands cleanly aligned), while genuine flips of the
     /// up-sense (e.g. orbited upside-down) are preserved.
-    pub fn snap_to_direction(&mut self, eye_dir: Vec3) {
+    pub fn snap_to_direction(&mut self, eye_dir: Vec3, ucs: glam::Mat4) {
         let new_eye = eye_dir.normalize_or(Vec3::Z);
         let cur_up = self.rotation * Vec3::Y;
-        let cardinals = [
-            Vec3::X,
-            Vec3::NEG_X,
-            Vec3::Y,
-            Vec3::NEG_Y,
-            Vec3::Z,
-            Vec3::NEG_Z,
-        ];
+        // Candidate up axes are the UCS axes, not world X/Y/Z, so a face snap
+        // lands the view square to the user's coordinate system (in-plane roll
+        // included). Identity `ucs` reproduces the world-aligned snap.
+        let ux = ucs.transform_vector3(Vec3::X).normalize_or(Vec3::X);
+        let uy = ucs.transform_vector3(Vec3::Y).normalize_or(Vec3::Y);
+        let uz = ucs.transform_vector3(Vec3::Z).normalize_or(Vec3::Z);
+        let cardinals = [ux, -ux, uy, -uy, uz, -uz];
         let mut best_score = f32::NEG_INFINITY;
-        let mut best_up = Vec3::Z;
+        let mut best_up = uz;
         for axis in cardinals {
             // Skip axes (nearly) collinear with the new gaze — they can't
             // serve as up because the projection onto the plane would
@@ -312,10 +311,10 @@ impl Camera {
         }
         // Project the chosen axis onto the plane ⊥ new_eye and normalize.
         let projected = best_up - new_eye * best_up.dot(new_eye);
-        let new_up = projected.normalize_or(if new_eye.z.abs() < 0.99 {
-            (Vec3::Z - new_eye * Vec3::Z.dot(new_eye)).normalize()
+        let new_up = projected.normalize_or(if new_eye.dot(uz).abs() < 0.99 {
+            (uz - new_eye * uz.dot(new_eye)).normalize()
         } else {
-            (Vec3::Y - new_eye * Vec3::Y.dot(new_eye)).normalize()
+            (uy - new_eye * uy.dot(new_eye)).normalize()
         });
         let new_right = new_up.cross(new_eye).normalize();
         // Camera rotation columns: [cam_x | cam_y | cam_z] where

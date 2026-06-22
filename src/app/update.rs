@@ -4351,7 +4351,7 @@ impl OpenCADStudio {
                         .snap_active_viewport_to_direction(eye_dir);
                 } else {
                     let mut cam = self.tabs[i].scene.camera.borrow_mut();
-                    cam.snap_to_direction(eye_dir);
+                    cam.snap_to_direction(eye_dir, r_ucs);
                 }
                 self.tabs[i].scene.camera_generation += 1;
                 self.command_line
