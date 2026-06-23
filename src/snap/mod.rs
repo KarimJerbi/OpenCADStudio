@@ -542,7 +542,10 @@ impl Snapper {
                 if !wire.key_vertices.is_empty() {
                     // Use explicit vertices (Line, LwPolyline): every vertex is an endpoint.
                     for &p in &wire.key_vertices {
-                        try_pt(Vec3::from(p), SnapType::Endpoint);
+                        try_pt(
+                            Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32),
+                            SnapType::Endpoint,
+                        );
                     }
                 } else {
                     // Tessellated curves (Circle, Arc, Ellipse): only arc endpoints.
@@ -571,8 +574,8 @@ impl Snapper {
                 }
                 if !wire.key_vertices.is_empty() {
                     for seg in wire.key_vertices.windows(2) {
-                        let a = Vec3::from(seg[0]);
-                        let b = Vec3::from(seg[1]);
+                        let a = Vec3::new(seg[0][0] as f32, seg[0][1] as f32, seg[0][2] as f32);
+                        let b = Vec3::new(seg[1][0] as f32, seg[1][1] as f32, seg[1][2] as f32);
                         if a.distance_squared(b) > 1e-12 {
                             try_pt((a + b) * 0.5, SnapType::Midpoint);
                         }

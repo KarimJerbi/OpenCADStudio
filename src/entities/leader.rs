@@ -623,7 +623,7 @@ impl LeaderTess for Leader {
 
         let mut points: Vec<[f32; 3]> = verts.iter().map(|v| p3(v)).collect();
         let mut tangents: Vec<TangentGeom> = Vec::new();
-        let key_vertices: Vec<[f32; 3]> = verts.iter().map(|v| p3(v)).collect();
+        let key_vertices: Vec<[f64; 3]> = verts.iter().map(|v| [v.x, v.y, v.z]).collect();
         let mut fill_tris: Vec<[f32; 3]> = Vec::new();
 
         for i in 0..verts.len().saturating_sub(1) {

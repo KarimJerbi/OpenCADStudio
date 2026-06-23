@@ -38,7 +38,7 @@ pub struct LocalWire {
     /// Low-bit residual paired with `points` so block-instance wires keep
     /// sub-f32 precision once the renderer translates them to world space.
     pub points_low: Vec<[f32; 3]>,
-    pub key_vertices: Vec<[f32; 3]>,
+    pub key_vertices: Vec<[f64; 3]>,
     pub snap_pts: Vec<(glam::DVec3, SnapHint)>,
     pub tangent_geoms: Vec<TangentGeom>,
     pub fill_tris: Vec<[f32; 3]>,
@@ -1042,7 +1042,7 @@ struct BatchEntry {
     points: Vec<[f32; 3]>,
     points_low: Vec<[f32; 3]>,
     snap_pts: Vec<(glam::DVec3, SnapHint)>,
-    key_vertices: Vec<[f32; 3]>,
+    key_vertices: Vec<[f64; 3]>,
     tangent_geoms: Vec<TangentGeom>,
     fill_tris: Vec<[f32; 3]>,
     min_x: f32,
@@ -1454,9 +1454,7 @@ fn emit_wire(
             p[1] as f64 + lo_y,
             p[2] as f64 + lo_z,
         ));
-        entry
-            .key_vertices
-            .push([(v.x - ox) as f32, (v.y - oy) as f32, (v.z - oz) as f32]);
+        entry.key_vertices.push([v.x - ox, v.y - oy, v.z - oz]);
     }
     for (p, hint) in &lw.snap_pts {
         let v = accum_xform.apply(Vector3::new(

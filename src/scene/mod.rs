@@ -3270,14 +3270,14 @@ impl Scene {
                 for &[x, y, z] in &wire.key_vertices {
                     if x.is_finite() && y.is_finite() && z.is_finite() {
                         min = min.min(glam::Vec3::new(
-                            x + ox as f32,
-                            y + oy as f32,
-                            z + oz,
+                            (x + ox) as f32,
+                            (y + oy) as f32,
+                            (z + oz as f64) as f32,
                         ));
                         max = max.max(glam::Vec3::new(
-                            x + ox as f32,
-                            y + oy as f32,
-                            z + oz,
+                            (x + ox) as f32,
+                            (y + oy) as f32,
+                            (z + oz as f64) as f32,
                         ));
                         any = true;
                     }
@@ -8593,7 +8593,7 @@ fn lod_stub_wire(
         line_weight_px: 1.0,
         snap_pts: vec![],
         tangent_geoms: vec![],
-        key_vertices: vec![[cx, cy, cz]],
+        key_vertices: vec![[cx as f64, cy as f64, cz as f64]],
         aabb,
         plinegen: true,
         vp_scissor: None,

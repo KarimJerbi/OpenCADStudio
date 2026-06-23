@@ -64,7 +64,7 @@ pub struct WireModel {
     /// True polyline vertices used for Endpoint/Midpoint snap.
     /// Non-empty only for entities with distinct vertex positions (Line, LwPolyline).
     /// Empty for tessellated curves (Circle, Arc, Ellipse) which use snap_pts instead.
-    pub key_vertices: Vec<[f32; 3]>,
+    pub key_vertices: Vec<[f64; 3]>,
     /// World-space 2-D bounding box [min_x, min_y, max_x, max_y].
     /// Set from acadrust `bounding_box()` in `tessellate_entity()`.
     /// Preview / interim wires use `UNBOUNDED_AABB` so they are never pre-rejected

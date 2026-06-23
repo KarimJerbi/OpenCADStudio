@@ -1120,12 +1120,13 @@ fn tessellate_dimension_inner(
     };
 
     let snap_pts = dimension_snap_pts(dim, world_offset);
-    let key_vertices: Vec<[f32; 3]> = geom
+    let key_vertices: Vec<[f64; 3]> = geom
         .dim_lines
         .iter()
         .chain(geom.ext_lines.iter())
         .copied()
         .filter(|p| !(p[0].is_nan() || p[1].is_nan() || p[2].is_nan()))
+        .map(|[x, y, z]| [x as f64, y as f64, z as f64])
         .collect();
 
     // DIMLWD (dim line + arrows) and DIMLWE (extension lines). Negative

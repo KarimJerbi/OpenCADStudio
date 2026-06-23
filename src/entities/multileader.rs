@@ -1161,7 +1161,7 @@ impl MultiLeaderTess for MultiLeader {
 
         // ── Leader / arrow / dogleg points ───────────────────────────────────────
         let mut points: Vec<[f32; 3]> = Vec::new();
-        let mut key_verts: Vec<[f32; 3]> = Vec::new();
+        let mut key_verts: Vec<[f64; 3]> = Vec::new();
         let mut snap_pts: Vec<(glam::DVec3, SnapHint)> = Vec::new();
         let mut tangents: Vec<TangentGeom> = Vec::new();
         let mut arrow_fill: Vec<[f32; 3]> = Vec::new();
@@ -1209,7 +1209,7 @@ impl MultiLeaderTess for MultiLeader {
                         ctrl.push(cp_f);
                     }
                     for &c in &ctrl {
-                        key_verts.push(c);
+                        key_verts.push([c[0] as f64, c[1] as f64, c[2] as f64]);
                         snap_pts.push((Vec3::from(c).as_dvec3(), SnapHint::Node));
                     }
 

@@ -213,10 +213,10 @@ pub fn tessellate(
                 }
 
                 let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
-                let key_vertices: Vec<[f32; 3]> = te
+                let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [(x - ox) as f32, (y - oy) as f32, (z - oz) as f32])
+                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
                     .collect();
 
                 // Empty input (no glyphs) → emit a single empty wire so the
@@ -293,12 +293,10 @@ pub fn tessellate(
                         let s = 0.1_f32;
                         let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
                         let [ox, oy, oz] = world_offset;
-                        let key_vertices: Vec<[f32; 3]> = te
+                        let key_vertices: Vec<[f64; 3]> = te
                             .key_vertices
                             .into_iter()
-                            .map(|[kx, ky, kz]| {
-                                [(kx - ox) as f32, (ky - oy) as f32, (kz - oz) as f32]
-                            })
+                            .map(|[kx, ky, kz]| [kx - ox, ky - oy, kz - oz])
                             .collect();
                         return vec![WireModel {
                             name,
@@ -339,10 +337,10 @@ pub fn tessellate(
                 {
                     let [ox, oy, oz] = world_offset;
                     let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
-                    let key_vertices: Vec<[f32; 3]> = te
+                    let key_vertices: Vec<[f64; 3]> = te
                         .key_vertices
                         .into_iter()
-                        .map(|[x, y, z]| [(x - ox) as f32, (y - oy) as f32, (z - oz) as f32])
+                        .map(|[x, y, z]| [x - ox, y - oy, z - oz])
                         .collect();
                     return vec![WireModel {
                         name,
@@ -372,10 +370,10 @@ pub fn tessellate(
                 {
                     let [ox, oy, oz] = world_offset;
                     let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
-                    let key_vertices: Vec<[f32; 3]> = te
+                    let key_vertices: Vec<[f64; 3]> = te
                         .key_vertices
                         .into_iter()
-                        .map(|[x, y, z]| [(x - ox) as f32, (y - oy) as f32, (z - oz) as f32])
+                        .map(|[x, y, z]| [x - ox, y - oy, z - oz])
                         .collect();
                     return vec![WireModel {
                         name,
@@ -409,10 +407,10 @@ pub fn tessellate(
                 let [ox, oy, oz] = world_offset;
                 let (local_pts, local_pts_low) = offset_to_ds(points, world_offset);
                 let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
-                let key_vertices: Vec<[f32; 3]> = te
+                let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [(x - ox) as f32, (y - oy) as f32, (z - oz) as f32])
+                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
                     .collect();
                 let (fill_tris, fill_tris_low) = offset_to_ds(te.fill_tris, world_offset);
                 return vec![WireModel {
@@ -440,10 +438,10 @@ pub fn tessellate(
                 let [ox, oy, oz] = world_offset;
                 let (local_pts, local_pts_low) = offset_to_ds(points, world_offset);
                 let snap_pts = offset_snap_pts(te.snap_pts, world_offset);
-                let key_vertices: Vec<[f32; 3]> = te
+                let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [(x - ox) as f32, (y - oy) as f32, (z - oz) as f32])
+                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
                     .collect();
                 return vec![WireModel {
                     name,
@@ -491,6 +489,10 @@ pub fn tessellate(
     // f64 for the WireModel's double-single-era snap buffer.
     let snap_pts: Vec<(glam::DVec3, SnapHint)> =
         snap_pts.into_iter().map(|(p, h)| (p.as_dvec3(), h)).collect();
+    let key_vertices: Vec<[f64; 3]> = key_vertices
+        .into_iter()
+        .map(|[x, y, z]| [x as f64, y as f64, z as f64])
+        .collect();
     vec![WireModel {
         name,
         points,

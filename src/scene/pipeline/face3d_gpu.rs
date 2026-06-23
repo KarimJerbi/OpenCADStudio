@@ -126,11 +126,21 @@ impl Face3DGpu {
                 let fill_color = [r * 0.45, g * 0.45, b * 0.45, a];
                 let depth = depth_of(wire);
                 let p = &wire.key_vertices;
-                let v = |i: usize| Face3DVertex {
-                    position: p[i],
-                    color: fill_color,
-                    draw_depth: depth,
-                    position_low: [0.0; 3],
+                // key_vertices are f64 (offset-relative); split into the
+                // double-single (high, low) pair the face3d shader expects.
+                let v = |i: usize| {
+                    let [x, y, z] = p[i];
+                    let h = [x as f32, y as f32, z as f32];
+                    Face3DVertex {
+                        position: h,
+                        color: fill_color,
+                        draw_depth: depth,
+                        position_low: [
+                            (x - h[0] as f64) as f32,
+                            (y - h[1] as f64) as f32,
+                            (z - h[2] as f64) as f32,
+                        ],
+                    }
                 };
                 verts_3d.push(v(0));
                 verts_3d.push(v(1));

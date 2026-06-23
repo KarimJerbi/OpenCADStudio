@@ -103,7 +103,7 @@ pub fn clip_wires(wires: &mut Vec<WireModel>, poly: &[[f32; 2]]) {
             w.fill_tris = clip_triangles(&w.fill_tris, poly);
         }
         w.key_vertices
-            .retain(|v| point_in_poly(v[0], v[1], poly));
+            .retain(|v| point_in_poly(v[0] as f32, v[1] as f32, poly));
         w.snap_pts.retain(|(p, _)| point_in_poly(p.x as f32, p.y as f32, poly));
         w.aabb = recompute_aabb(&w.points, &w.fill_tris);
     }
