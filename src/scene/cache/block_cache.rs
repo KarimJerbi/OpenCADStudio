@@ -39,7 +39,7 @@ pub struct LocalWire {
     /// sub-f32 precision once the renderer translates them to world space.
     pub points_low: Vec<[f32; 3]>,
     pub key_vertices: Vec<[f32; 3]>,
-    pub snap_pts: Vec<(glam::Vec3, SnapHint)>,
+    pub snap_pts: Vec<(glam::DVec3, SnapHint)>,
     pub tangent_geoms: Vec<TangentGeom>,
     pub fill_tris: Vec<[f32; 3]>,
     pub color: [f32; 4],
@@ -1041,7 +1041,7 @@ struct BatchEntry {
     plinegen: bool,
     points: Vec<[f32; 3]>,
     points_low: Vec<[f32; 3]>,
-    snap_pts: Vec<(glam::Vec3, SnapHint)>,
+    snap_pts: Vec<(glam::DVec3, SnapHint)>,
     key_vertices: Vec<[f32; 3]>,
     tangent_geoms: Vec<TangentGeom>,
     fill_tris: Vec<[f32; 3]>,
@@ -1465,11 +1465,7 @@ fn emit_wire(
             p.z as f64 + lo_z,
         ));
         entry.snap_pts.push((
-            glam::Vec3::new(
-                (v.x - ox) as f32,
-                (v.y - oy) as f32,
-                (v.z - oz) as f32,
-            ),
+            glam::DVec3::new(v.x - ox, v.y - oy, v.z - oz),
             *hint,
         ));
     }

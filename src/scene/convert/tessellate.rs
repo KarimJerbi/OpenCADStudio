@@ -477,7 +477,7 @@ pub fn tessellate(
                 // Add insertion snap at point_of_reference.
                 let [ox, oy, oz] = world_offset;
                 if let Some(p) = crate::entities::solid3d::point_of_reference(entity) {
-                    let sp = Vec3::new((p.x - ox) as f32, (p.y - oy) as f32, (p.z - oz) as f32);
+                    let sp = glam::DVec3::new(p.x - ox, p.y - oy, p.z - oz);
                     wm.snap_pts.push((sp, SnapHint::Insertion));
                 }
                 return vec![wm];
@@ -487,6 +487,10 @@ pub fn tessellate(
 
     // ── Fallback for Viewport / Insert / Hatch / Ole2Frame ────────────────
     let (points, snap_pts, tangent_geoms, key_vertices) = fallback_geometry(entity, world_offset);
+    // fallback_geometry still emits offset-relative f32 snap points; widen to
+    // f64 for the WireModel's double-single-era snap buffer.
+    let snap_pts: Vec<(glam::DVec3, SnapHint)> =
+        snap_pts.into_iter().map(|(p, h)| (p.as_dvec3(), h)).collect();
     vec![WireModel {
         name,
         points,
@@ -858,12 +862,15 @@ pub(crate) fn add_polyline(points: &mut Vec<[f32; 3]>, polyline: &[Vec3]) {
     points.extend(polyline.iter().map(|p| [p.x, p.y, p.z]));
 }
 
-pub(crate) fn offset_snap_pts(pts: Vec<(Vec3, SnapHint)>, off: [f64; 3]) -> Vec<(Vec3, SnapHint)> {
+pub(crate) fn offset_snap_pts(
+    pts: Vec<(Vec3, SnapHint)>,
+    off: [f64; 3],
+) -> Vec<(glam::DVec3, SnapHint)> {
     let [ox, oy, oz] = off;
     pts.into_iter()
         .map(|(p, h)| {
             (
-                Vec3::new(p.x - ox as f32, p.y - oy as f32, p.z - oz as f32),
+                glam::DVec3::new(p.x as f64 - ox, p.y as f64 - oy, p.z as f64 - oz),
                 h,
             )
         })

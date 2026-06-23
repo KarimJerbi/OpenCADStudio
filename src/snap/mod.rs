@@ -528,7 +528,7 @@ impl Snapper {
                     SnapHint::Midpoint => SnapType::Midpoint,
                 };
                 if self.is_on(snap_type) {
-                    try_pt(world, snap_type);
+                    try_pt(world.as_vec3(), snap_type);
                 }
             }
         }

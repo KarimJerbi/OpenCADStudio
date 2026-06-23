@@ -8229,7 +8229,7 @@ fn tessellate_entity(
             pattern_length: 0.0,
             pattern: [0.0; 8],
             line_weight_px: 1.0,
-            snap_pts: vec![(ip, model::wire_model::SnapHint::Insertion)],
+            snap_pts: vec![(ip.as_dvec3(), model::wire_model::SnapHint::Insertion)],
             tangent_geoms: vec![],
             key_vertices: vec![],
             aabb: WireModel::UNBOUNDED_AABB,

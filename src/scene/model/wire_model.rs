@@ -57,7 +57,7 @@ pub struct WireModel {
     /// ACI color index (1-255).  0 means true-color or unknown (no CTB lookup).
     pub aci: u8,
     /// Pre-baked snap candidates (Center, Node, Quadrant, Insertion).
-    pub snap_pts: Vec<(glam::Vec3, SnapHint)>,
+    pub snap_pts: Vec<(glam::DVec3, SnapHint)>,
     /// Per-segment tangent geometry for Tangent snap.
     /// Line/Arc entities: 1 entry.  LwPolyline: 1 entry per segment.
     pub tangent_geoms: Vec<TangentGeom>,

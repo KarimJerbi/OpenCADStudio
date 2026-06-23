@@ -1837,12 +1837,12 @@ fn append_angular_dimension(
     }
 }
 
-fn dimension_snap_pts(dim: &Dimension, world_offset: [f64; 3]) -> Vec<(Vec3, SnapHint)> {
+fn dimension_snap_pts(dim: &Dimension, world_offset: [f64; 3]) -> Vec<(glam::DVec3, SnapHint)> {
     let lv = |v: acadrust::types::Vector3| {
-        Vec3::new(
-            (v.x - world_offset[0]) as f32,
-            (v.y - world_offset[1]) as f32,
-            (v.z - world_offset[2]) as f32,
+        glam::DVec3::new(
+            v.x - world_offset[0],
+            v.y - world_offset[1],
+            v.z - world_offset[2],
         )
     };
     let node = |v: acadrust::types::Vector3| (lv(v), SnapHint::Node);

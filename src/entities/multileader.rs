@@ -77,10 +77,11 @@ fn to_truck(ml: &MultiLeader, document: &acadrust::CadDocument) -> Option<TruckE
     let mut points: Vec<[f64; 3]> = Vec::new();
     let mut tangents: Vec<TangentGeom> = Vec::new();
     let mut key_verts: Vec<[f64; 3]> = Vec::new();
+    // This builds a TruckEntity (snap_pts in Vec3); tessellate's
+    // offset_snap_pts widens it to the f64 WireModel buffer afterwards.
     let mut snap_pts: Vec<(Vec3, SnapHint)> = Vec::new();
     let mut first = true;
 
-    // snap_pts uses f32 (UI-only); cast at construction.
     let node = |arr: [f64; 3]| {
         (
             Vec3::new(arr[0] as f32, arr[1] as f32, arr[2] as f32),
@@ -1168,7 +1169,7 @@ impl MultiLeaderTess for MultiLeader {
         // ── Leader / arrow / dogleg points ───────────────────────────────────────
         let mut points: Vec<[f32; 3]> = Vec::new();
         let mut key_verts: Vec<[f32; 3]> = Vec::new();
-        let mut snap_pts: Vec<(Vec3, SnapHint)> = Vec::new();
+        let mut snap_pts: Vec<(glam::DVec3, SnapHint)> = Vec::new();
         let mut tangents: Vec<TangentGeom> = Vec::new();
         let mut arrow_fill: Vec<[f32; 3]> = Vec::new();
         let mut first = true;
@@ -1194,7 +1195,7 @@ impl MultiLeaderTess for MultiLeader {
         for root in &ml.context.leader_roots {
             let cp = &root.connection_point;
             let cp_f = p3(cp);
-            snap_pts.push((Vec3::from(cp_f), SnapHint::Node));
+            snap_pts.push((Vec3::from(cp_f).as_dvec3(), SnapHint::Node));
 
             for line in &root.lines {
                 if line.points.is_empty() {
@@ -1216,7 +1217,7 @@ impl MultiLeaderTess for MultiLeader {
                     }
                     for &c in &ctrl {
                         key_verts.push(c);
-                        snap_pts.push((Vec3::from(c), SnapHint::Node));
+                        snap_pts.push((Vec3::from(c).as_dvec3(), SnapHint::Node));
                     }
 
                     if ml.path_type == MultiLeaderPathType::Spline && ctrl.len() >= 2 {
@@ -1550,7 +1551,7 @@ impl MultiLeaderTess for MultiLeader {
                         pattern_length: 0.0,
                         pattern: [0.0; 8],
                         line_weight_px,
-                        snap_pts: vec![(Vec3::new(local_ins_x, local_ins_y, z), SnapHint::Node)],
+                        snap_pts: vec![(glam::DVec3::new(local_ins_x as f64, local_ins_y as f64, z as f64), SnapHint::Node)],
                         tangent_geoms: vec![],
                         key_vertices: vec![],
                         aabb: WireModel::UNBOUNDED_AABB,
@@ -1592,7 +1593,7 @@ impl MultiLeaderTess for MultiLeader {
                         pattern_length: 0.0,
                         pattern: [0.0; 8],
                         line_weight_px: 1.0,
-                        snap_pts: vec![(Vec3::new(local_ins_x, local_ins_y, z), SnapHint::Node)],
+                        snap_pts: vec![(glam::DVec3::new(local_ins_x as f64, local_ins_y as f64, z as f64), SnapHint::Node)],
                         tangent_geoms: vec![],
                         key_vertices: vec![],
                         aabb: WireModel::UNBOUNDED_AABB,
@@ -1632,7 +1633,7 @@ impl MultiLeaderTess for MultiLeader {
                         pattern_length: 0.0,
                         pattern: [0.0; 8],
                         line_weight_px,
-                        snap_pts: vec![(Vec3::new(local_ins_x, local_ins_y, z), SnapHint::Node)],
+                        snap_pts: vec![(glam::DVec3::new(local_ins_x as f64, local_ins_y as f64, z as f64), SnapHint::Node)],
                         tangent_geoms: vec![],
                         key_vertices: vec![],
                         aabb: WireModel::UNBOUNDED_AABB,
