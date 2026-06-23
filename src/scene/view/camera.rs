@@ -228,9 +228,6 @@ impl Camera {
         }
     }
 
-    pub fn position_vec4(&self) -> glam::Vec4 {
-        glam::Vec4::from((self.eye(), 0.0))
-    }
 
     // ── ViewCube rotation matrix ───────────────────────────────────────────
 
