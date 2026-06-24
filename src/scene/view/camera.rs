@@ -79,7 +79,6 @@ impl Camera {
     /// Eye position in full f64 precision (offset-relative world space). Used
     /// by the relative-to-eye render path; the f32 [`eye`] stays for ray/pick
     /// math that operates at human scale.
-    #[allow(dead_code)] // consumed by the relative-to-eye uniform (next phase)
     pub fn eye_f64(&self) -> DVec3 {
         let eye_dir = (self.rotation * Vec3::Z).as_dvec3();
         self.target + eye_dir * self.distance as f64
@@ -160,8 +159,7 @@ impl Camera {
     /// the rotation-only projection, so it stays exact at large absolute
     /// coordinates — the CPU equivalent of the GPU's relative-to-eye path.
     /// Returns `None` for points at/behind the eye plane (w ≈ 0).
-    #[allow(dead_code)] // consumed by the world_offset-removal CPU migration
-    pub fn project_f64(&self, p: glam::DVec3, bounds: Rectangle) -> Option<glam::Vec2> {
+    pub fn project(&self, p: glam::DVec3, bounds: Rectangle) -> Option<glam::Vec2> {
         let rel = (p - self.eye_f64()).as_vec3();
         let clip = self.view_proj_rte(bounds) * rel.extend(1.0);
         if clip.w.abs() < 1e-9 {
@@ -178,8 +176,7 @@ impl Camera {
     /// is built in eye-relative space (precise), intersected with the plane
     /// expressed relative to the eye, then shifted back by the f64 eye — so the
     /// returned world point keeps full precision at large absolute coordinates.
-    #[allow(dead_code)] // consumed by the world_offset-removal CPU migration
-    pub fn unproject_on_plane_f64(
+    pub fn unproject_on_plane(
         &self,
         screen: Point,
         bounds: Rectangle,
@@ -242,13 +239,13 @@ impl Camera {
         plane_normal: Vec3,
         plane_point: glam::DVec3,
     ) -> glam::DVec3 {
-        self.unproject_on_plane_f64(screen, bounds, plane_normal, plane_point)
+        self.unproject_on_plane(screen, bounds, plane_normal, plane_point)
     }
 
     /// Project a screen point onto the plane through the orbit target.
     pub fn pick_on_target_plane(&self, screen: Point, bounds: Rectangle) -> glam::DVec3 {
         let forward = (self.target.as_vec3() - self.eye()).normalize_or(Vec3::NEG_Z);
-        self.unproject_on_plane_f64(screen, bounds, forward, self.target)
+        self.unproject_on_plane(screen, bounds, forward, self.target)
     }
 
 

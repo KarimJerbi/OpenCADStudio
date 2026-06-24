@@ -43,7 +43,7 @@ pub fn grips_to_screen(
             // Project from the f64 grip position via the relative-to-eye path so
             // the grip stays glued to the wire at UTM-scale coordinates (an
             // `as_vec3` cast first would quantize it ~0.5 m off at high zoom).
-            let screen = match camera.project_f64(g.world, bounds) {
+            let screen = match camera.project(g.world, bounds) {
                 Some(p) => Point::new(bounds.x + p.x, bounds.y + p.y),
                 None => Point::new(f32::NAN, f32::NAN),
             };
@@ -115,7 +115,7 @@ pub fn find_hit_grip(
     let mut best: Option<(usize, bool, DVec3)> = None;
 
     for g in grips {
-        let Some(screen) = camera.project_f64(g.world, bounds) else {
+        let Some(screen) = camera.project(g.world, bounds) else {
             continue;
         };
         let screen = Point::new(screen.x, screen.y);
@@ -131,7 +131,7 @@ pub fn find_hit_grip(
 }
 
 /// Project an f64 world point with an explicit relative-to-eye `(view_rot,
-/// eye)` pair — the camera-less form of `Camera::project_f64`. Used by the
+/// eye)` pair — the camera-less form of `Camera::project`. Used by the
 /// in-viewport editing path, which supplies a *composed* model→screen view
 /// (see `Scene::composed_viewport_view`) instead of a real camera.
 fn project_rte(world: DVec3, view_rot: Mat4, eye: DVec3, bounds: Rectangle) -> Option<Vec2> {

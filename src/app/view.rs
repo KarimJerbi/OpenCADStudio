@@ -221,14 +221,19 @@ impl OpenCADStudio {
                 None
             };
 
-            // OST tracking points → screen positions.
+            // OST tracking points → screen positions, projected relative-to-eye
+            // so they stay precise at UTM-scale coordinates (the full
+            // view-projection cancels catastrophically in f32).
             let ost_points: Vec<overlay::OstTrackPoint> = if self.snapper.otrack_enabled {
-                let vp_mat = tab.scene.camera.borrow().view_proj(vp_bounds);
+                let (view_rot, eye) = {
+                    let cam = tab.scene.camera.borrow();
+                    (cam.view_proj_rte(vp_bounds), cam.eye_f64())
+                };
                 self.snapper
                     .tracking_points
                     .iter()
                     .map(|&wp| {
-                        let ndc = vp_mat.project_point3(wp);
+                        let ndc = view_rot.project_point3((wp.as_dvec3() - eye).as_vec3());
                         overlay::OstTrackPoint {
                             screen: iced::Point::new(
                                 (ndc.x + 1.0) * 0.5 * vp_bounds.width,
