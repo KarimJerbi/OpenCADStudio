@@ -241,8 +241,10 @@ pub fn clip_hatch_boundary(
             if !out.is_empty() {
                 out.push([f32::NAN, f32::NAN]);
             }
+            // Lower back into the loop's `world_origin`-relative space so the
+            // result keeps the same f32-precision anchor the renderer adds back.
             for p in clipped {
-                out.push([p[0], p[1]]);
+                out.push([p[0] - ox, p[1] - oy]);
             }
         }
     }
@@ -603,7 +605,7 @@ mod tests {
         ins.common.xdictionary_handle = Some(h_xdict);
 
         let resolved = insert_spatial_filter(&doc, &ins).expect("filter resolves");
-        let poly = world_clip_polygon_f64(resolved, &ins, [0.0, 0.0, 0.0]);
+        let poly = world_clip_polygon_f64(resolved, &ins);
         assert_eq!(poly.len(), 4);
 
         // A polyline half inside, half outside the 0..10 square.
@@ -672,7 +674,7 @@ mod tests {
         ins.set_x_scale(0.1);
         ins.set_y_scale(0.1);
 
-        let poly = world_clip_polygon(&sf, &ins, [0.0, 0.0, 0.0]);
+        let poly = world_clip_polygon(&sf, &ins);
         // vert (580,4528) → ×1000 → (580000,4528000) → ×0.1 + insert →
         // (639668, 4516955).
         let xs: Vec<f32> = poly.iter().map(|p| p[0]).collect();
