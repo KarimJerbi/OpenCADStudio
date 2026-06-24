@@ -7,7 +7,7 @@
 use rustc_hash::FxHashMap as HashMap;
 
 use acadrust::Handle;
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 use iced::{Point, Rectangle};
 
 use crate::scene::model::hatch_model::HatchModel;
@@ -55,7 +55,7 @@ pub fn click_hit<'a>(
             let mut sx1 = f32::MIN;
             let mut sy1 = f32::MIN;
             for (cx, cy) in [(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)] {
-                let s = world_to_screen(Vec3::new(cx, cy, 0.0), view_rot, eye, bounds);
+                let s = world_to_screen(glam::DVec3::new(cx as f64, cy as f64, 0.0), view_rot, eye, bounds);
                 sx0 = sx0.min(s.x);
                 sx1 = sx1.max(s.x);
                 sy0 = sy0.min(s.y);
@@ -68,12 +68,12 @@ pub fn click_hit<'a>(
             }
         }
         let mut prev: Option<Point> = None;
-        for &[px, py, pz] in &wire.points {
+        for (i, &[px, py, pz]) in wire.points.iter().enumerate() {
             if px.is_nan() {
                 prev = None;
                 continue;
             }
-            let cur = world_to_screen(Vec3::new(px, py, pz), view_rot, eye, bounds);
+            let cur = world_to_screen(wp64([px, py, pz], &wire.points_low, i), view_rot, eye, bounds);
             if let Some(p0) = prev {
                 let d = dist_point_to_segment(cursor, p0, cur);
                 if d < best_dist {
@@ -103,12 +103,12 @@ pub fn click_hits_all<'a>(
         let mut prev: Option<Point> = None;
         let mut best_for_wire = CLICK_THRESHOLD_PX;
         let mut hit = false;
-        for &[px, py, pz] in &wire.points {
+        for (i, &[px, py, pz]) in wire.points.iter().enumerate() {
             if px.is_nan() {
                 prev = None;
                 continue;
             }
-            let cur = world_to_screen(Vec3::new(px, py, pz), view_rot, eye, bounds);
+            let cur = world_to_screen(wp64([px, py, pz], &wire.points_low, i), view_rot, eye, bounds);
             if let Some(p0) = prev {
                 let d = dist_point_to_segment(cursor, p0, cur);
                 if d < best_for_wire {
@@ -141,18 +141,15 @@ pub fn mesh_click_hit<'a>(
     for (handle, mesh) in meshes {
         let v = &mesh.verts;
         let idx = &mesh.indices;
+        let lo = &mesh.verts_low;
         let mut t = 0;
         while t + 2 < idx.len() {
-            let tri = [
-                v[idx[t] as usize],
-                v[idx[t + 1] as usize],
-                v[idx[t + 2] as usize],
-            ];
+            let tri = [idx[t] as usize, idx[t + 1] as usize, idx[t + 2] as usize];
             t += 3;
             let mut sp = [Point::ORIGIN; 3];
             let mut depth = 0.0f32;
-            for (j, w) in tri.iter().enumerate() {
-                let ndc = view_rot.project_point3((Vec3::new(w[0], w[1], w[2]).as_dvec3() - eye).as_vec3());
+            for (j, &k) in tri.iter().enumerate() {
+                let ndc = view_rot.project_point3((mesh_vert(v[k], lo, k) - eye).as_vec3());
                 sp[j] = Point::new(
                     (ndc.x + 1.0) * 0.5 * bounds.width,
                     (1.0 - ndc.y) * 0.5 * bounds.height,
@@ -171,12 +168,26 @@ pub fn mesh_click_hit<'a>(
     best.map(|(_, h)| h)
 }
 
+/// Reconstruct a mesh vertex's absolute f64 position from its high/low pair —
+/// without the low residual the f32 high alone is ~0.5 m off at UTM scale and
+/// box / lasso / face selection lands on the wrong place.
+#[inline]
+fn mesh_vert(hi: [f32; 3], low: &[[f32; 3]], i: usize) -> glam::DVec3 {
+    let l = low.get(i).copied().unwrap_or([0.0; 3]);
+    glam::DVec3::new(
+        hi[0] as f64 + l[0] as f64,
+        hi[1] as f64 + l[1] as f64,
+        hi[2] as f64 + l[2] as f64,
+    )
+}
+
 /// Project a mesh's vertices to screen space.
 fn project_mesh_verts(mesh: &MeshModel, view_rot: Mat4, eye: glam::DVec3, bounds: Rectangle) -> Vec<Point> {
     mesh.verts
         .iter()
-        .map(|w| {
-            let ndc = view_rot.project_point3((Vec3::new(w[0], w[1], w[2]).as_dvec3() - eye).as_vec3());
+        .enumerate()
+        .map(|(i, &w)| {
+            let ndc = view_rot.project_point3((mesh_vert(w, &mesh.verts_low, i) - eye).as_vec3());
             Point::new(
                 (ndc.x + 1.0) * 0.5 * bounds.width,
                 (1.0 - ndc.y) * 0.5 * bounds.height,
@@ -336,16 +347,23 @@ pub fn box_hit<'a>(
                 return None;
             };
 
+            // Low residual parallel to `pts` (empty for the AABB fallback,
+            // whose coarse f32 box doesn't carry one).
+            let low: &[[f32; 3]] = if !wire.points.is_empty() {
+                &wire.points_low
+            } else {
+                &[]
+            };
             let mut hit = false;
             let mut all_inside = true;
             let mut prev: Option<Point> = None;
 
-            for &[px, py, pz] in pts {
+            for (i, &[px, py, pz]) in pts.iter().enumerate() {
                 if px.is_nan() {
                     prev = None;
                     continue;
                 }
-                let sp = world_to_screen(Vec3::new(px, py, pz), view_rot, eye, bounds);
+                let sp = world_to_screen(wp64([px, py, pz], low, i), view_rot, eye, bounds);
                 if crossing {
                     if inside(sp) {
                         hit = true;
@@ -424,16 +442,21 @@ pub fn poly_hit<'a>(
                 return None;
             };
 
+            let low: &[[f32; 3]] = if !wire.points.is_empty() {
+                &wire.points_low
+            } else {
+                &[]
+            };
             let mut hit = false;
             let mut all_inside = true;
             let mut prev: Option<Point> = None;
 
-            for &[px, py, pz] in pts {
+            for (i, &[px, py, pz]) in pts.iter().enumerate() {
                 if px.is_nan() {
                     prev = None;
                     continue;
                 }
-                let sp = world_to_screen(Vec3::new(px, py, pz), view_rot, eye, bounds);
+                let sp = world_to_screen(wp64([px, py, pz], low, i), view_rot, eye, bounds);
                 if crossing {
                     if point_in_polygon(sp, poly) {
                         hit = true;
@@ -469,11 +492,25 @@ pub fn poly_hit<'a>(
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-fn world_to_screen(world: Vec3, view_rot: Mat4, eye: glam::DVec3, bounds: Rectangle) -> Point {
-    let ndc = view_rot.project_point3((world.as_dvec3() - eye).as_vec3());
+fn world_to_screen(world: glam::DVec3, view_rot: Mat4, eye: glam::DVec3, bounds: Rectangle) -> Point {
+    let ndc = view_rot.project_point3((world - eye).as_vec3());
     Point::new(
         (ndc.x + 1.0) * 0.5 * bounds.width,
         (1.0 - ndc.y) * 0.5 * bounds.height,
+    )
+}
+
+/// Reconstruct the absolute-f64 world position of wire vertex `i` from its
+/// double-single high (`points`) + low (`points_low`) pair. At UTM scale the
+/// high f32 alone is ~0.5 m off, which throws box / lasso / click selection
+/// edges off by metres; adding the low residual restores f64 precision.
+#[inline]
+fn wp64(hi: [f32; 3], low: &[[f32; 3]], i: usize) -> glam::DVec3 {
+    let l = low.get(i).copied().unwrap_or([0.0; 3]);
+    glam::DVec3::new(
+        hi[0] as f64 + l[0] as f64,
+        hi[1] as f64 + l[1] as f64,
+        hi[2] as f64 + l[2] as f64,
     )
 }
 
@@ -609,14 +646,13 @@ fn hatch_contains_screen_point(
     // boundary verts are stored as small f32 offsets from
     // `world_origin` (f64). Reconstruct offset-rel WCS before
     // projecting to screen.
-    let ox = hatch.world_origin[0] as f32;
-    let oy = hatch.world_origin[1] as f32;
+    let (ox, oy) = (hatch.world_origin[0], hatch.world_origin[1]);
     let screen: Vec<Point> = hatch
         .boundary
         .iter()
         .map(|&[x, y]| {
             if x.is_finite() && y.is_finite() {
-                world_to_screen(Vec3::new(x + ox, y + oy, 0.0), view_rot, eye, bounds)
+                world_to_screen(glam::DVec3::new(x as f64 + ox, y as f64 + oy, 0.0), view_rot, eye, bounds)
             } else {
                 // Preserve path separators for the NaN-aware
                 // point_in_polygon ray-cast.
@@ -654,12 +690,11 @@ pub fn box_hit_hatch(
             if hatch.boundary.is_empty() {
                 return None;
             }
-            let ox = hatch.world_origin[0] as f32;
-            let oy = hatch.world_origin[1] as f32;
+            let (ox, oy) = (hatch.world_origin[0], hatch.world_origin[1]);
             let screen: Vec<Point> = hatch
                 .boundary
                 .iter()
-                .map(|&[x, y]| world_to_screen(Vec3::new(x + ox, y + oy, 0.0), view_rot, eye, bounds))
+                .map(|&[x, y]| world_to_screen(glam::DVec3::new(x as f64 + ox, y as f64 + oy, 0.0), view_rot, eye, bounds))
                 .collect();
             let hit = if crossing {
                 screen.iter().any(|&sp| inside(sp))
@@ -694,12 +729,11 @@ pub fn poly_hit_hatch(
             if hatch.boundary.is_empty() {
                 return None;
             }
-            let ox = hatch.world_origin[0] as f32;
-            let oy = hatch.world_origin[1] as f32;
+            let (ox, oy) = (hatch.world_origin[0], hatch.world_origin[1]);
             let screen: Vec<Point> = hatch
                 .boundary
                 .iter()
-                .map(|&[x, y]| world_to_screen(Vec3::new(x + ox, y + oy, 0.0), view_rot, eye, bounds))
+                .map(|&[x, y]| world_to_screen(glam::DVec3::new(x as f64 + ox, y as f64 + oy, 0.0), view_rot, eye, bounds))
                 .collect();
             let hit = if crossing {
                 screen.iter().any(|&sp| point_in_polygon(sp, poly))
