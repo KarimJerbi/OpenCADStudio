@@ -145,9 +145,8 @@ pub fn tessellate(
             // single MTEXT can hand back N colour-distinct wires when the
             // value mixes inline colours.
             TruckObject::Text(stroke_groups) => {
-                let [ox, oy, oz] = [0.0_f64; 3];
                 let entity_zf = entity_z(entity) as f64;
-                let elev_v = entity_zf - oz;
+                let elev_v = entity_zf;
 
                 // anno_scale anchors at the first group's origin so multi-line
                 // MText lines spread apart correctly as they grow.
@@ -155,8 +154,8 @@ pub fn tessellate(
                     .first()
                     .map(|g| g.origin)
                     .unwrap_or([0.0, 0.0]);
-                let ref_lx_v = ref_origin[0] - ox;
-                let ref_ly_v = ref_origin[1] - oy;
+                let ref_lx_v = ref_origin[0];
+                let ref_ly_v = ref_origin[1];
 
                 // Selection forces a single uniform colour — never split.
                 let split_by_color = !selected;
@@ -179,8 +178,8 @@ pub fn tessellate(
 
                 let anno = anno_scale as f64;
                 for group in &stroke_groups {
-                    let lx_v = group.origin[0] - ox;
-                    let ly_v = group.origin[1] - oy;
+                    let lx_v = group.origin[0];
+                    let ly_v = group.origin[1];
                     let slx_v = (lx_v - ref_lx_v) * anno + ref_lx_v;
                     let sly_v = (ly_v - ref_ly_v) * anno + ref_ly_v;
                     let bin_key = if split_by_color { group.color } else { None };
@@ -213,7 +212,7 @@ pub fn tessellate(
                 let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
+                    .map(|[x, y, z]| [x, y, z])
                     .collect();
 
                 // Empty input (no glyphs) → emit a single empty wire so the
@@ -289,11 +288,10 @@ pub fn tessellate(
                     TruckTessResult::Point([x, y, z], [xl, yl, zl]) => {
                         let s = 0.1_f32;
                         let snap_pts = te.snap_pts;
-                        let [ox, oy, oz] = [0.0_f64; 3];
                         let key_vertices: Vec<[f64; 3]> = te
                             .key_vertices
                             .into_iter()
-                            .map(|[kx, ky, kz]| [kx - ox, ky - oy, kz - oz])
+                            .map(|[kx, ky, kz]| [kx, ky, kz])
                             .collect();
                         return vec![WireModel {
                             name,
@@ -332,12 +330,11 @@ pub fn tessellate(
                 if let TruckTessResult::Lines(points, points_low) =
                     tessellate_edge(&e)
                 {
-                    let [ox, oy, oz] = [0.0_f64; 3];
                     let snap_pts = te.snap_pts;
                     let key_vertices: Vec<[f64; 3]> = te
                         .key_vertices
                         .into_iter()
-                        .map(|[x, y, z]| [x - ox, y - oy, z - oz])
+                        .map(|[x, y, z]| [x, y, z])
                         .collect();
                     return vec![WireModel {
                         name,
@@ -365,12 +362,11 @@ pub fn tessellate(
                 if let TruckTessResult::Lines(points, points_low) =
                     tessellate_wire(&w)
                 {
-                    let [ox, oy, oz] = [0.0_f64; 3];
                     let snap_pts = te.snap_pts;
                     let key_vertices: Vec<[f64; 3]> = te
                         .key_vertices
                         .into_iter()
-                        .map(|[x, y, z]| [x - ox, y - oy, z - oz])
+                        .map(|[x, y, z]| [x, y, z])
                         .collect();
                     return vec![WireModel {
                         name,
@@ -401,13 +397,12 @@ pub fn tessellate(
                 // GPU shader pairs them so drawings at large UTM-style
                 // coordinates keep sub-unit precision in the wire model and
                 // don't jitter on camera movement.
-                let [ox, oy, oz] = [0.0_f64; 3];
                 let (local_pts, local_pts_low) = points_to_ds(points);
                 let snap_pts = te.snap_pts;
                 let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
+                    .map(|[x, y, z]| [x, y, z])
                     .collect();
                 let (fill_tris, fill_tris_low) = points_to_ds(te.fill_tris);
                 return vec![WireModel {
@@ -432,13 +427,12 @@ pub fn tessellate(
             }
 
             TruckObject::SegmentedLines(points) => {
-                let [ox, oy, oz] = [0.0_f64; 3];
                 let (local_pts, local_pts_low) = points_to_ds(points);
                 let snap_pts = te.snap_pts;
                 let key_vertices: Vec<[f64; 3]> = te
                     .key_vertices
                     .into_iter()
-                    .map(|[x, y, z]| [x - ox, y - oy, z - oz])
+                    .map(|[x, y, z]| [x, y, z])
                     .collect();
                 return vec![WireModel {
                     name,
@@ -470,9 +464,8 @@ pub fn tessellate(
                 let wire_pts = solid_wire_fallback(entity);
                 let mut wm = WireModel::solid_f64(name, wire_pts, color, selected);
                 // Add insertion snap at point_of_reference.
-                let [ox, oy, oz] = [0.0_f64; 3];
                 if let Some(p) = crate::entities::solid3d::point_of_reference(entity) {
-                    let sp = glam::DVec3::new(p.x - ox, p.y - oy, p.z - oz);
+                    let sp = glam::DVec3::new(p.x, p.y, p.z);
                     wm.snap_pts.push((sp, SnapHint::Insertion));
                 }
                 return vec![wm];
@@ -706,9 +699,8 @@ fn fallback_geometry(entity: &EntityType) -> Geometry {
             let pts = solid_wire_fallback(entity);
             let mut snap = vec![];
             if let Some(p) = crate::entities::solid3d::point_of_reference(entity) {
-                let [ox, oy, oz] = [0.0_f64; 3];
                 snap.push((
-                    Vec3::new((p.x - ox) as f32, (p.y - oy) as f32, (p.z - oz) as f32),
+                    Vec3::new((p.x) as f32, (p.y) as f32, (p.z) as f32),
                     SnapHint::Insertion,
                 ));
             }
@@ -727,7 +719,6 @@ fn fallback_geometry(entity: &EntityType) -> Geometry {
 /// ACIS data.  We use this as a visible fallback when the SAT tessellator
 /// produces no mesh (e.g. binary SAB data or unsupported geometry).
 fn solid_wire_fallback(entity: &EntityType) -> Vec<[f64; 3]> {
-    let [ox, oy, oz] = [0.0_f64; 3];
     let Some(wires) = crate::entities::solid3d::fallback_wires(entity) else {
         return vec![];
     };
@@ -741,7 +732,7 @@ fn solid_wire_fallback(entity: &EntityType) -> Vec<[f64; 3]> {
             continue;
         }
         for v in &wire.points {
-            pts.push([v.x - ox, v.y - oy, v.z - oz]);
+            pts.push([v.x, v.y, v.z]);
         }
         // NaN sentinel separates distinct wire segments.
         pts.push([f64::NAN, f64::NAN, f64::NAN]);

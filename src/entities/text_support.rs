@@ -1722,9 +1722,8 @@ pub(crate) fn text_baseline_points(
         return vec![];
     }
     let n_lines = n_lines.max(1);
-    let [ox, oy, oz] = [0.0_f64; 3];
     let cast = |p: [f64; 3]| -> [f32; 3] {
-        [(p[0] - ox) as f32, (p[1] - oy) as f32, (p[2] - oz) as f32]
+        [(p[0]) as f32, (p[1]) as f32, (p[2]) as f32]
     };
     let bl = cast(corners[0]);
     let br = cast(corners[1]);
@@ -1782,9 +1781,8 @@ pub(crate) fn text_greek_obb_tris(
         return vec![];
     }
     let n_lines = n_lines.max(1);
-    let [ox, oy, oz] = [0.0_f64; 3];
     let cast = |p: [f64; 3]| -> [f32; 3] {
-        [(p[0] - ox) as f32, (p[1] - oy) as f32, (p[2] - oz) as f32]
+        [(p[0]) as f32, (p[1]) as f32, (p[2]) as f32]
     };
     let bl = cast(corners[0]);
     let br = cast(corners[1]);

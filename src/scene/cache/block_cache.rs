@@ -673,17 +673,16 @@ pub fn expand_insert(
     let name = ins_handle.value().to_string();
     let mut batches = Batches::default();
     let mut visited: Vec<String> = Vec::with_capacity(8);
-    let [ox, oy, _] = [0.0_f64; 3];
 
     // `defn.aabb_local` is in the defn's offset frame — re-add
     // `defn.local_offset` (f64) before transforming so the world AABB is
     // accurate for distant content.
     let insert_world = transform_offset_aabb_xy(defn.aabb_local, defn.local_offset, &xform);
     let insert_local = [
-        insert_world[0] - ox as f32,
-        insert_world[1] - oy as f32,
-        insert_world[2] - ox as f32,
-        insert_world[3] - oy as f32,
+        insert_world[0] as f32,
+        insert_world[1] as f32,
+        insert_world[2] as f32,
+        insert_world[3] as f32,
     ];
 
     // Whole-Insert frustum cull.
@@ -742,7 +741,6 @@ fn emit_greeked_text(
     ctx: &ExpandCtx,
     out: &mut Batches,
 ) {
-    let [ox, oy, oz] = [0.0_f64; 3];
     let [lo_x, lo_y, lo_z] = defn_lo;
     // Re-add the defn's `local_offset` in f64 before composing with
     // `accum_xform` so the rect corners share the batch's f32 space
@@ -753,7 +751,7 @@ fn emit_greeked_text(
             p[1] as f64 + lo_y,
             p[2] as f64 + lo_z,
         ));
-        [(w.x - ox) as f32, (w.y - oy) as f32, (w.z - oz) as f32]
+        [(w.x) as f32, (w.y) as f32, (w.z) as f32]
     };
 
     // Per-line rects: split the OBB by `h_local` so each visible wrap
@@ -877,7 +875,6 @@ fn emit_text_baseline(
     if h_local <= 0.0 {
         return;
     }
-    let [ox, oy, oz] = [0.0_f64; 3];
     let [lo_x, lo_y, lo_z] = defn_lo;
     let xf = |p: [f32; 3]| -> [f32; 3] {
         let w = accum_xform.apply(Vector3::new(
@@ -885,7 +882,7 @@ fn emit_text_baseline(
             p[1] as f64 + lo_y,
             p[2] as f64 + lo_z,
         ));
-        [(w.x - ox) as f32, (w.y - oy) as f32, (w.z - oz) as f32]
+        [(w.x) as f32, (w.y) as f32, (w.z) as f32]
     };
 
     // Single line: just obb[0] → obb[1]. Skip when the projected length
@@ -1216,12 +1213,11 @@ fn expand_defn(
                 // `defn_lo` (in f64) before composing with `accum_xform`
                 // so culling uses correct world-space corners.
                 let world = transform_offset_aabb_xy(lw.aabb_local, defn_lo, accum_xform);
-                let [ox, oy, _] = [0.0_f64; 3];
                 let local = [
-                    world[0] - ox as f32,
-                    world[1] - oy as f32,
-                    world[2] - ox as f32,
-                    world[3] - oy as f32,
+                    world[0] as f32,
+                    world[1] as f32,
+                    world[2] as f32,
+                    world[3] as f32,
                 ];
                 if let Some(view) = ctx.view_aabb {
                     if aabb_disjoint_xy(local, view) {
@@ -1279,12 +1275,11 @@ fn expand_defn(
                     nested_defn.local_offset,
                     &composed,
                 );
-                let [ox, oy, _] = [0.0_f64; 3];
                 let local = [
-                    world[0] - ox as f32,
-                    world[1] - oy as f32,
-                    world[2] - ox as f32,
-                    world[3] - oy as f32,
+                    world[0] as f32,
+                    world[1] as f32,
+                    world[2] as f32,
+                    world[3] as f32,
                 ];
                 if let Some(view) = ctx.view_aabb {
                     if aabb_disjoint_xy(local, view) {
@@ -1383,7 +1378,6 @@ fn emit_wire(
     if lw.points.is_empty() && lw.fill_tris.is_empty() {
         return;
     }
-    let [ox, oy, oz] = [0.0_f64; 3];
     let [lo_x, lo_y, lo_z] = defn_lo;
 
     // Resolve final style for this LocalWire against the outer Insert ctx
@@ -1471,12 +1465,12 @@ fn emit_wire(
                 p[1] as f64 + pl[1] as f64 + lo_y,
                 p[2] as f64 + pl[2] as f64 + lo_z,
             ));
-            let qx = (v.x - ox) as f32;
-            let qy = (v.y - oy) as f32;
-            let qz = (v.z - oz) as f32;
-            let qx_l = ((v.x - ox) - qx as f64) as f32;
-            let qy_l = ((v.y - oy) - qy as f64) as f32;
-            let qz_l = ((v.z - oz) - qz as f64) as f32;
+            let qx = (v.x) as f32;
+            let qy = (v.y) as f32;
+            let qz = (v.z) as f32;
+            let qx_l = ((v.x) - qx as f64) as f32;
+            let qy_l = ((v.y) - qy as f64) as f32;
+            let qz_l = ((v.z) - qz as f64) as f32;
             let q = [qx, qy, qz];
             if qx < entry.min_x {
                 entry.min_x = qx;
@@ -1501,7 +1495,7 @@ fn emit_wire(
             p[1] as f64 + lo_y,
             p[2] as f64 + lo_z,
         ));
-        entry.key_vertices.push([v.x - ox, v.y - oy, v.z - oz]);
+        entry.key_vertices.push([v.x, v.y, v.z]);
     }
     for (p, hint) in &lw.snap_pts {
         let v = accum_xform.apply(Vector3::new(
@@ -1510,7 +1504,7 @@ fn emit_wire(
             p.z as f64 + lo_z,
         ));
         entry.snap_pts.push((
-            glam::DVec3::new(v.x - ox, v.y - oy, v.z - oz),
+            glam::DVec3::new(v.x, v.y, v.z),
             *hint,
         ));
     }
@@ -1527,7 +1521,7 @@ fn emit_wire(
         ));
         entry
             .fill_tris
-            .push([(v.x - ox) as f32, (v.y - oy) as f32, (v.z - oz) as f32]);
+            .push([(v.x) as f32, (v.y) as f32, (v.z) as f32]);
     }
 
 }
@@ -1537,7 +1531,6 @@ fn transform_tangent(
     t: &Transform,
     defn_lo: [f64; 3],
 ) -> TangentGeom {
-    let [ox, oy, oz] = [0.0_f64; 3];
     let [lo_x, lo_y, lo_z] = defn_lo;
     match tg {
         TangentGeom::Line { p1, p2 } => {
@@ -1552,8 +1545,8 @@ fn transform_tangent(
                 p2[2] as f64 + lo_z,
             ));
             TangentGeom::Line {
-                p1: [(q1.x - ox) as f32, (q1.y - oy) as f32, (q1.z - oz) as f32],
-                p2: [(q2.x - ox) as f32, (q2.y - oy) as f32, (q2.z - oz) as f32],
+                p1: [(q1.x) as f32, (q1.y) as f32, (q1.z) as f32],
+                p2: [(q2.x) as f32, (q2.y) as f32, (q2.z) as f32],
             }
         }
         TangentGeom::Circle { center, radius } => {
@@ -1567,7 +1560,7 @@ fn transform_tangent(
             let sy = ((m[1][0] * m[1][0] + m[1][1] * m[1][1] + m[1][2] * m[1][2]) as f64).sqrt();
             let s = ((sx + sy) * 0.5) as f32;
             TangentGeom::Circle {
-                center: [(c.x - ox) as f32, (c.y - oy) as f32, (c.z - oz) as f32],
+                center: [(c.x) as f32, (c.y) as f32, (c.z) as f32],
                 radius: radius * s,
             }
         }

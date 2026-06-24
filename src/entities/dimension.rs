@@ -1449,10 +1449,9 @@ fn text_fill_rect(
     let (sr, cr) = rot.sin_cos();
     let hx = approx_w * 0.5;
     let hy = approx_h * 0.5;
-    let [ox, oy, oz] = [0.0_f64; 3];
-    let cx = (pos.x - ox) as f32;
-    let cy = (pos.y - oy) as f32;
-    let cz = (pos.z - oz) as f32;
+    let cx = (pos.x) as f32;
+    let cy = (pos.y) as f32;
+    let cz = (pos.z) as f32;
     let corner = |dx: f64, dy: f64| -> [f32; 3] {
         let lx = dx * cr - dy * sr;
         let ly = dx * sr + dy * cr;
