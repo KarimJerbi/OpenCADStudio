@@ -759,9 +759,10 @@ mod aabb_reject_tests {
         let near = wire("5", vec![[-0.02, 0.0, 0.0], [0.02, 0.0, 0.0]], [-0.02, 0.0, 0.02, 0.0]);
         let far = wire("9", vec![[0.9, 0.9, 0.0], [0.95, 0.9, 0.0]], [0.9, 0.9, 0.95, 0.9]);
 
-        assert_eq!(click_hit(cursor, std::slice::from_ref(&near), vp, bounds), Some("5"));
-        assert_eq!(click_hit(cursor, std::slice::from_ref(&far), vp, bounds), None);
+        let eye = glam::DVec3::ZERO;
+        assert_eq!(click_hit(cursor, std::slice::from_ref(&near), vp, eye, bounds), Some("5"));
+        assert_eq!(click_hit(cursor, std::slice::from_ref(&far), vp, eye, bounds), None);
         // The far wire must be rejected without hiding the near one.
-        assert_eq!(click_hit(cursor, &[far, near], vp, bounds), Some("5"));
+        assert_eq!(click_hit(cursor, &[far, near], vp, eye, bounds), Some("5"));
     }
 }

@@ -356,7 +356,7 @@ mod tests {
             host.start_interactive(Box::new(PlacePoint { got_first: false }));
         }
         assert!(app.tabs[0].active_cmd.is_some());
-        for pt in [glam::Vec3::new(0.0, 0.0, 0.0), glam::Vec3::new(5.0, 5.0, 0.0)] {
+        for pt in [glam::DVec3::new(0.0, 0.0, 0.0), glam::DVec3::new(5.0, 5.0, 0.0)] {
             let r = app.tabs[0].active_cmd.as_mut().unwrap().on_point(pt);
             let _ = app.apply_cmd_result(r);
         }
@@ -410,7 +410,7 @@ mod tests {
             .active_cmd
             .as_mut()
             .unwrap()
-            .on_entity_pick(target, glam::Vec3::new(3.0, 4.0, 0.0));
+            .on_entity_pick(target, glam::DVec3::new(3.0, 4.0, 0.0));
         let _ = app.apply_cmd_result(r);
         // Original point + the mark the command committed.
         assert_eq!(app.tabs[0].scene.document.entities().count(), 2);

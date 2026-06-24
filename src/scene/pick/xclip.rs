@@ -67,6 +67,21 @@ pub fn world_clip_polygon(
     ins: &Insert,
     world_offset: [f64; 3],
 ) -> Vec<[f32; 2]> {
+    world_clip_polygon_f64(sf, ins, world_offset)
+        .into_iter()
+        .map(|[x, y]| [x as f32, y as f32])
+        .collect()
+}
+
+/// f64 variant of [`world_clip_polygon`]. The boundary stays in absolute world
+/// coordinates so clipping at UTM scale (~5.7e6) is precise — the f32 version
+/// quantizes each vertex by ~0.5 m, which warps the clip region and breaks both
+/// the clipped render and ZOOM Extents.
+pub fn world_clip_polygon_f64(
+    sf: &SpatialFilter,
+    ins: &Insert,
+    world_offset: [f64; 3],
+) -> Vec<[f64; 2]> {
     let xform = ins.get_transform();
     let inv_block = &sf.inverse_block_transform;
     let [ox, oy, _] = world_offset;
@@ -82,7 +97,7 @@ pub fn world_clip_polygon(
         .map(|[x, y]| {
             let block = inv_block.transform_point(Vector3::new(x, y, 0.0));
             let w = xform.apply(block);
-            [(w.x - ox) as f32, (w.y - oy) as f32]
+            [w.x - ox, w.y - oy]
         })
         .collect()
 }
@@ -91,23 +106,100 @@ pub fn world_clip_polygon(
 /// world_offset-subtracted). Polylines are split into NaN-separated inside
 /// runs; fill triangles are clipped against the polygon; snap / key vertices
 /// outside the boundary are dropped. Wires left with no geometry are removed.
-pub fn clip_wires(wires: &mut Vec<WireModel>, poly: &[[f32; 2]]) {
+pub fn clip_wires(wires: &mut Vec<WireModel>, poly: &[[f64; 2]]) {
     if poly.len() < 3 {
         return;
     }
+    // Clip in a frame relative to the boundary's first vertex: the wire points
+    // arrive as absolute coordinates (double-single high+low), which at UTM
+    // scale are ~5.7e6 and lose ~0.5 m in f32. Subtracting the f64 reference
+    // makes every coordinate small, so the f32 Sutherland–Hodgman math is exact;
+    // the reference is added back afterwards and re-split into the high/low pair
+    // the relative-to-eye renderer expects.
+    let (rx, ry) = (poly[0][0], poly[0][1]);
+    let lpoly: Vec<[f32; 2]> = poly
+        .iter()
+        .map(|&[x, y]| [(x - rx) as f32, (y - ry) as f32])
+        .collect();
+
+    // Reconstruct an absolute-f64 wire point from its high/low pair, NaN-safe.
+    let abs = |hi: [f32; 3], lo: [f32; 3]| -> [f64; 3] {
+        [
+            hi[0] as f64 + lo[0] as f64,
+            hi[1] as f64 + lo[1] as f64,
+            hi[2] as f64 + lo[2] as f64,
+        ]
+    };
+
     for w in wires.iter_mut() {
         if !w.points.is_empty() {
-            w.points = clip_polyline(&w.points, poly);
+            // Absolute → local f32 (NaN separators preserved).
+            let local: Vec<[f32; 3]> = (0..w.points.len())
+                .map(|i| {
+                    let hi = w.points[i];
+                    if !hi[0].is_finite() || !hi[1].is_finite() {
+                        return NAN3;
+                    }
+                    let lo = w.points_low.get(i).copied().unwrap_or([0.0; 3]);
+                    let a = abs(hi, lo);
+                    [(a[0] - rx) as f32, (a[1] - ry) as f32, a[2] as f32]
+                })
+                .collect();
+            let clipped = clip_polyline(&local, &lpoly);
+            // Local → absolute, re-split into double-single high/low.
+            let mut hi = Vec::with_capacity(clipped.len());
+            let mut lo = Vec::with_capacity(clipped.len());
+            for p in clipped {
+                if !p[0].is_finite() || !p[1].is_finite() {
+                    hi.push(NAN3);
+                    lo.push([0.0; 3]);
+                    continue;
+                }
+                let (hx, lx) = split_ds(p[0] as f64 + rx);
+                let (hy, ly) = split_ds(p[1] as f64 + ry);
+                let (hz, lz) = split_ds(p[2] as f64);
+                hi.push([hx, hy, hz]);
+                lo.push([lx, ly, lz]);
+            }
+            w.points = hi;
+            w.points_low = lo;
         }
         if !w.fill_tris.is_empty() {
-            w.fill_tris = clip_triangles(&w.fill_tris, poly);
+            let local: Vec<[f32; 3]> = (0..w.fill_tris.len())
+                .map(|i| {
+                    let hi = w.fill_tris[i];
+                    let lo = w.fill_tris_low.get(i).copied().unwrap_or([0.0; 3]);
+                    let a = abs(hi, lo);
+                    [(a[0] - rx) as f32, (a[1] - ry) as f32, a[2] as f32]
+                })
+                .collect();
+            let clipped = clip_triangles(&local, &lpoly);
+            let mut hi = Vec::with_capacity(clipped.len());
+            let mut lo = Vec::with_capacity(clipped.len());
+            for p in clipped {
+                let (hx, lx) = split_ds(p[0] as f64 + rx);
+                let (hy, ly) = split_ds(p[1] as f64 + ry);
+                let (hz, lz) = split_ds(p[2] as f64);
+                hi.push([hx, hy, hz]);
+                lo.push([lx, ly, lz]);
+            }
+            w.fill_tris = hi;
+            w.fill_tris_low = lo;
         }
         w.key_vertices
-            .retain(|v| point_in_poly(v[0] as f32, v[1] as f32, poly));
-        w.snap_pts.retain(|(p, _)| point_in_poly(p.x as f32, p.y as f32, poly));
+            .retain(|v| point_in_poly((v[0] - rx) as f32, (v[1] - ry) as f32, &lpoly));
+        w.snap_pts
+            .retain(|(p, _)| point_in_poly((p.x - rx) as f32, (p.y - ry) as f32, &lpoly));
         w.aabb = recompute_aabb(&w.points, &w.fill_tris);
     }
     wires.retain(|w| !w.points.is_empty() || !w.fill_tris.is_empty());
+}
+
+/// Double-single split of an f64 into (high, low) f32 — mirrors
+/// `WireModel::split_ds` so clipped points match the renderer's reconstruction.
+fn split_ds(v: f64) -> (f32, f32) {
+    let high = v as f32;
+    (high, (v - high as f64) as f32)
 }
 
 /// Clip a hatch fill boundary to `poly`.
@@ -514,7 +606,7 @@ mod tests {
         ins.common.xdictionary_handle = Some(h_xdict);
 
         let resolved = insert_spatial_filter(&doc, &ins).expect("filter resolves");
-        let poly = world_clip_polygon(resolved, &ins, [0.0, 0.0, 0.0]);
+        let poly = world_clip_polygon_f64(resolved, &ins, [0.0, 0.0, 0.0]);
         assert_eq!(poly.len(), 4);
 
         // A polyline half inside, half outside the 0..10 square.
@@ -603,3 +695,4 @@ mod tests {
         assert!(out.iter().all(|p| p[0] <= 10.0 + 1e-3));
     }
 }
+

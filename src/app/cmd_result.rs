@@ -627,7 +627,10 @@ impl OpenCADStudio {
                     // else a block reference renders empty. (#135)
                     self.merge_clipboard_blocks(i);
                     let count = self.clipboard.len();
-                    let new_handles: Vec<Handle> = self
+                    // Index-aligned with `clipboard` (NULL = add failed) so the
+                    // captured extension-dictionary subtrees can be matched back
+                    // to their pasted entity by index.
+                    let by_index: Vec<Handle> = self
                         .clipboard
                         .clone()
                         .into_iter()
@@ -635,10 +638,12 @@ impl OpenCADStudio {
                             crate::scene::view::dispatch::apply_transform(&mut entity, &translate);
                             self.tabs[i].scene.add_entity_clone(entity)
                         })
-                        .filter(|h| !h.is_null())
                         .collect();
+                    // Recreate each pasted entity's xdictionary graph (XCLIP
+                    // spatial filters etc.) in this document. (#xclip-paste)
+                    self.merge_clipboard_ext_objects(i, &by_index);
                     self.tabs[i].scene.deselect_all();
-                    for h in new_handles {
+                    for h in by_index.iter().copied().filter(|h| !h.is_null()) {
                         self.tabs[i].scene.select_entity(h, false);
                     }
                     // Tessellate any pasted ACIS solids — top-level ones and
@@ -1867,6 +1872,54 @@ impl OpenCADStudio {
         }
     }
 
+    /// Recreate the extension-dictionary object graph (XCLIP spatial filters,
+    /// attached XRecords, …) captured for each copied entity, cloning every
+    /// object into this document with fresh handles, remapping all internal
+    /// references, and re-pointing the pasted entity's `xdictionary_handle` at
+    /// the new root. `by_index` is the paste's new entity handles, aligned with
+    /// the clipboard order (NULL where the add failed). No-op without captures.
+    pub(super) fn merge_clipboard_ext_objects(&mut self, i: usize, by_index: &[Handle]) {
+        use std::collections::HashMap;
+        if self.clipboard_deps.ext_objects.is_empty() {
+            return;
+        }
+        let captures = self.clipboard_deps.ext_objects.clone();
+        let doc = &mut self.tabs[i].scene.document;
+        for cap in captures {
+            let Some(&new_entity) = by_index.get(cap.entity_index) else {
+                continue;
+            };
+            if new_entity.is_null() {
+                continue;
+            }
+            // old handle → fresh handle for the whole subtree, plus the entity
+            // itself so an object owned by the entity remaps onto the new copy.
+            let mut remap: HashMap<Handle, Handle> = HashMap::new();
+            remap.insert(cap.src_entity_handle, new_entity);
+            for (old, _) in &cap.objects {
+                // `allocate_handle` advances the counter; `next_handle()` only
+                // peeks, so reusing it here would hand every object the same
+                // handle and they'd overwrite each other in `doc.objects`.
+                remap.insert(*old, doc.allocate_handle());
+            }
+            for (old, obj) in &cap.objects {
+                let mut obj = obj.clone();
+                let new_h = remap[old];
+                remap_object(&mut obj, new_h, &remap);
+                doc.objects.insert(new_h, obj);
+            }
+            // Point the pasted entity at the cloned root dictionary.
+            if let Some(new_root) = remap.get(&cap.root).copied() {
+                if let Some(e) = doc.get_entity_mut(new_entity) {
+                    e.common_mut().xdictionary_handle = Some(new_root);
+                }
+            }
+        }
+        // The wires were tessellated before the filters existed; force a rebuild
+        // so the clip is applied to the freshly-pasted, now-filtered inserts.
+        self.tabs[i].scene.bump_geometry();
+    }
+
     fn restore_pre_cmd_tangent(&mut self) {
         if let Some(was_on) = self.pre_cmd_tangent.take() {
             if !was_on {
@@ -1878,6 +1931,65 @@ impl OpenCADStudio {
             self.ortho_mode = true;
             self.polar_mode = false;
         }
+    }
+}
+
+/// Rewrite a cloned extension-dictionary object onto fresh handles: set its own
+/// handle to `new_handle` and remap its owner and any handle references it holds
+/// through `remap` (a handle still in the source space stays unchanged, which is
+/// correct for cross-references that point outside the captured subtree).
+fn remap_object(
+    obj: &mut acadrust::objects::ObjectType,
+    new_handle: acadrust::Handle,
+    remap: &std::collections::HashMap<acadrust::Handle, acadrust::Handle>,
+) {
+    use acadrust::objects::ObjectType;
+    let map = |h: acadrust::Handle| remap.get(&h).copied().unwrap_or(h);
+    match obj {
+        ObjectType::Dictionary(d) => {
+            d.handle = new_handle;
+            d.owner = map(d.owner);
+            for (_, h) in d.entries.iter_mut() {
+                *h = map(*h);
+            }
+            if let Some(x) = d.xdictionary_handle.as_mut() {
+                *x = map(*x);
+            }
+            for r in d.reactors.iter_mut() {
+                *r = map(*r);
+            }
+        }
+        ObjectType::DictionaryWithDefault(d) => {
+            d.handle = new_handle;
+            d.owner = map(d.owner);
+            for (_, h) in d.entries.iter_mut() {
+                *h = map(*h);
+            }
+            d.default_handle = map(d.default_handle);
+        }
+        ObjectType::DictionaryVariable(v) => {
+            v.handle = new_handle;
+            v.owner_handle = map(v.owner_handle);
+        }
+        ObjectType::SpatialFilter(s) => {
+            s.handle = new_handle;
+            s.owner = map(s.owner);
+        }
+        ObjectType::XRecord(x) => {
+            x.handle = new_handle;
+            x.owner = map(x.owner);
+        }
+        ObjectType::Group(g) => {
+            g.handle = new_handle;
+            g.owner = map(g.owner);
+            for h in g.entities.iter_mut() {
+                *h = map(*h);
+            }
+        }
+        // Other leaf object kinds don't appear in an entity xdictionary; if one
+        // does, it's inserted with the fresh handle below via the caller's key,
+        // but its internal owner is left as-is (best effort).
+        _ => {}
     }
 }
 

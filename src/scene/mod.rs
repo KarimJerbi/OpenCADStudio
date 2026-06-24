@@ -6670,9 +6670,6 @@ impl Scene {
                 if !x.is_finite() || !y.is_finite() {
                     continue;
                 }
-                if x.abs() > lim || y.abs() > lim {
-                    continue;
-                }
                 sx += x as f64;
                 sy += y as f64;
                 n += 1;
@@ -6689,9 +6686,26 @@ impl Scene {
             return;
         }
 
+        // Robust drawing centre (median centroid). `lim` is a span RELATIVE to
+        // this centre, so every reject below is distance-from-centre — geometry
+        // now reaches fit_all as absolute coordinates (no world_offset), which
+        // at UTM scale are ~5.7e6; an absolute `|x| > lim` test would reject the
+        // entire drawing and make ZOOM Extents a no-op.
+        let (mcx, mcy) = {
+            let mut xs: Vec<f32> = cents.iter().map(|c| c.cx).collect();
+            let mut ys: Vec<f32> = cents.iter().map(|c| c.cy).collect();
+            if xs.is_empty() {
+                (0.0_f32, 0.0_f32)
+            } else {
+                xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                (xs[xs.len() / 2], ys[ys.len() / 2])
+            }
+        };
+
         // IQR-based reject only kicks in with enough samples for the quartiles
-        // to be meaningful. Below that, the absolute `lim` filter is the only
-        // gate (legacy behavior).
+        // to be meaningful. Below that, the centre-relative `lim` filter is the
+        // only gate (legacy behavior).
         let (rx_lo, rx_hi, ry_lo, ry_hi) = if cents.len() >= 8 {
             let mut xs: Vec<f32> = cents.iter().map(|c| c.cx).collect();
             let mut ys: Vec<f32> = cents.iter().map(|c| c.cy).collect();
@@ -6712,7 +6726,7 @@ impl Scene {
             let dy = (q3y - q1y).max(1.0) * K;
             (q1x - dx, q3x + dx, q1y - dy, q3y + dy)
         } else {
-            (-lim, lim, -lim, lim)
+            (mcx - lim, mcx + lim, mcy - lim, mcy + lim)
         };
 
         let mut min = glam::Vec3::splat(f32::MAX);
@@ -6726,7 +6740,7 @@ impl Scene {
                 if !x.is_finite() || !y.is_finite() || !z.is_finite() {
                     continue;
                 }
-                if x.abs() > lim || y.abs() > lim {
+                if (x - mcx).abs() > lim || (y - mcy).abs() > lim {
                     continue;
                 }
                 min = min.min(glam::Vec3::new(x, y, z));
@@ -8274,7 +8288,7 @@ fn tessellate_entity(
                 // clip the expanded block geometry to the boundary polygon so
                 // only the portion inside the clip is drawn.
                 if let Some(sf) = pick::xclip::insert_spatial_filter(document, ins) {
-                    let poly = pick::xclip::world_clip_polygon(sf, ins, world_offset);
+                    let poly = pick::xclip::world_clip_polygon_f64(sf, ins, world_offset);
                     pick::xclip::clip_wires(&mut wires, &poly);
                 }
 

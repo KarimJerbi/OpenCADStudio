@@ -631,9 +631,16 @@ impl OpenCADStudio {
                     // else a block reference renders empty in a drawing that
                     // lacks the definition. (#135 / #158)
                     self.merge_clipboard_blocks(i);
-                    for entity in self.clipboard.clone() {
-                        self.tabs[i].scene.add_entity_clone(entity);
-                    }
+                    let by_index: Vec<acadrust::Handle> = self
+                        .clipboard
+                        .clone()
+                        .into_iter()
+                        .map(|entity| self.tabs[i].scene.add_entity_clone(entity))
+                        .collect();
+                    // Recreate each pasted entity's xdictionary graph (XCLIP
+                    // spatial filters etc.) so a cross-drawing paste keeps its
+                    // clip instead of showing the whole block. (#xclip-paste)
+                    self.merge_clipboard_ext_objects(i, &by_index);
                     // Tessellate any pasted ACIS solids (top-level + inside a
                     // recreated block) so they render instead of staying blank.
                     self.tabs[i].scene.populate_meshes_from_document();

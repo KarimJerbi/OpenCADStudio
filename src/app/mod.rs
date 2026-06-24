@@ -665,6 +665,11 @@ pub struct ClipboardDeps {
     /// reference doesn't render empty in a drawing that lacks the
     /// definition. (#135)
     pub blocks: Vec<BlockDef>,
+    /// Extension-dictionary object subtrees hanging off the copied entities
+    /// (XCLIP spatial filters, attached XRecords, …). Each entity's whole
+    /// `xdictionary` graph is snapshotted so a cross-drawing paste recreates it
+    /// — without this a pasted clipped block loses its clip and renders whole.
+    pub ext_objects: Vec<ClipExtObjects>,
 }
 
 /// A captured block definition: its base point and the entities it owns
@@ -675,6 +680,19 @@ pub struct BlockDef {
     pub name: String,
     pub base_point: acadrust::types::Vector3,
     pub entities: Vec<acadrust::EntityType>,
+}
+
+/// The extension-dictionary object graph captured for one copied entity.
+/// `objects` holds every object reachable from the entity's `xdictionary`
+/// (dictionaries + their leaf objects), keyed by their source handles; `root`
+/// is the xdictionary handle. On paste the whole set is cloned into the target
+/// document with fresh handles and the references are remapped.
+#[derive(Clone)]
+pub struct ClipExtObjects {
+    pub entity_index: usize,
+    pub src_entity_handle: acadrust::Handle,
+    pub root: acadrust::Handle,
+    pub objects: Vec<(acadrust::Handle, acadrust::objects::ObjectType)>,
 }
 
 impl ClipboardDeps {
@@ -728,13 +746,72 @@ impl ClipboardDeps {
                 _ => {}
             }
         }
+        // Extension-dictionary subtree per entity (XCLIP filters etc.).
+        let mut ext_objects = Vec::new();
+        for (entity_index, e) in entities.iter().enumerate() {
+            let c = e.common();
+            if let Some(root) = c.xdictionary_handle {
+                if root.is_null() {
+                    continue;
+                }
+                let objects = Self::collect_ext_subtree(doc, root);
+                if !objects.is_empty() {
+                    ext_objects.push(ClipExtObjects {
+                        entity_index,
+                        src_entity_handle: c.handle,
+                        root,
+                        objects,
+                    });
+                }
+            }
+        }
+
         ClipboardDeps {
             layers: layers.iter().filter_map(|n| doc.layers.get(n).cloned()).collect(),
             linetypes: ltypes.iter().filter_map(|n| doc.line_types.get(n).cloned()).collect(),
             text_styles: tstyles.iter().filter_map(|n| doc.text_styles.get(n).cloned()).collect(),
             dim_styles: dstyles.iter().filter_map(|n| doc.dim_styles.get(n).cloned()).collect(),
             blocks,
+            ext_objects,
         }
+    }
+
+    /// Breadth-first collect of every object reachable from extension-dictionary
+    /// `root` (dictionary entries, nested xdictionaries, dictionary defaults),
+    /// returned as `(source_handle, object)` pairs. Cycle-safe.
+    fn collect_ext_subtree(
+        doc: &acadrust::CadDocument,
+        root: acadrust::Handle,
+    ) -> Vec<(acadrust::Handle, acadrust::objects::ObjectType)> {
+        use acadrust::objects::ObjectType;
+        use rustc_hash::FxHashSet;
+        let mut seen: FxHashSet<acadrust::Handle> = FxHashSet::default();
+        let mut queue = vec![root];
+        let mut out = Vec::new();
+        while let Some(h) = queue.pop() {
+            if h.is_null() || !seen.insert(h) {
+                continue;
+            }
+            let Some(obj) = doc.objects.get(&h) else {
+                continue;
+            };
+            // Enqueue children referenced by this object.
+            match obj {
+                ObjectType::Dictionary(d) => {
+                    queue.extend(d.entries.iter().map(|(_, ch)| *ch));
+                    if let Some(x) = d.xdictionary_handle {
+                        queue.push(x);
+                    }
+                }
+                ObjectType::DictionaryWithDefault(d) => {
+                    queue.extend(d.entries.iter().map(|(_, ch)| *ch));
+                    queue.push(d.default_handle);
+                }
+                _ => {}
+            }
+            out.push((h, obj.clone()));
+        }
+        out
     }
 
     /// Snapshot every block definition the `entities` reference through an
