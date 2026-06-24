@@ -9,7 +9,7 @@
 use acadrust::entities::{Dimension, DimensionLinear};
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -67,7 +67,7 @@ impl CadCommand for QdimCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::PlaceLine { handles } = &self.step {
             CmdResult::Relaunch(
                 format!("QDIM_PLACE {:.6} {:.6} {:.6}", pt.x, pt.y, pt.z),
@@ -82,7 +82,7 @@ impl CadCommand for QdimCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if !matches!(self.step, Step::PlaceLine { .. }) {
             return None;
         }

@@ -5,7 +5,7 @@
 //   2. Click the position on the dimension line where the jog should appear
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -55,7 +55,7 @@ impl CadCommand for DimJogLineCommand {
         matches!(self.step, Step::PickDim)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -63,7 +63,7 @@ impl CadCommand for DimJogLineCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::PickJogPos { handle } = &self.step {
             let h = *handle;
             // Emit sentinel for commands.rs to store the jog position
@@ -79,7 +79,7 @@ impl CadCommand for DimJogLineCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if !matches!(self.step, Step::PickJogPos { .. }) {
             return None;
         }

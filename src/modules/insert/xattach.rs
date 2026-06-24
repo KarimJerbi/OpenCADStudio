@@ -12,7 +12,7 @@ use acadrust::entities::{Block, BlockEnd, Insert};
 use acadrust::tables::block_record::{BlockFlags, BlockRecord};
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -50,7 +50,7 @@ impl CadCommand for XAttachCommand {
         format!("XATTACH  Specify insertion point for \"{}\":", self.block_name)
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         // We return the INSERT entity; the command handler in commands.rs
         // calls `prepare_xref_block` on the scene before committing.
         CmdResult::CommitAndExit(EntityType::Insert(Insert::new(
@@ -63,7 +63,7 @@ impl CadCommand for XAttachCommand {
         CmdResult::Cancel
     }
 
-    fn on_preview_wires(&mut self, _pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 

@@ -78,7 +78,7 @@ impl Grippable for Solid3D {
             self.point_of_reference.x += d.x as f64;
             self.point_of_reference.y += d.y as f64;
             self.point_of_reference.z += d.z as f64;
-            translate_wires(&mut self.wires, d);
+            translate_wires(&mut self.wires, d.as_vec3());
         }
     }
 }
@@ -154,7 +154,7 @@ impl Grippable for Region {
             self.point_of_reference.x += d.x as f64;
             self.point_of_reference.y += d.y as f64;
             self.point_of_reference.z += d.z as f64;
-            translate_wires(&mut self.wires, d);
+            translate_wires(&mut self.wires, d.as_vec3());
         }
     }
 }
@@ -222,7 +222,7 @@ impl Grippable for Body {
             self.point_of_reference.x += d.x as f64;
             self.point_of_reference.y += d.y as f64;
             self.point_of_reference.z += d.z as f64;
-            translate_wires(&mut self.wires, d);
+            translate_wires(&mut self.wires, d.as_vec3());
         }
     }
 }

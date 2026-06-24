@@ -11,7 +11,7 @@
 use acadrust::entities::{Dimension, DimensionOrdinate};
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -55,7 +55,7 @@ impl CadCommand for OrdinateDimCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::FeaturePoint => {
                 self.step = Step::LeaderEndpoint { feature: pt };
@@ -78,7 +78,7 @@ impl CadCommand for OrdinateDimCommand {
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_preview_wires(&mut self, _pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 }

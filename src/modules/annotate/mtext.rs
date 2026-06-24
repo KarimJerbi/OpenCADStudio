@@ -1,7 +1,7 @@
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::DVec3;
 
 pub const ICON: IconKind = IconKind::Svg(include_bytes!("../../../assets/icons/mtext.svg"));
 
@@ -41,7 +41,7 @@ impl CadCommand for MTextCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         // Hand off to the in-place editor (toolbar + text area + live preview).
         CmdResult::OpenMTextEditor {
             pos: pt,
@@ -58,7 +58,7 @@ impl CadCommand for MTextCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }

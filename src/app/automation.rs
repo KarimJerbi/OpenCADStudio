@@ -422,7 +422,7 @@ impl OpenCADStudio {
                 if let Some(r) = self.tabs[i]
                     .active_cmd
                     .as_mut()
-                    .map(|c| c.on_entity_pick(handle, pt))
+                    .map(|c| c.on_entity_pick(handle, pt.as_dvec3()))
                 {
                     let _ = self.apply_cmd_result(r);
                 }
@@ -436,7 +436,7 @@ impl OpenCADStudio {
                 }
             }
             self.last_point = Some(pt);
-            if let Some(r) = self.tabs[i].active_cmd.as_mut().map(|c| c.on_point(pt)) {
+            if let Some(r) = self.tabs[i].active_cmd.as_mut().map(|c| c.on_point(pt.as_dvec3())) {
                 let _ = self.apply_cmd_result(r);
             }
         } else if let Some(r) = self.tabs[i]

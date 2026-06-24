@@ -9,7 +9,7 @@
 //      Press Enter to apply changes.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -67,7 +67,7 @@ impl CadCommand for HatcheditCommand {
         matches!(self.step, HatcheditStep::PickHatch)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -136,7 +136,7 @@ impl CadCommand for HatcheditCommand {
         Some(CmdResult::NeedPoint)
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

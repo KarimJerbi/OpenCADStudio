@@ -9,7 +9,7 @@
 use acadrust::entities::RasterImage;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -75,7 +75,7 @@ impl CadCommand for ImageCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Some(origin) = self.origin {
             let entity = self.make_entity(origin, pt);
             CmdResult::CommitAndExit(entity)
@@ -97,7 +97,7 @@ impl CadCommand for ImageCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let origin = self.origin?;
         let world_width = (pt.x - origin.x).abs().max(0.001);
         let world_height = world_width / self.aspect() as f32;

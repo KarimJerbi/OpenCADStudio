@@ -9,7 +9,7 @@
 //           Yes → flip the original in place (no copy kept)
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult, EntityTransform};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -26,9 +26,9 @@ pub fn tool() -> ToolDef {
 
 enum Step {
     P1,
-    P2(Vec3),
+    P2(DVec3),
     /// Both mirror-line points fixed; waiting on the erase-source answer.
-    AskErase { p1: Vec3, p2: Vec3 },
+    AskErase { p1: DVec3, p2: DVec3 },
 }
 
 pub struct MirrorCommand {
@@ -66,7 +66,7 @@ impl CadCommand for MirrorCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.step {
             Step::P1 => {
                 self.step = Step::P2(pt);
@@ -113,7 +113,7 @@ impl CadCommand for MirrorCommand {
         Some(self.finish(p1, p2, erase))
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {
         // While picking the second point the ghost tracks the cursor; once it
         // is fixed (erase prompt) the ghost freezes at the chosen axis.
         let (p1, p2) = match &self.step {
@@ -125,12 +125,15 @@ impl CadCommand for MirrorCommand {
         let mut out: Vec<WireModel> = self
             .wire_models
             .iter()
-            .map(|w| w.mirrored(p1, p2))
+            .map(|w| w.mirrored(p1.as_vec3(), p2.as_vec3()))
             .collect();
         // Mirror-axis line (rubber-band).
         out.push(WireModel::solid(
             "rubber_band".into(),
-            vec![[p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]],
+            vec![
+                [p1.x as f32, p1.y as f32, p1.z as f32],
+                [p2.x as f32, p2.y as f32, p2.z as f32],
+            ],
             WireModel::CYAN,
             false,
         ));
@@ -141,7 +144,7 @@ impl CadCommand for MirrorCommand {
 impl MirrorCommand {
     /// Commit the mirror. `erase` true flips the originals in place; false
     /// keeps them and adds a mirrored copy. Either way the command ends.
-    fn finish(&self, p1: Vec3, p2: Vec3, erase: bool) -> CmdResult {
+    fn finish(&self, p1: DVec3, p2: DVec3, erase: bool) -> CmdResult {
         let xform = EntityTransform::Mirror { p1, p2 };
         if erase {
             CmdResult::TransformSelected(self.handles.clone(), xform)

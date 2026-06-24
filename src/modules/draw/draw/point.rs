@@ -9,7 +9,7 @@ use acadrust::{EntityType, Point as CadPoint};
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::DVec3;
 
 #[allow(dead_code)]
 pub fn tool() -> ToolDef {
@@ -37,7 +37,7 @@ impl CadCommand for PointCommand {
         "POINT  Specify point  [Enter=done]:".into()
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         let p = CadPoint {
             location: Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64),
             ..Default::default()
@@ -51,7 +51,7 @@ impl CadCommand for PointCommand {
     fn on_escape(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }

@@ -16,7 +16,7 @@ use acadrust::entities::{
 };
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::DVec3;
 use truck_modeling::base::{BoundedCurve, Cut, ParametricCurve};
 
 use crate::command::{CadCommand, CmdResult};
@@ -1990,7 +1990,7 @@ impl CadCommand for TrimCommand {
         true
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -2169,7 +2169,7 @@ impl CadCommand for TrimCommand {
         self.geos = build_geos(&self.all_entities);
     }
 
-    fn on_hover_entity(&mut self, handle: Handle, pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, handle: Handle, pt: DVec3) -> Vec<WireModel> {
         if handle.is_null() {
             return vec![];
         }
@@ -2407,7 +2407,7 @@ impl CadCommand for TrimCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {
@@ -2458,7 +2458,7 @@ impl CadCommand for ExtendCommand {
         true
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -2555,7 +2555,7 @@ impl CadCommand for ExtendCommand {
         }
     }
 
-    fn on_hover_entity(&mut self, handle: Handle, pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, handle: Handle, pt: DVec3) -> Vec<WireModel> {
         if handle.is_null() {
             return vec![];
         }
@@ -2643,7 +2643,7 @@ impl CadCommand for ExtendCommand {
         vec![]
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

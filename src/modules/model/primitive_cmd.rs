@@ -9,7 +9,7 @@
 
 use acadrust::entities::Solid3D;
 use acadrust::{primitives, EntityType};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 use truck_modeling::Solid;
 
 use crate::command::{CadCommand, CmdResult};
@@ -209,7 +209,7 @@ impl CadCommand for PrimitiveCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if self.height_step {
             // A click in the ground plane has no Z; use its distance from the
             // footprint centre as the height magnitude.
@@ -253,7 +253,7 @@ impl CadCommand for PrimitiveCommand {
         Some(self.commit(h))
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.height_step || self.pts.is_empty() {
             return None;
         }

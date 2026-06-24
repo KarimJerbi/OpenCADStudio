@@ -5,7 +5,7 @@ use acadrust::EntityType;
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::{Mat4, Vec3};
+use glam::{DVec3, Mat4, Vec3};
 
 /// World-space measurement axis for a linear dimension between `first` and
 /// `second`, chosen as the UCS X or Y axis (whichever the span is closer to).
@@ -69,7 +69,7 @@ impl CadCommand for LinearDimensionCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::FirstPoint => {
                 self.step = Step::SecondPoint(pt);
@@ -113,7 +113,7 @@ impl CadCommand for LinearDimensionCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         match self.step {
             Step::FirstPoint => None,
             Step::SecondPoint(first) => Some(preview_wire(vec![first, pt])),

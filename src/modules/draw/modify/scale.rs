@@ -13,7 +13,7 @@
 //     Step 2b: specify new length      (pick a point or type a length)
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult, EntityTransform};
 use crate::modules::draw::defaults;
@@ -33,11 +33,11 @@ pub fn tool() -> ToolDef {
 enum Step {
     Base,
     /// Default flow: factor is the cursor distance from `base`.
-    Factor { base: Vec3 },
+    Factor { base: DVec3 },
     /// Reference flow: defining the reference length from `base`.
-    RefLen { base: Vec3 },
+    RefLen { base: DVec3 },
     /// Reference flow: factor is `cursor_dist / ref_dist` from `base`.
-    RefNew { base: Vec3, ref_dist: f32 },
+    RefNew { base: DVec3, ref_dist: f32 },
 }
 
 pub struct ScaleCommand {
@@ -58,7 +58,7 @@ impl ScaleCommand {
     }
 
     /// Commit a uniform scale about `base` and end the command.
-    fn commit(&self, base: Vec3, factor: f32) -> CmdResult {
+    fn commit(&self, base: DVec3, factor: f32) -> CmdResult {
         defaults::set_scale_factor(factor);
         CmdResult::TransformSelected(
             self.handles.clone(),
@@ -95,7 +95,7 @@ impl CadCommand for ScaleCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.step {
             Step::Base => {
                 self.step = Step::Factor { base: pt };
@@ -103,18 +103,18 @@ impl CadCommand for ScaleCommand {
             }
             Step::Factor { base } => {
                 let base = *base;
-                let factor = base.distance(pt).max(1e-6);
+                let factor = base.distance(pt).max(1e-6) as f32;
                 self.commit(base, factor)
             }
             Step::RefLen { base } => {
                 let base = *base;
-                let ref_dist = base.distance(pt).max(1e-6);
+                let ref_dist = base.distance(pt).max(1e-6) as f32;
                 self.step = Step::RefNew { base, ref_dist };
                 CmdResult::NeedPoint
             }
             Step::RefNew { base, ref_dist } => {
                 let base = *base;
-                let new_dist = base.distance(pt).max(1e-6);
+                let new_dist = base.distance(pt).max(1e-6) as f32;
                 self.commit(base, new_dist / *ref_dist)
             }
         }
@@ -164,19 +164,22 @@ impl CadCommand for ScaleCommand {
         }
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
-        let (base, factor) = match &self.step {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {
+        let (base, factor): (DVec3, f32) = match &self.step {
             // Default flow: scale live by cursor distance from the base.
-            Step::Factor { base } => (*base, base.distance(pt).max(1e-6)),
+            Step::Factor { base } => (*base, base.distance(pt).max(1e-6) as f32),
             // Reference flow, new-length step: factor = cursor_dist / ref_dist.
             Step::RefNew { base, ref_dist } => {
-                (*base, base.distance(pt).max(1e-6) / ref_dist)
+                (*base, base.distance(pt).max(1e-6) as f32 / ref_dist)
             }
             // Reference-length step: rubber-band only, no factor defined yet.
             Step::RefLen { base } => {
                 return vec![WireModel::solid(
                     "rubber_band".into(),
-                    vec![[base.x, base.y, base.z], [pt.x, pt.y, pt.z]],
+                    vec![
+                        [base.x as f32, base.y as f32, base.z as f32],
+                        [pt.x as f32, pt.y as f32, pt.z as f32],
+                    ],
                     WireModel::CYAN,
                     false,
                 )];
@@ -186,11 +189,14 @@ impl CadCommand for ScaleCommand {
         let mut out: Vec<WireModel> = self
             .wire_models
             .iter()
-            .map(|w| w.scaled(base, factor))
+            .map(|w| w.scaled(base.as_vec3(), factor))
             .collect();
         out.push(WireModel::solid(
             "rubber_band".into(),
-            vec![[base.x, base.y, base.z], [pt.x, pt.y, pt.z]],
+            vec![
+                [base.x as f32, base.y as f32, base.z as f32],
+                [pt.x as f32, pt.y as f32, pt.z as f32],
+            ],
             WireModel::CYAN,
             false,
         ));

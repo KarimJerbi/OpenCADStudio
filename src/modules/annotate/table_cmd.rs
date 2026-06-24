@@ -10,7 +10,7 @@
 use acadrust::entities::TableBuilder;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -116,7 +116,7 @@ impl CadCommand for TableCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::Insertion { cols, rows } = self.step {
             let ins = Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64);
             let table = TableBuilder::new(rows, cols)
@@ -130,7 +130,7 @@ impl CadCommand for TableCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if let Step::Insertion { cols, rows } = self.step {
             // Preview: outline of the table bounding box.
             let w = (cols as f32) * COL_WIDTH as f32;

@@ -8,7 +8,7 @@
 use acadrust::entities::MultiLeader;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::{Mat4, Vec3};
+use glam::{DVec3, Mat4, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -56,7 +56,7 @@ impl CadCommand for MLeaderCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         self.verts.push(pt);
         CmdResult::NeedPoint
     }
@@ -75,7 +75,7 @@ impl CadCommand for MLeaderCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.verts.is_empty() {
             return None;
         }

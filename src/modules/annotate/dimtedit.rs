@@ -5,7 +5,7 @@
 //   2. Click the new text position (entity data is injected by update.rs after pick)
 
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -58,7 +58,7 @@ impl CadCommand for DimTeditCommand {
         matches!(self.step, Step::PickDim)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -69,7 +69,7 @@ impl CadCommand for DimTeditCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::PickTextPos { handle, entity } = &mut self.step {
             let h = *handle;
             if let Some(mut ent) = entity.take() {
@@ -92,7 +92,7 @@ impl CadCommand for DimTeditCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if !matches!(self.step, Step::PickTextPos { .. }) {
             return None;
         }

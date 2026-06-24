@@ -11,7 +11,7 @@
 
 use acadrust::types::{Vector2, Vector3};
 use acadrust::{EntityType, Handle};
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -52,7 +52,7 @@ impl CadCommand for JoinCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
 

@@ -18,7 +18,7 @@ use acadrust::entities::{
     Spline as SplineEnt,
 };
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::draw::defaults;
@@ -632,7 +632,7 @@ impl CadCommand for OffsetCommand {
         matches!(self.step, Step::SelectObject)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() || !matches!(self.step, Step::SelectObject) {
             return CmdResult::NeedPoint;
         }
@@ -672,10 +672,10 @@ impl CadCommand for OffsetCommand {
         }
     }
 
-    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+    fn dyn_live_value(&self, cursor: DVec3) -> Option<f64> {
         match &self.step {
             Step::PickSide { entity, locked, .. } => {
-                Some(locked.unwrap_or_else(|| perp_distance(entity, cursor)))
+                Some(locked.unwrap_or_else(|| perp_distance(entity, cursor.as_vec3())))
             }
             _ => None,
         }
@@ -697,7 +697,7 @@ impl CadCommand for OffsetCommand {
         None
     }
 
-    fn on_hover_entity(&mut self, handle: Handle, _pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, handle: Handle, _pt: DVec3) -> Vec<WireModel> {
         if handle.is_null() {
             return vec![];
         }
@@ -719,33 +719,33 @@ impl CadCommand for OffsetCommand {
         vec![]
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         let (locked, entity) = match &self.step {
             Step::PickSide { locked, entity, .. } => (*locked, entity.clone()),
             _ => return CmdResult::NeedPoint,
         };
-        let mag = locked.unwrap_or_else(|| perp_distance(&entity, pt));
+        let mag = locked.unwrap_or_else(|| perp_distance(&entity, pt.as_vec3()));
         if mag < 1e-9 {
             return CmdResult::NeedPoint;
         }
 
-        match compute_offset(&entity, mag, pt) {
+        match compute_offset(&entity, mag, pt.as_vec3()) {
             Some(new_entity) => CmdResult::CommitAndExit(new_entity),
             None => CmdResult::NeedPoint,
         }
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {
         let (locked, entity) = match &self.step {
             Step::PickSide { locked, entity, .. } => (*locked, entity.clone()),
             _ => return vec![],
         };
-        let mag = locked.unwrap_or_else(|| perp_distance(&entity, pt));
+        let mag = locked.unwrap_or_else(|| perp_distance(&entity, pt.as_vec3()));
         if mag < 1e-9 {
             return vec![];
         }
 
-        if let Some(result) = compute_offset(&entity, mag, pt) {
+        if let Some(result) = compute_offset(&entity, mag, pt.as_vec3()) {
             let pts = entity_wire_pts(&result);
             if !pts.is_empty() {
                 return vec![WireModel::solid(

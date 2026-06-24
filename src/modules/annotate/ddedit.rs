@@ -8,7 +8,7 @@
 //      entity it annotates.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -45,7 +45,7 @@ impl CadCommand for DdeditCommand {
         true
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -54,7 +54,7 @@ impl CadCommand for DdeditCommand {
         CmdResult::EditTextEntity { handle }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

@@ -1,7 +1,7 @@
 //! OpenCADStudio-style grip editing.
 
 use acadrust::Handle;
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 use iced::{Point, Rectangle};
 
 use crate::scene::model::object::{GripDef, GripShape};

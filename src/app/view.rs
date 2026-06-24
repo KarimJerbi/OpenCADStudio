@@ -270,7 +270,7 @@ impl OpenCADStudio {
                 // A command may drive a typed scalar by mouse (e.g. a
                 // perpendicular distance to a picked object); show that live
                 // value in the box until the user types over it.
-                let live = tab.active_cmd.as_ref().and_then(|c| c.dyn_live_value(w));
+                let live = tab.active_cmd.as_ref().and_then(|c| c.dyn_live_value(w.as_dvec3()));
                 let boxes: Vec<overlay::DynBox> = tab
                     .dyn_fields
                     .iter()

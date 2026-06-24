@@ -1,7 +1,7 @@
 // AREA command — compute area and perimeter of a polygon picked point by point.
 // Press Enter to close and calculate.
 
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -32,7 +32,7 @@ impl CadCommand for AreaCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         self.points.push(pt);
         CmdResult::NeedPoint
     }
@@ -56,7 +56,7 @@ impl CadCommand for AreaCommand {
         CmdResult::Measurement(msg)
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.points.is_empty() {
             return None;
         }

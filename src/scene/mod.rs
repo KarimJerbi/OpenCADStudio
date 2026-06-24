@@ -4175,7 +4175,7 @@ impl Scene {
             .add_entity(EntityType::BlockEnd(block_end))
             .map_err(|e| e.to_string())?;
 
-        let local = EntityTransform::Translate(-base);
+        let local = EntityTransform::Translate((-base).as_dvec3());
         for (old_handle, mut entity) in source_entities {
             view::dispatch::apply_transform(&mut entity, &local);
             entity = crate::modules::draw::modify::explode::normalize_entity_for_block(entity);
@@ -4248,7 +4248,7 @@ impl Scene {
             .add_entity(EntityType::BlockEnd(block_end))
             .map_err(|e| e.to_string())?;
 
-        let local = EntityTransform::Translate(-base);
+        let local = EntityTransform::Translate((-base).as_dvec3());
         for mut entity in entities {
             view::dispatch::apply_transform(&mut entity, &local);
             entity = crate::modules::draw::modify::explode::normalize_entity_for_block(entity);

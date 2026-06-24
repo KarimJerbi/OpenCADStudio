@@ -14,7 +14,7 @@ pub fn tool() -> ToolDef {
 // ── CadCommand implementation ─────────────────────────────────────────────
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -47,7 +47,7 @@ impl CadCommand for UngroupCommand {
         CmdResult::DeleteGroups { handles }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
 
@@ -55,7 +55,7 @@ impl CadCommand for UngroupCommand {
         CmdResult::Cancel
     }
 
-    fn on_hover_entity(&mut self, _handle: Handle, _pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, _handle: Handle, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 }

@@ -7,7 +7,7 @@
 use acadrust::entities::Wipeout;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -79,7 +79,7 @@ impl CadCommand for WipeoutCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &self.mode {
             WipeoutMode::Rectangular => {
                 if let Some(p1) = self.first {
@@ -107,7 +107,7 @@ impl CadCommand for WipeoutCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         match &self.mode {
             WipeoutMode::Rectangular => {
                 let p1 = self.first?;

@@ -9,7 +9,7 @@ use acadrust::{EntityType, Spline};
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 #[allow(dead_code)]
 pub fn tool() -> ToolDef {
@@ -84,7 +84,7 @@ impl CadCommand for SplineCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         self.pts.push(pt);
         CmdResult::NeedPoint
     }
@@ -103,7 +103,7 @@ impl CadCommand for SplineCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.pts.is_empty() {
             return None;
         }

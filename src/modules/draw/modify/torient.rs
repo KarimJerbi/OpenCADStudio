@@ -6,7 +6,7 @@
 //   Step 2: If first point picked, pick second point to define angle vector.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult, DynField};
 use crate::scene::model::wire_model::WireModel;
@@ -122,7 +122,7 @@ impl CadCommand for TorientCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::AngleOrFirstPoint => {
                 self.step = Step::SecondPoint { first_point: pt };
@@ -157,7 +157,7 @@ impl CadCommand for TorientCommand {
         }
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> { let pt = pt.as_vec3();
         if let Step::SecondPoint { first_point } = self.step {
             vec![WireModel::solid(
                 "rubber_band".into(),

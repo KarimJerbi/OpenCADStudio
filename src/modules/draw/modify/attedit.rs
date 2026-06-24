@@ -7,7 +7,7 @@
 //            After all attributes are processed, commit via ReplaceMany.
 
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -59,7 +59,7 @@ impl CadCommand for AtteditCommand {
         matches!(self.step, Step::SelectInsert)
     }
 
-    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -114,13 +114,13 @@ impl CadCommand for AtteditCommand {
         None
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_preview_wires(&mut self, _pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 

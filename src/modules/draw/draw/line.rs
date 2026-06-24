@@ -12,7 +12,7 @@ use acadrust::{EntityType, Line};
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::DVec3;
 
 // ── Ribbon definition ─────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ pub fn tool() -> ToolDef {
 
 pub struct LineCommand {
     /// The last committed point (start of the next segment).
-    last: Option<Vec3>,
+    last: Option<DVec3>,
 }
 
 impl LineCommand {
@@ -51,11 +51,11 @@ impl CadCommand for LineCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         if let Some(last) = self.last {
             let line = Line::from_points(
-                Vector3::new(last.x as f64, last.y as f64, last.z as f64),
-                Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64),
+                Vector3::new(last.x, last.y, last.z),
+                Vector3::new(pt.x, pt.y, pt.z),
             );
             self.last = Some(pt);
             CmdResult::CommitEntity(EntityType::Line(line))
@@ -73,11 +73,14 @@ impl CadCommand for LineCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> {
         let last = self.last?;
         Some(WireModel {
             name: "rubber_band".to_string(),
-            points: vec![[last.x, last.y, last.z], [pt.x, pt.y, pt.z]],
+            points: vec![
+                [last.x as f32, last.y as f32, last.z as f32],
+                [pt.x as f32, pt.y as f32, pt.z as f32],
+            ],
             points_low: Vec::new(),
             color: WireModel::CYAN,
             selected: false,

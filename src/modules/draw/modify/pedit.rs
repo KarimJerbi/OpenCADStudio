@@ -10,7 +10,7 @@
 //   X / EXIT    — exit
 
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -41,7 +41,7 @@ impl CadCommand for PeditCommand {
         self.target.is_none()
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -90,7 +90,7 @@ impl CadCommand for PeditCommand {
         None
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

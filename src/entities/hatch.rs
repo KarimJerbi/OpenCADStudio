@@ -188,9 +188,9 @@ impl Grippable for Hatch {
         fn resolve(apply: &GripApply, cur: Vec3) -> (f64, f64) {
             let p = match apply {
                 GripApply::Absolute(p) => *p,
-                GripApply::Translate(d) => cur + *d,
+                GripApply::Translate(d) => cur.as_dvec3() + *d,
             };
-            (p.x as f64, p.y as f64)
+            (p.x, p.y)
         }
 
         'outer: for path in &mut self.paths {

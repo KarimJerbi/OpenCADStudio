@@ -5,7 +5,7 @@ use acadrust::EntityType;
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 pub const ICON: IconKind = IconKind::Svg(include_bytes!("../../../assets/icons/dim_radius.svg"));
 
@@ -49,7 +49,7 @@ impl CadCommand for RadiusDimensionCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::CenterPoint => {
                 self.step = Step::RadiusPoint(pt);
@@ -79,7 +79,7 @@ impl CadCommand for RadiusDimensionCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         match self.step {
             Step::CenterPoint => None,
             Step::RadiusPoint(center) => Some(preview_wire(vec![center, pt])),

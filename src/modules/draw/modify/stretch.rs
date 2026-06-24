@@ -16,7 +16,7 @@
 //     All others  : move the whole entity if any point is inside.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -86,7 +86,7 @@ impl CadCommand for StretchCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &self.step {
             Step::WindowCorner1 => {
                 self.step = Step::WindowCorner2(pt);
@@ -115,9 +115,9 @@ impl CadCommand for StretchCommand {
                 let delta = pt - *base;
                 CmdResult::StretchEntities {
                     handles: self.handles.clone(),
-                    win_min: *win_min,
-                    win_max: *win_max,
-                    delta,
+                    win_min: win_min.as_dvec3(),
+                    win_max: win_max.as_dvec3(),
+                    delta: delta.as_dvec3(),
                 }
             }
         }
@@ -130,7 +130,7 @@ impl CadCommand for StretchCommand {
         CmdResult::Cancel
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> { let pt = pt.as_vec3();
         match &self.step {
             Step::WindowCorner2(c1) => {
                 // Show crossing-window rectangle preview (dashed green)

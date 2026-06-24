@@ -11,7 +11,7 @@
 // Layer names are case-insensitive. Multiple space-separated names are accepted.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -94,7 +94,7 @@ impl CadCommand for VplayerCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::Cancel
     }
 
@@ -102,7 +102,7 @@ impl CadCommand for VplayerCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }

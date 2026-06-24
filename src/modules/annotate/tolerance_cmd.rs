@@ -7,7 +7,7 @@
 use acadrust::entities::Tolerance;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -64,7 +64,7 @@ impl CadCommand for ToleranceCommand {
         Some(CmdResult::NeedPoint)
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::Insertion { text } = &self.step {
             let ins = Vector3::new(pt.x as f64, pt.y as f64, pt.z as f64);
             let tol = Tolerance::with_text(ins, text.clone());
@@ -78,7 +78,7 @@ impl CadCommand for ToleranceCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if !matches!(self.step, Step::Insertion { .. }) {
             return None;
         }

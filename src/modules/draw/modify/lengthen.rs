@@ -13,7 +13,7 @@ use acadrust::entities::{
 };
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 use truck_modeling::base::{BoundedCurve, Cut};
 
 use crate::command::{CadCommand, CmdResult};
@@ -53,7 +53,7 @@ impl CadCommand for LengthenCommand {
         matches!(self.state, LenState::PickEntity)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -81,6 +81,7 @@ impl CadCommand for LengthenCommand {
             LenState::PickOption { handle, pick_pt } => (*handle, *pick_pt),
             _ => return None,
         };
+        let pick_pt = pick_pt.as_dvec3();
 
         let text = text.trim().to_uppercase();
         if let Some(rest) = text.strip_prefix("DE ").or_else(|| text.strip_prefix("DE")) {
@@ -125,7 +126,7 @@ impl CadCommand for LengthenCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

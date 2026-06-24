@@ -8,7 +8,7 @@
 //   4. In Single mode, editing an object exits the command immediately.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -95,7 +95,7 @@ impl CadCommand for TexteditCommand {
         self.step == Step::PickObject
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -160,7 +160,7 @@ impl CadCommand for TexteditCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
 
@@ -248,7 +248,7 @@ impl CadCommand for TexteditmodeCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
 

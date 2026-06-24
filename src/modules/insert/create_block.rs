@@ -1,5 +1,5 @@
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -52,7 +52,7 @@ impl CadCommand for CreateBlockCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.step {
             Step::Name => CmdResult::NeedPoint,
             Step::Base { name } => CmdResult::CreateBlock {
@@ -85,7 +85,7 @@ impl CadCommand for CreateBlockCommand {
         Some(CmdResult::NeedPoint)
     }
 
-    fn on_preview_wires(&mut self, _pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 }

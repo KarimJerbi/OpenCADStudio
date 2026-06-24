@@ -8,7 +8,7 @@
 use acadrust::entities::MLine;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -111,7 +111,7 @@ impl CadCommand for MlineCommand {
         None
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         self.points.push(pt);
         CmdResult::NeedPoint
     }
@@ -124,7 +124,7 @@ impl CadCommand for MlineCommand {
         CmdResult::CommitAndExit(entity)
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.points.is_empty() {
             return None;
         }

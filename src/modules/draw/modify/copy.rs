@@ -6,7 +6,7 @@
 //   Step 2+: each click makes another copy at (click - base); Enter to finish.
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult, EntityTransform};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -27,7 +27,7 @@ pub fn tool() -> ToolDef {
 
 enum Step {
     Base,
-    Placing(Vec3),
+    Placing(DVec3),
 }
 
 pub struct CopyCommand {
@@ -66,7 +66,7 @@ impl CadCommand for CopyCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.step {
             Step::Base => {
                 self.step = Step::Placing(pt);
@@ -87,7 +87,7 @@ impl CadCommand for CopyCommand {
         CmdResult::Cancel
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {
         let Step::Placing(base) = &self.step else {
             return vec![];
         };
@@ -95,11 +95,14 @@ impl CadCommand for CopyCommand {
         let mut out: Vec<WireModel> = self
             .wire_models
             .iter()
-            .map(|w| w.translated(delta))
+            .map(|w| w.translated(delta.as_vec3()))
             .collect();
         out.push(WireModel::solid(
             "rubber_band".into(),
-            vec![[base.x, base.y, base.z], [pt.x, pt.y, pt.z]],
+            vec![
+                [base.x as f32, base.y as f32, base.z as f32],
+                [pt.x as f32, pt.y as f32, pt.z as f32],
+            ],
             WireModel::CYAN,
             false,
         ));

@@ -24,7 +24,7 @@ pub(crate) fn mleader_v_anchor(attach: TextAttachmentType) -> MTextVAnchor {
         | TextAttachmentType::BottomOfTopLineUnderlineAll => MTextVAnchor::BottomOfTopLine,
     }
 }
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 
 use crate::command::EntityTransform;
 use crate::entities::common::{

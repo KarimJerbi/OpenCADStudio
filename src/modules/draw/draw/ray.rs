@@ -10,7 +10,7 @@ use acadrust::EntityType;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 const DISPLAY_EXTENT: f32 = 1_000_000.0;
 
@@ -39,7 +39,7 @@ impl CadCommand for RayCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Some(base) = self.base {
             let dir = pt - base;
             let len = dir.length();
@@ -69,7 +69,7 @@ impl CadCommand for RayCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let base = self.base?;
         let dir = (pt - base).normalize_or_zero();
         let far = base + dir * DISPLAY_EXTENT;
@@ -120,7 +120,7 @@ impl CadCommand for XLineCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Some(base) = self.base {
             let dir = pt - base;
             let len = dir.length();
@@ -148,7 +148,7 @@ impl CadCommand for XLineCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let base = self.base?;
         let dir = (pt - base).normalize_or_zero();
         let far_pos = base + dir * DISPLAY_EXTENT;

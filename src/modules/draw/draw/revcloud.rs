@@ -7,7 +7,7 @@
 use acadrust::entities::LwPolyline;
 use acadrust::types::Vector2;
 use acadrust::{entities::LwVertex, EntityType};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -59,7 +59,7 @@ impl CadCommand for RevCloudCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         self.points.push(pt);
         CmdResult::NeedPoint
     }
@@ -72,7 +72,7 @@ impl CadCommand for RevCloudCommand {
         CmdResult::CommitAndExit(entity)
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if self.points.is_empty() {
             return None;
         }

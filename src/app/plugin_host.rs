@@ -232,7 +232,7 @@ impl crate::command::CadCommand for PluginInteractiveAdapter {
         crate::plugin::guard("InteractiveCommand::prompt", || self.inner.prompt())
             .unwrap_or_default()
     }
-    fn on_point(&mut self, pt: glam::Vec3) -> crate::command::CmdResult {
+    fn on_point(&mut self, pt: glam::DVec3) -> crate::command::CmdResult {
         crate::plugin::guard("InteractiveCommand::on_point", || {
             self.inner.on_point([pt.x as f64, pt.y as f64, pt.z as f64])
         })
@@ -250,7 +250,7 @@ impl crate::command::CadCommand for PluginInteractiveAdapter {
         })
         .unwrap_or(false)
     }
-    fn on_entity_pick(&mut self, handle: Handle, pt: glam::Vec3) -> crate::command::CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: glam::DVec3) -> crate::command::CmdResult {
         crate::plugin::guard("InteractiveCommand::on_object_pick", || {
             self.inner
                 .on_object_pick(handle, [pt.x as f64, pt.y as f64, pt.z as f64])

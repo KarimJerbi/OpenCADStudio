@@ -16,7 +16,7 @@ pub const MENU_ITEMS: &[(&str, &str, IconKind)] = &[
 // ── CadCommand implementation ─────────────────────────────────────────────
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -43,7 +43,7 @@ impl CadCommand for PasteCommand {
         "PASTECLIP  Pick insertion point:".into()
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         CmdResult::PasteClipboard { base_pt: pt }
     }
 
@@ -51,11 +51,11 @@ impl CadCommand for PasteCommand {
         CmdResult::Cancel
     }
 
-    fn on_hover_entity(&mut self, _handle: Handle, _pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, _handle: Handle, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> { let pt = pt.as_vec3();
         let delta = pt - self.centroid;
         self.wires.iter().map(|w| w.translated(delta)).collect()
     }

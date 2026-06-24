@@ -12,7 +12,7 @@
 use acadrust::entities::{Arc as ArcEnt, Line as LineEnt, LwPolyline};
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::DVec3;
 
 const TAU: f64 = std::f64::consts::TAU;
 
@@ -1328,7 +1328,7 @@ impl CadCommand for FilletCommand {
         !matches!(self.step, FilletStep::WaitingForRadius)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -1406,7 +1406,7 @@ impl CadCommand for FilletCommand {
         }
     }
 
-    fn on_hover_entity(&mut self, handle: Handle, pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, handle: Handle, pt: DVec3) -> Vec<WireModel> {
         if handle.is_null() {
             return vec![];
         }
@@ -1484,7 +1484,7 @@ impl CadCommand for FilletCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {
@@ -1743,7 +1743,7 @@ impl CadCommand for ChamferCommand {
         )
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -1825,7 +1825,7 @@ impl CadCommand for ChamferCommand {
         }
     }
 
-    fn on_hover_entity(&mut self, handle: Handle, pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, handle: Handle, pt: DVec3) -> Vec<WireModel> {
         if handle.is_null() {
             return vec![];
         }
@@ -1915,7 +1915,7 @@ impl CadCommand for ChamferCommand {
         }
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {

@@ -14,7 +14,7 @@ pub fn tool() -> ToolDef {
 // ── CadCommand implementation ─────────────────────────────────────────────
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -53,7 +53,7 @@ impl CadCommand for MatchPropCommand {
         !self.phase1_done()
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint; // nothing hit, keep waiting
         }
@@ -81,11 +81,11 @@ impl CadCommand for MatchPropCommand {
         CmdResult::Cancel
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
 
-    fn on_hover_entity(&mut self, _handle: Handle, _pt: Vec3) -> Vec<WireModel> {
+    fn on_hover_entity(&mut self, _handle: Handle, _pt: DVec3) -> Vec<WireModel> {
         vec![]
     }
 }

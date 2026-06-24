@@ -7,7 +7,7 @@
 // live in the Model tab (`modules::model::primitive_cmd`).
 
 use acadrust::{entities::Solid3D, EntityType};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -53,7 +53,7 @@ impl CadCommand for ExtrudeCommand {
     fn needs_entity_pick(&self) -> bool {
         self.step == ExtrudeStep::Pick
     }
-    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -61,7 +61,7 @@ impl CadCommand for ExtrudeCommand {
         self.step = ExtrudeStep::Height;
         CmdResult::NeedPoint
     }
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if self.step == ExtrudeStep::Height {
             return CmdResult::ExtrudeEntity {
                 handle: self.target_handle,
@@ -135,7 +135,7 @@ impl CadCommand for RevolveCommand {
     fn needs_entity_pick(&self) -> bool {
         self.step == RevolveStep::Pick
     }
-    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -143,7 +143,7 @@ impl CadCommand for RevolveCommand {
         self.step = RevolveStep::AxisStart;
         CmdResult::NeedPoint
     }
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             RevolveStep::AxisStart => {
                 self.axis_start = pt;
@@ -186,8 +186,8 @@ impl RevolveCommand {
     fn make_revolve(&self, angle_deg: f32) -> CmdResult {
         CmdResult::RevolveEntity {
             handle: self.target_handle,
-            axis_start: self.axis_start,
-            axis_end: self.axis_end,
+            axis_start: self.axis_start.as_dvec3(),
+            axis_end: self.axis_end.as_dvec3(),
             angle_deg,
             color: self.color,
         }
@@ -231,7 +231,7 @@ impl CadCommand for SweepCommand {
     fn needs_entity_pick(&self) -> bool {
         true
     }
-    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -248,7 +248,7 @@ impl CadCommand for SweepCommand {
             },
         }
     }
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn on_enter(&mut self) -> CmdResult {
@@ -289,7 +289,7 @@ impl CadCommand for LoftCommand {
     fn needs_entity_pick(&self) -> bool {
         true
     }
-    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: acadrust::Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -299,7 +299,7 @@ impl CadCommand for LoftCommand {
         }
         CmdResult::NeedPoint
     }
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::NeedPoint
     }
     fn wants_text_input(&self) -> bool {

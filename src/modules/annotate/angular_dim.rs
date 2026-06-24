@@ -5,7 +5,7 @@ use acadrust::EntityType;
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 pub const ICON: IconKind = IconKind::Svg(include_bytes!("../../../assets/icons/dim_angular.svg"));
 
@@ -56,7 +56,7 @@ impl CadCommand for AngularDimensionCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::Vertex => {
                 self.step = Step::FirstRay(pt);
@@ -98,7 +98,7 @@ impl CadCommand for AngularDimensionCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         match self.step {
             Step::Vertex => None,
             Step::FirstRay(vertex) => Some(preview_wire(vec![vertex, pt])),

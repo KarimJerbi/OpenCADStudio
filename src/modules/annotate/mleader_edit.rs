@@ -8,7 +8,7 @@
 use acadrust::entities::{LeaderLine, MultiLeader};
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -73,7 +73,7 @@ impl CadCommand for MLeaderAddCommand {
         matches!(self.step, AddStep::PickMLeader)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -84,7 +84,7 @@ impl CadCommand for MLeaderAddCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &mut self.step {
             AddStep::PickArrowhead { handle, entity } => {
                 if let Some(ent) = entity.take() {
@@ -132,7 +132,7 @@ impl CadCommand for MLeaderAddCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let existing_pts = match &self.step {
             AddStep::CollectPoints { pts, .. } => pts.clone(),
             _ => return None,
@@ -201,7 +201,7 @@ impl CadCommand for MLeaderRemoveCommand {
         matches!(self.step, RemoveStep::PickMLeader)
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -212,7 +212,7 @@ impl CadCommand for MLeaderRemoveCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let RemoveStep::PickLeaderToRemove { handle, entity } = &mut self.step {
             if let Some(mut ent) = entity.take() {
                 let h = *handle;
@@ -247,7 +247,7 @@ impl CadCommand for MLeaderRemoveCommand {
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 
@@ -321,7 +321,7 @@ impl CadCommand for MLeaderAlignCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &mut self.step {
             AlignStep::PickDirection { handles } => {
                 let h = handles.clone();
@@ -359,7 +359,7 @@ impl CadCommand for MLeaderAlignCommand {
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }
@@ -423,7 +423,7 @@ impl CadCommand for MLeaderCollectCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let CollectStep::PickLocation { handles } = &self.step {
             let h = handles.clone();
             // Build a new combined multileader at the collection point, delete originals.
@@ -447,7 +447,7 @@ impl CadCommand for MLeaderCollectCommand {
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }

@@ -10,7 +10,7 @@
 // With 2 pairs: translate + rotate (+ optional uniform scale to fit)
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult, EntityTransform};
 
@@ -74,7 +74,7 @@ impl CadCommand for AlignCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.state {
             AlignState::Gathering => CmdResult::NeedPoint,
             AlignState::Src1 => {
@@ -117,7 +117,7 @@ impl CadCommand for AlignCommand {
                         let delta = d - s;
                         CmdResult::TransformSelected(
                             self.handles.clone(),
-                            EntityTransform::Translate(delta),
+                            EntityTransform::Translate(delta.as_dvec3()),
                         )
                     }
                     _ => CmdResult::Cancel,
@@ -163,7 +163,7 @@ impl AlignCommand {
             let delta = d1 - s1;
             return CmdResult::TransformSelected(
                 self.handles.clone(),
-                EntityTransform::Translate(delta),
+                EntityTransform::Translate(delta.as_dvec3()),
             );
         }
 
@@ -182,8 +182,8 @@ impl AlignCommand {
         // Compose via AlignTransform CmdResult
         CmdResult::AlignSelected {
             handles: self.handles.clone(),
-            src1: s1,
-            dst1: d1,
+            src1: s1.as_dvec3(),
+            dst1: d1.as_dvec3(),
             angle_rad: angle,
             scale: scale_factor,
         }

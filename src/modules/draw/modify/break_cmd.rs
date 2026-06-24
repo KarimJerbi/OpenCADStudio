@@ -15,7 +15,7 @@ use acadrust::entities::{
 };
 use acadrust::types::Vector3;
 use acadrust::{EntityType, Handle};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 use truck_modeling::base::{BoundedCurve, Cut};
 
 use crate::command::{CadCommand, CmdResult};
@@ -382,7 +382,7 @@ impl CadCommand for BreakInteractiveCommand {
         self.target.is_none()
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -391,7 +391,7 @@ impl CadCommand for BreakInteractiveCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         let handle = match self.target {
             Some(h) => h,
             None => return CmdResult::Cancel,
@@ -403,14 +403,14 @@ impl CadCommand for BreakInteractiveCommand {
                 return CmdResult::NeedPoint;
             }
         };
-        CmdResult::BreakEntity { handle, p1, p2: pt }
+        CmdResult::BreakEntity { handle, p1: p1.as_dvec3(), p2: pt.as_dvec3() }
     }
 
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, _pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, _pt: DVec3) -> Option<WireModel> {
         None
     }
 }
@@ -444,7 +444,7 @@ impl CadCommand for BreakAtPointCommand {
         self.target.is_none()
     }
 
-    fn on_entity_pick(&mut self, handle: Handle, _pt: Vec3) -> CmdResult {
+    fn on_entity_pick(&mut self, handle: Handle, _pt: DVec3) -> CmdResult {
         if handle.is_null() {
             return CmdResult::NeedPoint;
         }
@@ -452,12 +452,12 @@ impl CadCommand for BreakAtPointCommand {
         CmdResult::NeedPoint
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.target {
             Some(handle) => CmdResult::BreakEntity {
                 handle,
-                p1: pt,
-                p2: pt,
+                p1: pt.as_dvec3(),
+                p2: pt.as_dvec3(),
             },
             None => CmdResult::Cancel,
         }

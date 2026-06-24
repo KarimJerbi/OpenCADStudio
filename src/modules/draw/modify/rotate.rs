@@ -7,7 +7,7 @@
 //   Step 3: pick destination point → rotates by (dest_angle - ref_angle)
 
 use acadrust::Handle;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult, DynField, EntityTransform};
 use crate::modules::draw::defaults;
@@ -29,8 +29,8 @@ pub fn tool() -> ToolDef {
 
 enum Step {
     Center,
-    RefPoint { center: Vec3 },
-    Angle { center: Vec3, ref_angle: f32 },
+    RefPoint { center: DVec3 },
+    Angle { center: DVec3, ref_angle: f64 },
 }
 
 pub struct RotateCommand {
@@ -73,7 +73,7 @@ impl CadCommand for RotateCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.step {
             Step::Center => {
                 self.step = Step::RefPoint { center: pt };
@@ -90,13 +90,13 @@ impl CadCommand for RotateCommand {
                 let ref_angle = *ref_angle;
                 let dest_angle = (pt.y - center.y).atan2(pt.x - center.x);
                 let delta = dest_angle - ref_angle;
-                defaults::set_rotate_angle(delta.to_degrees());
-                self.default_angle = delta.to_degrees();
+                defaults::set_rotate_angle(delta.to_degrees() as f32);
+                self.default_angle = delta.to_degrees() as f32;
                 CmdResult::TransformSelected(
                     self.handles.clone(),
                     EntityTransform::Rotate {
                         center,
-                        angle_rad: delta,
+                        angle_rad: delta as f32,
                     },
                 )
             }
@@ -137,14 +137,17 @@ impl CadCommand for RotateCommand {
         None
     }
 
-    fn on_preview_wires(&mut self, pt: Vec3) -> Vec<WireModel> {
+    fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {
         let (center, ref_angle) = match &self.step {
             Step::Angle { center, ref_angle } => (*center, *ref_angle),
             Step::RefPoint { center } => {
                 // Show a reference line from center to cursor only.
                 return vec![WireModel::solid(
                     "rubber_band".into(),
-                    vec![[center.x, center.y, center.z], [pt.x, pt.y, pt.z]],
+                    vec![
+                        [center.x as f32, center.y as f32, center.z as f32],
+                        [pt.x as f32, pt.y as f32, pt.z as f32],
+                    ],
                     WireModel::CYAN,
                     false,
                 )];
@@ -157,12 +160,12 @@ impl CadCommand for RotateCommand {
         // committing with Enter rotates the way the cursor is dragging — the
         // dynamic-input box shows the unsigned magnitude, but the committed
         // value must keep its direction (clockwise = negative).
-        self.default_angle = angle_rad.to_degrees();
+        self.default_angle = angle_rad.to_degrees() as f32;
         // Object ghosts rotated to the new angle. The rotation sweep arc is
         // drawn by the dynamic-input overlay (polar guide), not here.
         self.wire_models
             .iter()
-            .map(|w| w.rotated(center, angle_rad))
+            .map(|w| w.rotated(center.as_vec3(), angle_rad as f32))
             .collect()
     }
 
@@ -179,7 +182,7 @@ impl CadCommand for RotateCommand {
         // direction. The polar guide arc is anchored at the centre and starts
         // at the reference (via ref_point), with the value box centred on it.
         if let Step::Angle { center, ref_angle } = self.step {
-            let ref_dir = Vec3::new(center.x + ref_angle.cos(), center.y + ref_angle.sin(), center.z);
+            let ref_dir = DVec3::new(center.x + ref_angle.cos(), center.y + ref_angle.sin(), center.z);
             Some(DynSpec {
                 anchor: DynAnchor::Point(center),
                 fields: vec![DynFieldSpec::new(DynRole::Angle)],
@@ -195,12 +198,12 @@ impl CadCommand for RotateCommand {
         matches!(self.step, Step::Angle { .. })
     }
 
-    fn dyn_live_value(&self, cursor: Vec3) -> Option<f64> {
+    fn dyn_live_value(&self, cursor: DVec3) -> Option<f64> {
         // The rotation amount = cursor direction from the centre minus the
         // reference angle, so the box reads the actual rotation.
         if let Step::Angle { center, ref_angle } = &self.step {
             let dest = (cursor.y - center.y).atan2(cursor.x - center.x);
-            Some(crate::command::dyn_display_angle_deg(dest - ref_angle) as f64)
+            Some(crate::command::dyn_display_angle_deg((dest - ref_angle) as f32) as f64)
         } else {
             None
         }

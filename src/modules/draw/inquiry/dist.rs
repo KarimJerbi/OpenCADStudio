@@ -1,6 +1,6 @@
 // DIST command — measure distance and angle between two picked points.
 
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -28,7 +28,7 @@ impl CadCommand for DistCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Some(p1) = self.first {
             let delta = pt - p1;
             let dist = delta.length();
@@ -56,7 +56,7 @@ impl CadCommand for DistCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let p1 = self.first?;
         Some(WireModel {
             name: "dist_preview".into(),

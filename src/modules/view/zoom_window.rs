@@ -1,6 +1,6 @@
 // ZOOM WINDOW command — pick two corners to define the zoom area.
 
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -28,9 +28,9 @@ impl CadCommand for ZoomWindowCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Some(p1) = self.first {
-            CmdResult::ZoomToWindow { p1, p2: pt }
+            CmdResult::ZoomToWindow { p1: p1.as_dvec3(), p2: pt.as_dvec3() }
         } else {
             self.first = Some(pt);
             CmdResult::NeedPoint
@@ -45,7 +45,7 @@ impl CadCommand for ZoomWindowCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let p1 = self.first?;
         let min = p1.min(pt);
         let max = p1.max(pt);

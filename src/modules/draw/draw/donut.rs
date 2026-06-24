@@ -12,7 +12,7 @@
 
 use acadrust::entities::{LwPolyline, LwVertex};
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -91,7 +91,7 @@ impl CadCommand for DonutCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         match &self.state {
             DonutState::PlaceCenter => {
                 let entity = make_donut(pt.x as f64, pt.y as f64, self.inner_r, self.outer_r);

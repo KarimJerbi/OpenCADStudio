@@ -3,7 +3,7 @@
 use acadrust::entities::{Dimension, DimensionAligned};
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -49,7 +49,7 @@ impl CadCommand for AlignedDimensionCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match self.step {
             Step::First => {
                 self.step = Step::Second(pt);
@@ -83,7 +83,7 @@ impl CadCommand for AlignedDimensionCommand {
         CmdResult::Cancel
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         let (p1, p2) = match self.step {
             Step::First => return None,
             Step::Second(p1) => (p1, pt),

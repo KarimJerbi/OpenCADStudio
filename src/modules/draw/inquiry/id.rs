@@ -1,6 +1,6 @@
 // ID command — report coordinates of a picked point.
 
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 
@@ -21,7 +21,7 @@ impl CadCommand for IdCommand {
         "ID  Specify point:".into()
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult {
         // Drawing plane is world XY (z = elevation).
         let x = pt.x;
         let y = pt.y;

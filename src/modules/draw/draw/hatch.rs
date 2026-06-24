@@ -13,7 +13,7 @@ use crate::command::{CadCommand, CmdResult};
 use crate::modules::IconKind;
 use crate::scene::model::hatch_model::{HatchModel, HatchPattern, PatFamily};
 use crate::scene::model::wire_model::WireModel;
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ impl CadCommand for HatchCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &self.mode {
             Mode::PickInside => {
                 let xy = [pt.x, pt.y];
@@ -204,7 +204,7 @@ impl CadCommand for HatchCommand {
         None
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if let Mode::Manual = &self.mode {
             if self.manual_pts.is_empty() {
                 return None;
@@ -292,7 +292,7 @@ impl CadCommand for GradientCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         match &self.mode {
             Mode::PickInside => {
                 let xy = [pt.x, pt.y];
@@ -342,7 +342,7 @@ impl CadCommand for GradientCommand {
         None
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if let Mode::Manual = &self.mode {
             if self.manual_pts.is_empty() {
                 return None;
@@ -395,7 +395,7 @@ impl CadCommand for BoundaryCommand {
         format!("BOUNDARY  Pick internal point:{miss}")
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         let xy = [pt.x, pt.y];
         for outline in &self.outlines {
             if point_in_polygon(xy, outline) {

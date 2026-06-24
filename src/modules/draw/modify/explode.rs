@@ -26,7 +26,7 @@ use acadrust::{CadDocument, EntityType, Handle};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
-use glam::Vec3;
+use glam::DVec3;
 
 // ── Ribbon definition ──────────────────────────────────────────────────────
 
@@ -447,7 +447,7 @@ impl CadCommand for ExplodeCommand {
         "EXPLODE  Select objects to explode:".into()
     }
 
-    fn on_point(&mut self, _pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, _pt: DVec3) -> CmdResult {
         CmdResult::Cancel
     }
     fn on_enter(&mut self) -> CmdResult {

@@ -5402,7 +5402,7 @@ impl OpenCADStudio {
                 if selected.len() == 1 {
                     let handle = selected[0].0;
                     let mut cmd = ExtrudeCommand::new(color);
-                    cmd.on_entity_pick(handle, glam::Vec3::ZERO);
+                    cmd.on_entity_pick(handle, glam::DVec3::ZERO);
                     self.command_line.push_info(&cmd.prompt());
                     self.tabs[i].active_cmd = Some(Box::new(cmd));
                 } else {
@@ -5931,7 +5931,7 @@ impl CadCommand for DrawOrderRefCommand {
     fn on_entity_pick(
         &mut self,
         handle: acadrust::Handle,
-        _pt: glam::Vec3,
+        _pt: glam::DVec3,
     ) -> crate::command::CmdResult {
         if handle.is_null() {
             return crate::command::CmdResult::NeedPoint;
@@ -5941,7 +5941,7 @@ impl CadCommand for DrawOrderRefCommand {
         crate::command::CmdResult::Relaunch(cmd, std::mem::take(&mut self.to_move))
     }
 
-    fn on_point(&mut self, _pt: glam::Vec3) -> crate::command::CmdResult {
+    fn on_point(&mut self, _pt: glam::DVec3) -> crate::command::CmdResult {
         crate::command::CmdResult::NeedPoint
     }
 

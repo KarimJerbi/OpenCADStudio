@@ -9,7 +9,7 @@
 use acadrust::entities::AttributeDefinition;
 use acadrust::types::Vector3;
 use acadrust::EntityType;
-use glam::Vec3;
+use glam::DVec3;
 
 use crate::command::{CadCommand, CmdResult};
 use crate::scene::model::wire_model::WireModel;
@@ -106,7 +106,7 @@ impl CadCommand for AttdefCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if let Step::Insertion {
             tag,
             prompt,
@@ -153,7 +153,7 @@ impl CadCommand for AttdefCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         if !matches!(self.step, Step::Insertion { .. }) {
             return None;
         }

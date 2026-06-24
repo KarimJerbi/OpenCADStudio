@@ -12,7 +12,7 @@
 use acadrust::entities::LwVertex;
 use acadrust::types::Vector2;
 use acadrust::{EntityType, Handle, LwPolyline};
-use glam::{Vec2, Vec3};
+use glam::{DVec3, Vec2, Vec3};
 
 use crate::command::{CadCommand, CmdResult};
 use crate::modules::{IconKind, ModuleEvent, ToolDef};
@@ -224,7 +224,7 @@ impl CadCommand for PlineCommand {
         }
     }
 
-    fn on_point(&mut self, pt: Vec3) -> CmdResult {
+    fn on_point(&mut self, pt: DVec3) -> CmdResult { let pt = pt.as_vec3();
         if !self.vertices.is_empty() {
             let last = *self.vertices.last().unwrap();
             let last_idx = self.vertices.len() - 1;
@@ -302,7 +302,7 @@ impl CadCommand for PlineCommand {
         }
     }
 
-    fn on_mouse_move(&mut self, pt: Vec3) -> Option<WireModel> {
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
         // The committed vertices already render as a real document entity, so
         // the preview is just the pending segment from the last vertex to the
         // cursor. (#119)
