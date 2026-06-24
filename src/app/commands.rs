@@ -540,7 +540,6 @@ impl OpenCADStudio {
                     self.clipboard_centroid = super::helpers::entities_centroid(
                         &self.tabs[i].scene.wire_models_for(&handles),
                     );
-                    self.clipboard_world_offset = [0.0_f64; 3];
                     self.clipboard = entities;
                     self.clipboard_deps = super::ClipboardDeps::capture(
                         &self.tabs[i].scene.document,
@@ -573,7 +572,6 @@ impl OpenCADStudio {
                     self.clipboard_centroid = super::helpers::entities_centroid(
                         &self.tabs[i].scene.wire_models_for(&handles),
                     );
-                    self.clipboard_world_offset = [0.0_f64; 3];
                     let count = entities.len();
                     self.clipboard = entities;
                     self.clipboard_deps = super::ClipboardDeps::capture(
@@ -595,19 +593,7 @@ impl OpenCADStudio {
                     self.command_line.push_error("Clipboard is empty.");
                 } else {
                     let wires = self.tabs[i].scene.wires_for_entities(&self.clipboard);
-                    // The preview wires are tessellated in THIS drawing's
-                    // offset-relative frame, but the stored centroid is in the
-                    // source drawing's. Shift it by the world_offset difference
-                    // so the ghost tracks the cursor instead of drifting by the
-                    // offset gap. Zero within one drawing. (#135)
-                    let src_wo = self.clipboard_world_offset;
-                    let tgt_wo = [0.0_f64; 3];
-                    let centroid = self.clipboard_centroid
-                        + glam::DVec3::new(
-                            src_wo[0] - tgt_wo[0],
-                            src_wo[1] - tgt_wo[1],
-                            src_wo[2] - tgt_wo[2],
-                        );
+                    let centroid = self.clipboard_centroid;
                     use crate::modules::draw::clipboard::paste::PasteCommand;
                     // The ghost anchor is a display-only offset; the precise
                     // paste delta is computed in f64 at commit time.

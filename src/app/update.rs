@@ -2713,18 +2713,10 @@ impl OpenCADStudio {
                         }
                     }
 
-                    // Paper-space entities use sheet coordinates (no world_offset).
-                    // Only add world_offset when converting local → DXF space in model space.
-                    let wo_vec = if self.tabs[i].scene.current_layout == "Model" {
-                        let wo = [0.0_f64; 3];
-                        glam::DVec3::new(wo[0], wo[1], wo[2])
-                    } else {
-                        glam::DVec3::ZERO
-                    };
                     let apply = if grip.is_translate {
                         GripApply::Translate(snapped - grip.last_world)
                     } else {
-                        GripApply::Absolute(snapped + wo_vec)
+                        GripApply::Absolute(snapped)
                     };
                     self.tabs[i]
                         .scene

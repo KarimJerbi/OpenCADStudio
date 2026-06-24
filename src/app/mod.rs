@@ -372,12 +372,6 @@ pub(super) struct OpenCADStudio {
     clipboard: Vec<acadrust::EntityType>,
     /// Centroid of the clipboard entities (world XY plane).
     clipboard_centroid: glam::DVec3,
-    /// The source drawing's `world_offset` at copy time. The centroid above is
-    /// measured in that drawing's offset-relative frame; pasting into a drawing
-    /// with a different offset (e.g. a large-coordinate file → a fresh one)
-    /// must correct the paste translation by the offset difference, else the
-    /// objects land `source_offset − target_offset` away from the cursor.
-    clipboard_world_offset: [f64; 3],
     /// Table records (layer / linetype / text + dim style) the clipboard
     /// entities reference, captured from the source drawing at copy time so a
     /// paste into a *different* drawing can recreate any that are missing —
@@ -1809,7 +1803,6 @@ impl OpenCADStudio {
             update_notice_body: None,
             clipboard: Vec::new(),
             clipboard_centroid: glam::DVec3::ZERO,
-            clipboard_world_offset: [0.0; 3],
             clipboard_deps: ClipboardDeps::default(),
             shift_down: false,
             mtext_editor: None,

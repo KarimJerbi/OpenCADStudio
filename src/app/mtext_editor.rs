@@ -395,7 +395,6 @@ impl super::OpenCADStudio {
         let Some(ed) = self.mtext_editor.as_ref() else { return };
         let mt = ed.build_mtext();
         let entity = EntityType::MText(mt.clone());
-        let woff = [0.0_f64; 3];
         let anno = self.tabs[i].scene.annotation_scale;
         let wires: Vec<WireModel> = tessellate::tessellate(
             &self.tabs[i].scene.document,
@@ -409,16 +408,8 @@ impl super::OpenCADStudio {
             anno,
             None,
         );
-        // Per-character boxes in the same offset-subtracted frame as the
-        // preview wires (tessellate removes world_offset; mirror that).
-        let mut boxes = crate::entities::mtext::glyph_boxes(&mt, &self.tabs[i].scene.document);
-        let (ox, oy) = (woff[0] as f32, woff[1] as f32);
-        for b in &mut boxes {
-            b.xmin -= ox;
-            b.xmax -= ox;
-            b.ymin -= oy;
-            b.ymax -= oy;
-        }
+        // Per-character boxes share the preview wires' absolute coordinate frame.
+        let boxes = crate::entities::mtext::glyph_boxes(&mt, &self.tabs[i].scene.document);
         if let Some(ed) = self.mtext_editor.as_mut() {
             ed.preview_wires = wires;
             ed.glyph_boxes = boxes;

@@ -949,13 +949,7 @@ impl OpenCADStudio {
                         // The readout follows the active pane's UCS — model space
                         // or inside a floating viewport (no-op without a UCS).
                         if tab.editing_model_space() {
-                            let wo = [0.0_f64; 3];
-                            let wcs = glam::Vec3::new(
-                                lc.x + wo[0] as f32,
-                                lc.y + wo[1] as f32,
-                                lc.z + wo[2] as f32,
-                            );
-                            tab.ucs_xform().to_ucs(wcs)
+                            tab.ucs_xform().to_ucs(lc)
                         } else {
                             lc
                         }
