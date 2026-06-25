@@ -687,6 +687,12 @@ impl OpenCADStudio {
             {
                 Ok(new_handle) => {
                     self.tabs[i].scene.auto_fit_viewport(new_handle);
+                    // Adding a viewport straight onto the document layout
+                    // bypasses Scene::add_entity, which is what normally
+                    // invalidates the wire-tessellation cache. Without this the
+                    // new viewport's border isn't tessellated until the next
+                    // zoom/pan forces a rebuild.
+                    self.tabs[i].scene.bump_geometry_no_blocks();
                     Some(new_handle)
                 }
                 Err(e) => {
