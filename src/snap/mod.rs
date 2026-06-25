@@ -892,6 +892,55 @@ impl Snapper {
             }
         }
 
+        // ── Center via curve proximity ─────────────────────────────────────
+        // A circle/arc/ellipse's centre is offset from its curve — for an arc
+        // it usually sits in empty space well off the geometry — so gating the
+        // Center snap purely on the cursor's distance to the centre *point*
+        // (the pre-baked pass above) means hovering the curve, the natural
+        // gesture, never offers it. Mirror running-osnap behaviour: when the
+        // cursor is near such a curve, offer its centre, ranked by how close
+        // the cursor is to the curve. Runs here, after `try_pt`'s borrow ends,
+        // so it can update the candidate state directly. (#152)
+        if self.is_on(SnapType::Center) {
+            for wire in wires {
+                if !wire_in_range(wire) {
+                    continue;
+                }
+                // Only tessellated curves carry a pre-baked Center hint; reuse
+                // it as the snap target. Lines / polylines have none → skip.
+                let Some(center) = wire
+                    .snap_pts
+                    .iter()
+                    .find(|(_, h)| matches!(h, SnapHint::Center))
+                    .map(|&(c, _)| c)
+                else {
+                    continue;
+                };
+                // Nearest screen distance from the cursor to the curve itself.
+                let mut curve_d2 = f32::INFINITY;
+                for i in 0..wire.points.len().saturating_sub(1) {
+                    let p = nearest_on_segment(cursor_world, wp_f64(wire, i), wp_f64(wire, i + 1));
+                    let sp = world_to_screen(p, view_rot, eye, bounds);
+                    curve_d2 = curve_d2.min(dist2(sp, cursor_screen));
+                }
+                let screen = world_to_screen(center, view_rot, eye, bounds);
+                let rank = snap_priority(SnapType::Center);
+                if curve_d2 < radius2
+                    && in_bounds(screen)
+                    && (rank < best_rank || (rank == best_rank && curve_d2 < best_d2))
+                {
+                    best_rank = rank;
+                    best_d2 = curve_d2;
+                    best = Some(SnapResult {
+                        world: center,
+                        screen,
+                        snap_type: SnapType::Center,
+                        tangent_obj: None,
+                    });
+                }
+            }
+        }
+
         best
     }
 }
