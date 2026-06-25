@@ -61,17 +61,19 @@ impl CadCommand for AlignedDimensionCommand {
             }
             Step::DimLine { p1, p2 } => {
                 let mut dim = DimensionAligned::new(v3(p1), v3(p2));
-                // Set offset: distance from p2 to the dim line location
-                let dx = pt.x as f64 - p2.x as f64;
-                let dy = pt.z as f64 - p2.z as f64;
-                let offset = (dx * dx + dy * dy).sqrt();
-                dim.set_offset(offset);
+                // The dimension line runs through the cursor: store it as the
+                // definition point and let the renderer project it onto the
+                // line perpendicular (same as the preview and DIMLINEAR).
+                //
+                // The old path called `set_offset` with the straight-line
+                // p2→cursor *distance*, which `set_offset` then re-applies along
+                // the line perpendicular — placing the line at the wrong
+                // perpendicular distance and always on the +perp side, so it
+                // never matched the preview the user was dragging. (#150)
+                dim.definition_point = v3(pt);
                 dim.base.definition_point = v3(pt);
-                dim.base.text_middle_point = v3(Vec3::new(
-                    (p1.x + p2.x) * 0.5,
-                    (p1.y + p2.y) * 0.5,
-                    (p1.z + p2.z) * 0.5,
-                ));
+                let (d1, d2) = dim_line_endpoints(p1, p2, pt);
+                dim.base.text_middle_point = v3((d1 + d2) * 0.5);
                 dim.base.insertion_point = dim.base.text_middle_point;
                 dim.base.actual_measurement = dim.measurement();
                 CmdResult::CommitAndExit(EntityType::Dimension(Dimension::Aligned(dim)))
@@ -117,13 +119,21 @@ fn v3(p: Vec3) -> Vector3 {
     Vector3::new(p.x as f64, p.y as f64, p.z as f64)
 }
 
+/// Dimension-line endpoints: the baseline `p1`–`p2` shifted to pass through
+/// the cursor's perpendicular projection. Uses the XY-plane perpendicular so
+/// it matches the committed entity's renderer (and DIMLINEAR). The old
+/// preview used an XZ-plane perpendicular, drawing the offset in the wrong
+/// spatial direction. (#150)
+fn dim_line_endpoints(p1: Vec3, p2: Vec3, dim_pt: Vec3) -> (Vec3, Vec3) {
+    let axis = (p2 - p1).normalize_or_zero();
+    let perp = Vec3::new(-axis.y, axis.x, 0.0);
+    let offset = (dim_pt - p1).dot(perp);
+    (p1 + perp * offset, p2 + perp * offset)
+}
+
 fn preview_aligned(p1: Vec3, p2: Vec3, dim_pt: Vec3) -> WireModel {
-    // Show ext lines + dim line
-    let dir = (p2 - p1).normalize_or_zero();
-    let perp = Vec3::new(-dir.z, dir.y, dir.x).normalize_or_zero();
-    let offset = (dim_pt - p2).dot(perp);
-    let d1 = p1 + perp * offset;
-    let d2 = p2 + perp * offset;
+    // Show ext lines + dim line.
+    let (d1, d2) = dim_line_endpoints(p1, p2, dim_pt);
     WireModel {
         name: "dimaligned_preview".into(),
         points: vec![

@@ -62,14 +62,16 @@ impl CadCommand for OrdinateDimCommand {
                 CmdResult::NeedPoint
             }
             Step::LeaderEndpoint { feature } => {
-                let dx = (pt.x - feature.x).abs();
-                let dy = (pt.z - feature.z).abs();
-                // If leader is more vertical (Y-screen = Z-world moves more) → X ordinate.
-                // If leader is more horizontal → Y ordinate.
-                let is_x = dy >= dx;
-                let feat_v3 = v3(feature);
-                let lead_v3 = v3(pt);
-                let dim = DimensionOrdinate::new(feat_v3, lead_v3, is_x);
+                let is_x = is_x_type(feature, pt);
+                let elbow = ordinate_elbow(feature, pt, is_x);
+                let mut dim = DimensionOrdinate::new(v3(feature), v3(pt), is_x);
+                // The leader is an orthogonal L from the feature to the
+                // endpoint; store its elbow as the definition point. Without it
+                // the renderer draws feature → (0,0,0) → endpoint, kinking the
+                // leader through the world origin. The old code also worked in
+                // the wrong (XZ) plane, dropping the Y coordinate. (#150)
+                dim.definition_point = v3(elbow);
+                dim.base.definition_point = v3(elbow);
                 CmdResult::CommitAndExit(EntityType::Dimension(Dimension::Ordinate(dim)))
             }
         }
@@ -78,13 +80,60 @@ impl CadCommand for OrdinateDimCommand {
     fn on_enter(&mut self) -> CmdResult {
         CmdResult::Cancel
     }
-    fn on_preview_wires(&mut self, _pt: DVec3) -> Vec<WireModel> {
-        vec![]
+    fn on_mouse_move(&mut self, pt: DVec3) -> Option<WireModel> { let pt = pt.as_vec3();
+        let feature = match self.step {
+            Step::LeaderEndpoint { feature } => feature,
+            _ => return None,
+        };
+        let is_x = is_x_type(feature, pt);
+        let elbow = ordinate_elbow(feature, pt, is_x);
+        Some(preview_wire(vec![feature, elbow, pt]))
     }
 }
 
 fn v3(p: Vec3) -> Vector3 {
-    Vector3::new(p.x as f64, 0.0, p.z as f64)
+    Vector3::new(p.x as f64, p.y as f64, p.z as f64)
+}
+
+/// X-datum (labels the feature's X coordinate) when the leader runs more
+/// vertically than horizontally; Y-datum otherwise. Mirrors the placement
+/// decision so the preview and the committed entity agree.
+fn is_x_type(feature: Vec3, leader: Vec3) -> bool {
+    let dx = (leader.x - feature.x).abs();
+    let dy = (leader.y - feature.y).abs();
+    dy >= dx
+}
+
+/// Orthogonal elbow of the ordinate leader: an X-datum runs along Y from the
+/// feature then jogs across in X; a Y-datum runs along X then jogs in Y.
+fn ordinate_elbow(feature: Vec3, leader: Vec3, is_x: bool) -> Vec3 {
+    if is_x {
+        Vec3::new(feature.x, leader.y, feature.z)
+    } else {
+        Vec3::new(leader.x, feature.y, feature.z)
+    }
+}
+
+fn preview_wire(points: Vec<Vec3>) -> WireModel {
+    WireModel {
+        name: "dimordinate_preview".into(),
+        points: points.into_iter().map(|p| [p.x, p.y, p.z]).collect(),
+        points_low: Vec::new(),
+        color: WireModel::CYAN,
+        selected: false,
+        pattern_length: 0.0,
+        pattern: [0.0; 8],
+        line_weight_px: 1.0,
+        snap_pts: vec![],
+        tangent_geoms: vec![],
+        aci: 0,
+        key_vertices: vec![],
+        aabb: WireModel::UNBOUNDED_AABB,
+        plinegen: true,
+        vp_scissor: None,
+        fill_tris: vec![],
+        fill_tris_low: Vec::new(),
+    }
 }
 
 

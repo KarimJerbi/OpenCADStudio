@@ -86,10 +86,13 @@ impl CadCommand for DimJogLineCommand {
         let d = 0.3_f32;
         Some(WireModel {
             name: "dimjog_preview".into(),
+            // Jog zigzag in the XY drawing plane (Z is elevation, ~0). The old
+            // marker varied Z, so in the top-down view it collapsed to a flat
+            // line instead of a zigzag. (#150)
             points: vec![
                 [pt.x - d, pt.y, pt.z],
-                [pt.x - d * 0.3, pt.y, pt.z + d],
-                [pt.x + d * 0.3, pt.y, pt.z - d],
+                [pt.x - d * 0.3, pt.y + d, pt.z],
+                [pt.x + d * 0.3, pt.y - d, pt.z],
                 [pt.x + d, pt.y, pt.z],
             ],
             points_low: Vec::new(),

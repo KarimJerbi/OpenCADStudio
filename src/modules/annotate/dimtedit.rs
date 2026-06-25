@@ -99,12 +99,15 @@ impl CadCommand for DimTeditCommand {
         let d = 0.2_f32;
         Some(WireModel {
             name: "dimtedit_preview".into(),
+            // Marker box in the XY drawing plane (Z is elevation, ~0). The old
+            // box varied Z, so in the top-down view it collapsed to a flat line
+            // instead of a square. (#150)
             points: vec![
-                [pt.x - d, pt.y, pt.z - d],
-                [pt.x + d, pt.y, pt.z - d],
-                [pt.x + d, pt.y, pt.z + d],
-                [pt.x - d, pt.y, pt.z + d],
-                [pt.x - d, pt.y, pt.z - d],
+                [pt.x - d, pt.y - d, pt.z],
+                [pt.x + d, pt.y - d, pt.z],
+                [pt.x + d, pt.y + d, pt.z],
+                [pt.x - d, pt.y + d, pt.z],
+                [pt.x - d, pt.y - d, pt.z],
             ],
             points_low: Vec::new(),
             color: WireModel::CYAN,
