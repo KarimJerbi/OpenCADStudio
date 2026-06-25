@@ -1346,6 +1346,19 @@ impl Scene {
         );
         vp.width = pw;
         vp.height = ph;
+        // Frame the new layout on the whole sheet: look straight down at the
+        // paper centre with the visible height a touch taller than the page.
+        // Without this the viewport keeps `Viewport::new`'s default view
+        // (target 0,0 / height 210), so the first time a fresh drawing's
+        // layout is opened the camera sits on the paper's bottom-left corner
+        // instead of centring the sheet.
+        vp.view_target = acadrust::types::Vector3::new(
+            (min_lim.0 + max_lim.0) / 2.0,
+            (min_lim.1 + max_lim.1) / 2.0,
+            0.0,
+        );
+        vp.view_center = acadrust::types::Vector3::ZERO;
+        vp.view_height = ph * 1.1;
         if let Ok(handle) =
             self.document
                 .add_entity_to_layout(EntityType::Viewport(vp), layout_name)
