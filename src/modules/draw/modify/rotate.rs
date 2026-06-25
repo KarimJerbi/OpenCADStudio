@@ -120,21 +120,26 @@ impl CadCommand for RotateCommand {
     }
 
     fn on_text_input(&mut self, text: &str) -> Option<CmdResult> {
-        if let Step::Angle { center, .. } = &self.step {
-            // The value already carries the correct sign (the dynamic-input
-            // layer applies the cursor's side for a bare magnitude).
-            let deg: f32 = text.trim().replace(',', ".").parse().ok()?;
-            let center = *center;
-            defaults::set_rotate_angle(deg);
-            return Some(CmdResult::TransformSelected(
-                self.handles.clone(),
-                EntityTransform::Rotate {
-                    center,
-                    angle_rad: deg.to_radians(),
-                },
-            ));
-        }
-        None
+        // A typed angle rotates directly about the centre. Accept it at the
+        // reference-point step too (the prompt offers "skip: type angle
+        // directly") — otherwise typing the angle there did nothing and the
+        // command cancelled on the next Enter, so the objects never rotated.
+        let center = match &self.step {
+            Step::RefPoint { center } => *center,
+            Step::Angle { center, .. } => *center,
+            Step::Center => return None,
+        };
+        // The value already carries the correct sign (the dynamic-input
+        // layer applies the cursor's side for a bare magnitude).
+        let deg: f32 = text.trim().replace(',', ".").parse().ok()?;
+        defaults::set_rotate_angle(deg);
+        Some(CmdResult::TransformSelected(
+            self.handles.clone(),
+            EntityTransform::Rotate {
+                center,
+                angle_rad: deg.to_radians(),
+            },
+        ))
     }
 
     fn on_preview_wires(&mut self, pt: DVec3) -> Vec<WireModel> {

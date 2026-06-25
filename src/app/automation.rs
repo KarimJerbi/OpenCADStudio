@@ -519,6 +519,29 @@ mod tests {
     }
 
     #[test]
+    fn rotate_by_typed_angle_after_center() {
+        // ROTATE: after picking the centre, typing the angle directly must
+        // rotate the selection (the reference point is optional, as the prompt
+        // says). Before the fix this did nothing and the command cancelled, so
+        // the objects never rotated. Regression for #159.
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
+        app.automation_op(r#"{"op":"select","type":"Line"}"#);
+        // Centre (0,0) then 90° — no reference point.
+        app.automation_op(r#"{"op":"run","cmd":"ROTATE 0,0 90"}"#);
+        let q = app.automation_op(r#"{"op":"query","type":"Line"}"#);
+        assert_eq!(q["count"], 1, "the line must survive the rotate");
+        let ex = q["entities"][0]["end"][0].as_f64().unwrap();
+        let ey = q["entities"][0]["end"][1].as_f64().unwrap();
+        // (10,0) rotated 90° about the origin → (0,10).
+        assert!(
+            ex.abs() < 1e-3 && (ey - 10.0).abs() < 1e-3,
+            "line end after ROTATE 90 = ({ex}, {ey})"
+        );
+    }
+
+    #[test]
     fn save_then_open_round_trips() {
         let mut app = OpenCADStudio::new_for_test();
         let path = std::env::temp_dir().join("ocs_automation_test.dxf");
