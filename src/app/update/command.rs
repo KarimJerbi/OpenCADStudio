@@ -402,6 +402,18 @@ pub(super) fn on_tab_close(&mut self, idx: usize) -> Task<Message> {
                     self.text_inline_cancel();
                     return self.post_editor_closed(false);
                 }
+                // UCS icon: Esc ends any grip drag and clears the selection
+                // (only when no command owns Escape).
+                if self.tabs[self.active_tab].active_cmd.is_none()
+                    && (self.ucs_grip_drag.is_some() || self.ucs_icon_selected)
+                {
+                    let i = self.active_tab;
+                    self.ucs_grip_drag = None;
+                    self.ucs_icon_selected = false;
+                    self.ucs_icon_hover = false;
+                    self.tabs[i].snap_result = None;
+                    return Task::none();
+                }
                 // Leave interactive PAN mode (and end any in-flight pan drag).
                 if self.tabs[self.active_tab].pan_mode {
                     let i = self.active_tab;

@@ -39,6 +39,17 @@ pub struct TileDrag {
     pub last_applied: f32,
 }
 
+/// Which UCS-icon grip is being dragged. `Origin` slides the UCS origin within
+/// its own plane; `XAxis`/`YAxis` rotate the UCS so that axis points at the
+/// cursor (the other in-plane axis follows, Z fixed). The cursor is mapped onto
+/// the UCS plane every move, so no extra drag-start state is needed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UcsGripKind {
+    Origin,
+    XAxis,
+    YAxis,
+}
+
 /// Cursor dwelling over a grip. When `started.elapsed() >=` the popup
 /// threshold the multi-functional menu opens (`grip_popup`).
 #[derive(Clone, Debug)]
@@ -258,6 +269,13 @@ pub(super) struct OpenCADStudio {
     /// edge, updated on move, cleared on release (which also runs the
     /// collapse pass).
     tile_drag: Option<TileDrag>,
+    /// Cursor is hovering over the UCS icon body — drives the hover highlight.
+    ucs_icon_hover: bool,
+    /// UCS icon is selected (clicked): its grips are shown and draggable.
+    ucs_icon_selected: bool,
+    /// Active direct-drag of a UCS icon grip (origin slide or axis rotate).
+    /// Set on press over a grip, updated on move, committed on release.
+    ucs_grip_drag: Option<UcsGripKind>,
     /// `true` once the user has reshaped the dynamic-input field set via
     /// the `,` separator during the current command iteration. Tells
     /// `sync_dyn_fields` to preserve the user's chosen shape instead of
@@ -302,6 +320,9 @@ pub(super) struct OpenCADStudio {
     qselect: Option<QSelectState>,
     /// Show the UCS icon in the bottom-left corner of model space (UCSICON).
     show_ucs_icon: bool,
+    /// Anchor the UCS icon to the projected UCS origin when it is on-screen,
+    /// falling back to the corner otherwise (UCSICON ORigin / NOorigin).
+    ucs_icon_at_origin: bool,
     /// Whether the ViewCube 3D gizmo is visible in model space (NAVVCUBE).
     show_viewcube: bool,
     /// Whether the Properties panel is shown on the left (PROPERTIES).
@@ -1123,6 +1144,9 @@ pub enum Message {
     ViewportScroll(mouse::ScrollDelta),
     ViewportExit,
     ViewCubeSnap(CubeRegion),
+    /// World-frame view snap from a compass cardinal (N/E/S/W), bypassing the
+    /// UCS so the compass stays world-aligned.
+    ViewCubeSnapWorld(CubeRegion),
     /// ViewCube home button → jump to the default isometric view.
     ViewCubeHome,
     /// ViewCube roll arrow → roll the view 90° (true = clockwise).
@@ -1783,6 +1807,9 @@ impl OpenCADStudio {
             default_paper_bg_color: None,
             awaiting_vports: false,
             tile_drag: None,
+            ucs_icon_hover: false,
+            ucs_icon_selected: false,
+            ucs_grip_drag: None,
             dyn_user_reshaped: false,
             grip_hover: None,
             grip_popup: None,
@@ -1794,6 +1821,7 @@ impl OpenCADStudio {
             grip_original: None,
             qselect: None,
             show_ucs_icon: true,
+            ucs_icon_at_origin: true,
             show_viewcube: true,
             show_properties: true,
             show_file_tabs: true,

@@ -1079,6 +1079,7 @@ impl OpenCADStudio {
             }
 
             Message::ViewCubeSnap(region) => self.on_view_cube_snap(region),
+            Message::ViewCubeSnapWorld(region) => self.on_view_cube_snap_world(region),
 
             Message::ViewCubeHome => {
                 let i = self.active_tab;

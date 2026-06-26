@@ -20,6 +20,54 @@ use acadrust::{EntityType as AcadEntityType, Handle};
 use iced::time::Instant;
 use iced::{mouse, Point, Task};
 
+/// Pixel radius for grabbing a UCS-icon grip (origin dot or an axis tip).
+const UCS_GRIP_HIT_PX: f32 = 9.0;
+/// Pixel reach for hovering/clicking the icon body (origin, tips, or an arm).
+const UCS_ICON_PICK_PX: f32 = 10.0;
+/// Pixel half-width for clicking an icon arm (line segment).
+const UCS_ICON_ARM_PX: f32 = 6.0;
+
+fn pt_pt_d2(a: Point, b: Point) -> f32 {
+    (a.x - b.x).powi(2) + (a.y - b.y).powi(2)
+}
+
+/// Squared distance from `p` to the segment `a`–`b`.
+fn pt_seg_d2(p: Point, a: Point, b: Point) -> f32 {
+    let (vx, vy) = (b.x - a.x, b.y - a.y);
+    let len2 = vx * vx + vy * vy;
+    let t = if len2 > 1e-6 {
+        (((p.x - a.x) * vx + (p.y - a.y) * vy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    pt_pt_d2(p, Point::new(a.x + t * vx, a.y + t * vy))
+}
+
+/// Which UCS grip (if any) the cursor `p` is on.
+fn ucs_grip_under(p: Point, h: &crate::ui::overlay::UcsIconHit) -> Option<crate::app::UcsGripKind> {
+    let r2 = UCS_GRIP_HIT_PX * UCS_GRIP_HIT_PX;
+    if pt_pt_d2(p, h.origin) <= r2 {
+        Some(crate::app::UcsGripKind::Origin)
+    } else if pt_pt_d2(p, h.tips[0]) <= r2 {
+        Some(crate::app::UcsGripKind::XAxis)
+    } else if pt_pt_d2(p, h.tips[1]) <= r2 {
+        Some(crate::app::UcsGripKind::YAxis)
+    } else {
+        None
+    }
+}
+
+/// True when `p` is over the icon body (origin, a tip, or an arm) — the pick
+/// region for hover-highlight and select.
+fn over_ucs_icon(p: Point, h: &crate::ui::overlay::UcsIconHit) -> bool {
+    let pick2 = UCS_ICON_PICK_PX * UCS_ICON_PICK_PX;
+    if pt_pt_d2(p, h.origin) <= pick2 || h.tips.iter().any(|t| pt_pt_d2(p, *t) <= pick2) {
+        return true;
+    }
+    let arm2 = UCS_ICON_ARM_PX * UCS_ICON_ARM_PX;
+    h.tips.iter().any(|t| pt_seg_d2(p, h.origin, *t) <= arm2)
+}
+
 
 impl OpenCADStudio {
     /// Write PDSIZE from the dialog buffer with the current relative/absolute
@@ -460,6 +508,14 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                     return Task::none();
                 }
 
+                // UCS icon grip drag: map the cursor onto the UCS plane and
+                // slide the origin / rotate the axis. Short-circuits pan & snap.
+                if let Some(kind) = self.ucs_grip_drag {
+                    self.drag_ucs_grip(i, kind, p);
+                    self.tabs[i].scene.selection.borrow_mut().last_move_pos = Some(p);
+                    return Task::none();
+                }
+
                 // Keep the ViewCube hover in sync as the cursor leaves the
                 // hit-area overlay and moves over the rest of the viewport.
                 // `hover_id` returns None outside the cube box, which clears
@@ -487,6 +543,13 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                 // selected entity's grip and, after a dwell, open the
                 // popup menu. See scene::model::object::GripMenuItem.
                 self.update_grip_hover(i, p);
+
+                // UCS icon hover highlight (suppressed mid grip-drag).
+                self.ucs_icon_hover = self.ucs_grip_drag.is_none()
+                    && self
+                        .ucs_icon_hit_info(i, svw, svh)
+                        .map(|h| over_ucs_icon(p, &h))
+                        .unwrap_or(false);
 
                 let mut sel = self.tabs[i].scene.selection.borrow_mut();
                 sel.last_move_pos = Some(p);
@@ -1203,6 +1266,138 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                 Task::none()
     }
 
+    /// Screen positions of the UCS-icon grips (origin + axis tips, absolute px)
+    /// for the active pane, or `None` when the icon is not shown / not anchored
+    /// at its on-screen origin / a command is active. The single source of truth
+    /// for both hover and grip hit-testing, so they match what is drawn.
+    fn ucs_icon_hit_info(&self, i: usize, vw: f32, vh: f32) -> Option<crate::ui::overlay::UcsIconHit> {
+        if !self.show_ucs_icon || self.tabs[i].active_cmd.is_some() {
+            return None;
+        }
+        let tab = &self.tabs[i];
+        let (_, ux, uy, uz) = tab.ucs_xform().axes();
+        // Project through whichever pane owns the icon — a floating viewport's
+        // own camera, else the active model tile. Bare paper space shows none.
+        let (cam, bounds) = if let Some((c, full)) = tab.scene.viewport_edit_frame((vw, vh)) {
+            (c, full)
+        } else if tab.scene.current_layout == "Model" {
+            (
+                tab.scene.camera.borrow().clone(),
+                tab.scene.active_model_tile_bounds(vw, vh),
+            )
+        } else {
+            return None;
+        };
+        // Mirror the draw: anchor at the projected origin only when ORigin mode
+        // is on AND the origin is on-screen; otherwise `None` parks it in the
+        // corner — still selectable/draggable there.
+        let os = if self.ucs_icon_at_origin {
+            cam.project(tab.ucs_origin_world(), bounds)
+                .map(|q| Point::new(bounds.x + q.x, bounds.y + q.y))
+        } else {
+            None
+        };
+        crate::ui::overlay::ucs_icon_hit(cam.view_proj_rte(bounds), bounds, (ux, uy, uz), os)
+    }
+
+    /// Apply one frame of a UCS-icon grip drag: map the cursor onto the active
+    /// UCS plane (so the move stays in-plane) and either slide the origin there
+    /// or rotate the chosen axis to point at it, keeping a right-handed frame
+    /// with Z fixed. Live — the commit (persist) happens on release.
+    fn drag_ucs_grip(&mut self, i: usize, kind: crate::app::UcsGripKind, p_full: Point) {
+        let (vw, vh) = self.tabs[i].scene.selection.borrow().vp_size;
+        if vw <= 1.0 || vh <= 1.0 {
+            return;
+        }
+        // Same pane framing as the rest of the move handler: pane-local cursor
+        // and origin-zero bounds, with the floating-viewport camera when inside
+        // one. `cursor_model_point` handles the paper→model round-trip.
+        let edit_frame = self.tabs[i].scene.viewport_edit_frame((vw, vh));
+        let tile_b = match &edit_frame {
+            Some((_, full)) => *full,
+            None => self.tabs[i].scene.active_model_tile_bounds(vw, vh),
+        };
+        let edit_cam = edit_frame.map(|(cam, _)| cam);
+        let p = Point::new(p_full.x - tile_b.x, p_full.y - tile_b.y);
+        let bounds = iced::Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: tile_b.width,
+            height: tile_b.height,
+        };
+        let raw = self.cursor_model_point(i, &edit_cam, p, bounds);
+
+        // Object/grid snap, same path as an entity grip or command drag: the
+        // dragged UCS point sticks to endpoints/midpoints/grid under the cursor,
+        // and the snap marker is published via `snap_result`.
+        let (view_rot, eye) = match &edit_cam {
+            Some(cam) => (cam.view_proj_rte(bounds), cam.eye()),
+            None => {
+                let cam = self.tabs[i].scene.camera.borrow();
+                (cam.view_proj_rte(bounds), cam.eye())
+            }
+        };
+        let all_wires = if let (Some(_), Some(h)) =
+            (&edit_cam, self.tabs[i].scene.active_viewport)
+        {
+            self.tabs[i].scene.model_wires_for_viewport_arc(h, bounds.height)
+        } else {
+            self.tabs[i].scene.hit_test_wires()
+        };
+        self.snapper.grid_spacing = crate::ui::overlay::compute_grid_step(view_rot, bounds);
+        // No rubber-band origin (perp/extension feet don't apply to a free drag).
+        self.snapper.from_point = None;
+        let (go, gr) = self.tabs[i].ucs_grid_basis();
+        let snap_hit = self
+            .snapper
+            .snap(raw, p, &all_wires[..], view_rot, eye, bounds, go, gr);
+        let world = snap_hit.map(|s| s.world).unwrap_or(raw);
+        self.tabs[i].snap_result = snap_hit;
+        if let Some(s) = self.tabs[i].snap_result.as_mut() {
+            // Snap marker is pane-local; lift it to absolute canvas px.
+            s.screen.x += tile_b.x;
+            s.screen.y += tile_b.y;
+        }
+
+        use acadrust::types::Vector3;
+        let v3 = |d: glam::DVec3| Vector3::new(d.x, d.y, d.z);
+        {
+            let ucs = self.tabs[i]
+                .active_ucs
+                .get_or_insert_with(|| acadrust::tables::Ucs::new("*ACTIVE*"));
+            match kind {
+                crate::app::UcsGripKind::Origin => {
+                    ucs.origin = v3(world);
+                }
+                crate::app::UcsGripKind::XAxis | crate::app::UcsGripKind::YAxis => {
+                    let o = glam::dvec3(ucs.origin.x, ucs.origin.y, ucs.origin.z);
+                    let x = glam::dvec3(ucs.x_axis.x, ucs.x_axis.y, ucs.x_axis.z);
+                    let y = glam::dvec3(ucs.y_axis.x, ucs.y_axis.y, ucs.y_axis.z);
+                    let z = x.cross(y).normalize_or(glam::DVec3::Z);
+                    // Direction from origin to cursor, flattened into the UCS
+                    // plane; bail on a degenerate (cursor on the origin).
+                    let dir = world - o;
+                    let d = dir - z * dir.dot(z);
+                    if d.length_squared() < 1e-12 {
+                        return;
+                    }
+                    let d = d.normalize();
+                    // Z fixed; the dragged axis = d, the other = right-handed
+                    // completion (z×x = y, y×z = x).
+                    let (nx, ny) = match kind {
+                        crate::app::UcsGripKind::XAxis => (d, z.cross(d)),
+                        _ => (d.cross(z), d),
+                    };
+                    ucs.x_axis = v3(nx);
+                    ucs.y_axis = v3(ny);
+                }
+            }
+        }
+        self.tabs[i].sync_ucs_to_scene();
+        self.tabs[i].dirty = true;
+        self.tabs[i].scene.camera_generation += 1;
+    }
+
     pub(super) fn on_viewport_left_press(&mut self) -> Task<Message> {
                 let i = self.active_tab;
                 // A click in the viewport dismisses any open ribbon dropdown
@@ -1276,6 +1471,30 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                     if scene::hit_test(cx, cy, w, h, rot, VIEWCUBE_PX).is_some() {
                         return Task::none();
                     }
+                }
+
+                // UCS icon: click to select (grips appear), then drag a grip to
+                // move/rotate. A click off the icon clears the selection. Works
+                // in the corner too (parked icon), not just at the origin.
+                if self.show_ucs_icon && self.tabs[i].active_cmd.is_none() {
+                    if let Some(hit) = self.ucs_icon_hit_info(i, vw, vh) {
+                        // Already selected → a press on a grip starts the drag.
+                        if self.ucs_icon_selected {
+                            if let Some(kind) = ucs_grip_under(p, &hit) {
+                                self.ucs_grip_drag = Some(kind);
+                                return Task::none();
+                            }
+                        }
+                        // Press on the icon body selects it (and shows grips).
+                        if over_ucs_icon(p, &hit) {
+                            self.ucs_icon_selected = true;
+                            self.ucs_icon_hover = true;
+                            return Task::none();
+                        }
+                    }
+                    // Press elsewhere drops the selection, then falls through to
+                    // the normal pick / box-select so the click still lands.
+                    self.ucs_icon_selected = false;
                 }
 
                 // Tiled Model layout: an inner divider near the cursor
@@ -1435,6 +1654,19 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                 // dragging — use the close button to remove a pane.
                 if self.tile_drag.take().is_some() {
                     self.tabs[i].scene.camera_generation += 1;
+                    return Task::none();
+                }
+
+                // Commit a UCS icon grip drag: persist the new UCS so it
+                // round-trips, and clear the lingering press state.
+                if self.ucs_grip_drag.take().is_some() {
+                    self.tabs[i].persist_active_ucs();
+                    self.tabs[i].snap_result = None;
+                    self.snapper.from_point = None;
+                    let mut sel = self.tabs[i].scene.selection.borrow_mut();
+                    sel.left_down = false;
+                    sel.left_press_pos = None;
+                    sel.left_dragging = false;
                     return Task::none();
                 }
 
@@ -2435,19 +2667,31 @@ pub(super) fn on_tick(&mut self, t: Instant) -> Task<Message> {
                 if let Some(region) = scene::hit_test(cx, cy, w, h, rot, VIEWCUBE_PX) {
                     return Task::done(Message::ViewCubeSnap(region));
                 }
-                if let Some(card) = scene::hit_test_cardinal(cx, cy, w, h, rot, VIEWCUBE_PX) {
-                    return Task::done(Message::ViewCubeSnap(card.face_region()));
+                // Compass cardinals are world-fixed: hit-test through the camera-
+                // only rotation (strip the UCS) so the target matches the drawn
+                // N/E/S/W, and snap in world frame.
+                let rot_world = rot * self.tabs[i].scene.viewcube_ucs_mat().inverse();
+                if let Some(card) = scene::hit_test_cardinal(cx, cy, w, h, rot_world, VIEWCUBE_PX) {
+                    return Task::done(Message::ViewCubeSnapWorld(card.face_region()));
                 }
                 Task::none()
     }
 
     pub(super) fn on_view_cube_snap(&mut self, region: CubeRegion) -> Task<Message> {
+                // The cube is oriented in the active UCS, so snap in the UCS frame.
+                let r_ucs = self.tabs[self.active_tab].scene.viewcube_ucs_mat();
+                self.snap_view_region(region, r_ucs)
+    }
+
+    /// Compass cardinals are world-fixed, so they snap in the world frame
+    /// (no UCS composition).
+    pub(super) fn on_view_cube_snap_world(&mut self, region: CubeRegion) -> Task<Message> {
+                self.snap_view_region(region, glam::Mat4::IDENTITY)
+    }
+
+    fn snap_view_region(&mut self, region: CubeRegion, r_ucs: glam::Mat4) -> Task<Message> {
                 let i = self.active_tab;
                 let mut region = region;
-                // The cube is oriented in the active UCS, so its face directions
-                // are UCS-frame — rotate them into world before comparing /
-                // snapping (identity outside model space).
-                let r_ucs = self.tabs[i].scene.viewcube_ucs_mat();
                 // "Already there → flip to opposite" check: compare the
                 // current gaze direction with the region's target gaze.
                 let target_dir = r_ucs.transform_vector3(region.snap_direction());

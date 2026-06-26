@@ -53,6 +53,9 @@ pub struct ViewportData {
     /// Camera rotation matrix derived from the quaternion.
     /// Used by the ViewCube pipeline — no gimbal lock.
     pub(in crate::scene) cam_rotation: Mat4,
+    /// Camera-only rotation (no UCS) for the world-fixed compass cardinals, so
+    /// N/E/S/W stay aligned to world even as the cube reorients with the UCS.
+    pub(in crate::scene) compass_rotation: Mat4,
     pub(in crate::scene) hover_region: Option<usize>,
     pub(in crate::scene) show_viewcube: bool,
     /// Header.fill_mode (FILLMODE): when false, hatch / wipeout / face3d-fill
@@ -323,6 +326,7 @@ impl shader::Primitive for Primitive {
                 inner.viewcube.upload(
                     queue,
                     vp.cam_rotation,
+                    vp.compass_rotation,
                     (vp.screen_rect.width * bounds.width) as u32,
                     (vp.screen_rect.height * bounds.height) as u32,
                     vp.hover_region,
@@ -808,6 +812,7 @@ impl Scene {
             meshes: self.meshes_arc(),
             uniforms,
             cam_rotation: inst.camera.view_rotation_mat() * self.viewcube_ucs_mat(),
+            compass_rotation: inst.camera.view_rotation_mat(),
             // Only the active viewport gets the hovered-region highlight.
             hover_region: if inst.active { hover_region } else { None },
             show_viewcube: inst.active,

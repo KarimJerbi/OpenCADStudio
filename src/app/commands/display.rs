@@ -85,8 +85,11 @@ impl OpenCADStudio {
                         self.push_undo_snapshot(i, "UCSICON");
                         let visible = sub != "OFF";
                         let at_origin = sub == "ORIGIN";
-                        // Update model-space icon flag.
+                        // Update model-space icon flags.
                         self.show_ucs_icon = visible;
+                        if sub == "NOORIGIN" || sub == "ORIGIN" {
+                            self.ucs_icon_at_origin = at_origin;
+                        }
                         let mut count = 0usize;
                         for entity in self.tabs[i].scene.document.entities_mut() {
                             if let acadrust::EntityType::Viewport(vp) = entity {

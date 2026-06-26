@@ -176,6 +176,16 @@ impl DocumentTab {
         super::helpers::UcsXform::from_active(self.active_ucs.as_ref())
     }
 
+    /// World-space UCS origin in full f64 precision (stored f64 in the header /
+    /// viewport). Used to anchor the UCS icon and as the cursor-pick plane point
+    /// — `UcsXform`'s origin is f32 and would quantize the anchor at UTM scale.
+    pub(super) fn ucs_origin_world(&self) -> glam::DVec3 {
+        self.active_ucs
+            .as_ref()
+            .map(|u| glam::dvec3(u.origin.x, u.origin.y, u.origin.z))
+            .unwrap_or(glam::DVec3::ZERO)
+    }
+
     /// True when the active pane edits **model-space** geometry: the Model tab,
     /// or inside a floating viewport (MSPACE). The UCS applies in both; plain
     /// paper space (no active viewport) is excluded. Single predicate so every

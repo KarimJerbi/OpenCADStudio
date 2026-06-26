@@ -570,6 +570,7 @@ impl ViewCubeText {
         &mut self,
         queue: &wgpu::Queue,
         cam_rotation: Mat4,
+        compass_rotation: Mat4,
         vp_w: u32,
         vp_h: u32,
         cube_px: u32,
@@ -677,6 +678,21 @@ impl ViewCubeText {
         // Painted flat onto the ring band (z = RING_Z) so they foreshorten with
         // the ring and read upright in plan. Local axes u = +X, v = +Y give
         // u × v = +Z → never mirrored when seen from above.
+        //
+        // The compass is world-fixed: it projects through `compass_rotation`
+        // (camera only, no UCS), so N/E/S/W stay aligned to world even when the
+        // cube reorients with the active UCS.
+        let project_world = |local: Vec3| -> Option<[f32; 2]> {
+            let world = compass_rotation.transform_point3(local);
+            let clip = view_proj * Vec4::new(world.x, world.y, world.z, 1.0);
+            if clip.w.abs() < 1e-6 {
+                return None;
+            }
+            Some([
+                (clip.x / clip.w + 1.0) * 0.5 * vw,
+                (1.0 - clip.y / clip.w) * 0.5 * vh,
+            ])
+        };
         const CARD_GW: f32 = 0.16; // glyph size in cube-local units
         const CARD_GH: f32 = 0.22;
         let cardinals = [
@@ -691,7 +707,7 @@ impl ViewCubeText {
             };
             let center = Vec3::new(dir.x * R_CARD, dir.y * R_CARD, RING_Z);
             // Dim a cardinal whose ring point sits behind the cube.
-            let alpha = if cam_rotation.transform_point3(center).z >= -0.15 {
+            let alpha = if compass_rotation.transform_point3(center).z >= -0.15 {
                 1.0
             } else {
                 0.5
@@ -699,10 +715,10 @@ impl ViewCubeText {
             let color = [1.0, 1.0, 1.0, alpha];
             let (u0, v0, u1, v1) = glyph_uv(gi, self.atlas_w, self.atlas_h);
             let corner = |lx: f32, ly: f32| center + Vec3::X * lx + Vec3::Y * ly;
-            let tl = project(corner(-CARD_GW * 0.5, CARD_GH * 0.5));
-            let tr = project(corner(CARD_GW * 0.5, CARD_GH * 0.5));
-            let br = project(corner(CARD_GW * 0.5, -CARD_GH * 0.5));
-            let bl = project(corner(-CARD_GW * 0.5, -CARD_GH * 0.5));
+            let tl = project_world(corner(-CARD_GW * 0.5, CARD_GH * 0.5));
+            let tr = project_world(corner(CARD_GW * 0.5, CARD_GH * 0.5));
+            let br = project_world(corner(CARD_GW * 0.5, -CARD_GH * 0.5));
+            let bl = project_world(corner(-CARD_GW * 0.5, -CARD_GH * 0.5));
             if let (Some(tl), Some(tr), Some(br), Some(bl)) = (tl, tr, br, bl) {
                 let mk = |pos: [f32; 2], uv: [f32; 2]| TextVertex { pos, uv, color };
                 verts.push(mk(tl, [u0, v0]));
@@ -1210,6 +1226,7 @@ impl ViewCubePipeline {
         &mut self,
         queue: &wgpu::Queue,
         cam_rotation: Mat4,
+        compass_rotation: Mat4,
         vp_w: u32,
         vp_h: u32,
         hover: Option<usize>,
@@ -1226,7 +1243,7 @@ impl ViewCubePipeline {
             )),
         );
         self.text
-            .update(queue, cam_rotation, vp_w, vp_h, self.cube_px);
+            .update(queue, cam_rotation, compass_rotation, vp_w, vp_h, self.cube_px);
     }
 
     pub fn ensure_depth_texture(&mut self, device: &wgpu::Device, size: Size<u32>) {

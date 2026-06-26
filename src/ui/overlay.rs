@@ -109,6 +109,14 @@ pub struct UcsIconParams {
     /// The active UCS axis directions in world space (X, Y, Z). Plain WCS is
     /// `(Vec3::X, Vec3::Y, Vec3::Z)`; a UCS rotates the tripod to match.
     pub axes: (Vec3, Vec3, Vec3),
+    /// Absolute screen position of the UCS origin, when the icon should track
+    /// it (UCSICON ORigin). `None` → pin to the corner. The tripod still snaps
+    /// back to the corner if this point falls outside the viewport bounds.
+    pub origin_screen: Option<Point>,
+    /// Cursor is over the icon — brighten the tripod (hover affordance).
+    pub hover: bool,
+    /// Icon is selected — draw draggable grip squares at the origin and tips.
+    pub selected: bool,
 }
 
 // ── Selection overlay ───────────────────────────────────────────────────
@@ -843,7 +851,15 @@ impl canvas::Program<Message> for SelectionCanvas {
 
         // ── UCS icon ──────────────────────────────────────────────────────
         if let Some(ref ucs) = self.ucs_icon {
-            draw_ucs_icon(&mut frame, ucs.view_proj, ucs.bounds, ucs.axes);
+            draw_ucs_icon(
+                &mut frame,
+                ucs.view_proj,
+                ucs.bounds,
+                ucs.axes,
+                ucs.origin_screen,
+                ucs.hover,
+                ucs.selected,
+            );
         }
 
         // ── Object Snap Tracking lines ────────────────────────────────────
@@ -1086,15 +1102,37 @@ fn draw_axes(
 const UCS_ICON_MARGIN: f32 = 50.0;
 const UCS_ICON_LEN: f32 = 38.0; // longest axis arm in screen pixels
 const UCS_ICON_TIP: f32 = 7.0; // arrowhead size in pixels
+const UCS_GRIP_BOX: f32 = 7.0; // selected-grip square size in pixels
 
-fn draw_ucs_icon(
-    frame: &mut canvas::Frame,
+/// One projected UCS axis arm: scaled screen delta from the anchor plus its
+/// depth (for back-to-front draw order).
+struct IconAxis {
+    dx: f32,
+    dy: f32,
+    sc_len: f32,
+    depth: f32,
+}
+
+/// Screen positions of the UCS icon grips, present only when the tripod is
+/// anchored at the on-screen UCS origin (i.e. draggable). `tips` is X, Y, Z.
+pub struct UcsIconHit {
+    pub origin: Point,
+    pub tips: [Point; 3],
+}
+
+/// Shared icon geometry used by both the renderer and the grip hit-test, so the
+/// two never drift. Projects the UCS axis directions to screen, picks the
+/// anchor (on-screen origin when available, else the corner) and returns each
+/// axis's scaled screen delta. The bool is `at_origin` — true when anchored at
+/// the projected origin, which is the only state where grips are live.
+fn ucs_icon_geometry(
     vp: Mat4,
     bounds: iced::Rectangle,
     axes: (Vec3, Vec3, Vec3),
-) {
+    origin_screen: Option<Point>,
+) -> Option<(Point, bool, [IconAxis; 3])> {
     if bounds.width < 10.0 || bounds.height < 10.0 {
-        return;
+        return None;
     }
 
     // Project to NDC (including depth) then to screen pixels.
@@ -1116,16 +1154,31 @@ fn draw_ucs_icon(
     // rotates to the active UCS. Directions are translation-invariant, so a
     // common origin is fine.
     let (ax, ay, az) = axes;
-    let Some(org) = w2ndc(Vec3::ZERO) else { return };
-    let Some(xn) = w2ndc(ax) else { return };
-    let Some(yn) = w2ndc(ay) else { return };
-    let Some(zn) = w2ndc(az) else { return };
+    let org = w2ndc(Vec3::ZERO)?;
+    let xn = w2ndc(ax)?;
+    let yn = w2ndc(ay)?;
+    let zn = w2ndc(az)?;
 
     let org_s = ndc2s(org);
-    let icon_origin = Point::new(
+    let corner = Point::new(
         bounds.x + UCS_ICON_MARGIN,
         bounds.y + (bounds.height - UCS_ICON_MARGIN).max(UCS_ICON_MARGIN),
     );
+    // Snap the tripod to the projected UCS origin when it is on-screen
+    // (UCSICON ORigin); otherwise keep it in the corner. `org_s` (the
+    // rotation-only origin) stays the reference for axis-tip directions —
+    // those are translation-invariant, so only the anchor point moves.
+    let (icon_origin, at_origin) = match origin_screen {
+        Some(p)
+            if p.x >= bounds.x
+                && p.x <= bounds.x + bounds.width
+                && p.y >= bounds.y
+                && p.y <= bounds.y + bounds.height =>
+        {
+            (p, true)
+        }
+        _ => (corner, false),
+    };
 
     // Raw screen-space displacement for each axis tip.
     let raw = |ndc_tip: Vec3| -> (f32, f32, f32) {
@@ -1144,8 +1197,66 @@ fn draw_ucs_icon(
     let max_len = xlen.max(ylen).max(zlen).max(1e-4);
     let sc = UCS_ICON_LEN / max_len;
 
-    // depth > 0 → tip is farther from viewer than origin (axis going into screen).
-    // depth < 0 → tip is closer (axis coming toward viewer).
+    let mk = |dx: f32, dy: f32, len: f32, tip_z: f32| IconAxis {
+        dx: dx * sc,
+        dy: dy * sc,
+        sc_len: len * sc,
+        // depth > 0 → tip farther than origin (into screen); < 0 → toward viewer.
+        depth: tip_z - org.z,
+    };
+    Some((
+        icon_origin,
+        at_origin,
+        [
+            mk(xdx, xdy, xlen, xn.z),
+            mk(ydx, ydy, ylen, yn.z),
+            mk(zdx, zdy, zlen, zn.z),
+        ],
+    ))
+}
+
+/// Screen grip targets for the UCS icon, or `None` when it is pinned to the
+/// corner (origin off-screen) and therefore not draggable.
+pub fn ucs_icon_hit(
+    vp: Mat4,
+    bounds: iced::Rectangle,
+    axes: (Vec3, Vec3, Vec3),
+    origin_screen: Option<Point>,
+) -> Option<UcsIconHit> {
+    // Grips are available wherever the icon is drawn — including parked in the
+    // corner (origin off-screen), where dragging the origin grip relocates it.
+    let (o, _at_origin, g) = ucs_icon_geometry(vp, bounds, axes, origin_screen)?;
+    Some(UcsIconHit {
+        origin: o,
+        tips: [
+            Point::new(o.x + g[0].dx, o.y + g[0].dy),
+            Point::new(o.x + g[1].dx, o.y + g[1].dy),
+            Point::new(o.x + g[2].dx, o.y + g[2].dy),
+        ],
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_ucs_icon(
+    frame: &mut canvas::Frame,
+    vp: Mat4,
+    bounds: iced::Rectangle,
+    axes: (Vec3, Vec3, Vec3),
+    origin_screen: Option<Point>,
+    hover: bool,
+    selected: bool,
+) {
+    let Some((icon_origin, at_origin, geom)) =
+        ucs_icon_geometry(vp, bounds, axes, origin_screen)
+    else {
+        return;
+    };
+
+    // The icon is interactive wherever it is drawn (including parked in the
+    // corner), so hover/selection highlight applies there too.
+    let _ = at_origin;
+    let highlight = hover || selected;
+
     struct AxisInfo {
         dx: f32,
         dy: f32,
@@ -1158,30 +1269,30 @@ fn draw_ucs_icon(
     }
     let mut axes = [
         AxisInfo {
-            dx: xdx * sc,
-            dy: xdy * sc,
-            sc_len: xlen * sc,
-            depth: xn.z - org.z,
+            dx: geom[0].dx,
+            dy: geom[0].dy,
+            sc_len: geom[0].sc_len,
+            depth: geom[0].depth,
             r: 0.90,
             g: 0.22,
             b: 0.22,
             label: "X",
         },
         AxisInfo {
-            dx: ydx * sc,
-            dy: ydy * sc,
-            sc_len: ylen * sc,
-            depth: yn.z - org.z,
+            dx: geom[1].dx,
+            dy: geom[1].dy,
+            sc_len: geom[1].sc_len,
+            depth: geom[1].depth,
             r: 0.22,
             g: 0.85,
             b: 0.22,
             label: "Y",
         },
         AxisInfo {
-            dx: zdx * sc,
-            dy: zdy * sc,
-            sc_len: zlen * sc,
-            depth: zn.z - org.z,
+            dx: geom[2].dx,
+            dy: geom[2].dy,
+            sc_len: geom[2].sc_len,
+            depth: geom[2].depth,
             r: 0.22,
             g: 0.45,
             b: 0.90,
@@ -1196,10 +1307,13 @@ fn draw_ucs_icon(
     });
 
     for ax in &axes {
+        // On highlight, lerp the axis colour toward white and thicken the shaft
+        // so the whole tripod reads as "live".
+        let mix = if highlight { 0.45 } else { 0.0 };
         let col = Color {
-            r: ax.r,
-            g: ax.g,
-            b: ax.b,
+            r: ax.r + (1.0 - ax.r) * mix,
+            g: ax.g + (1.0 - ax.g) * mix,
+            b: ax.b + (1.0 - ax.b) * mix,
             a: 1.0,
         };
         let tip = Point::new(icon_origin.x + ax.dx, icon_origin.y + ax.dy);
@@ -1213,7 +1327,7 @@ fn draw_ucs_icon(
             frame.stroke(
                 &path,
                 canvas::Stroke {
-                    width: 2.0,
+                    width: if highlight { 3.0 } else { 2.0 },
                     style: canvas::Style::Solid(col),
                     line_cap: canvas::LineCap::Butt,
                     ..Default::default()
@@ -1278,6 +1392,41 @@ fn draw_ucs_icon(
             a: 0.95,
         },
     );
+
+    // Draggable grips when selected: a square at the origin and at the X / Y
+    // tips. Warm grip colour with a light border, like an entity grip.
+    if selected {
+        let x_tip = Point::new(icon_origin.x + geom[0].dx, icon_origin.y + geom[0].dy);
+        let y_tip = Point::new(icon_origin.x + geom[1].dx, icon_origin.y + geom[1].dy);
+        let fill = Color {
+            r: 0.20,
+            g: 0.85,
+            b: 0.95,
+            a: 1.0,
+        };
+        let border = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 0.9,
+        };
+        for c in [icon_origin, x_tip, y_tip] {
+            let h = UCS_GRIP_BOX / 2.0;
+            let sq = canvas::Path::rectangle(
+                Point::new(c.x - h, c.y - h),
+                iced::Size::new(UCS_GRIP_BOX, UCS_GRIP_BOX),
+            );
+            frame.fill(&sq, fill);
+            frame.stroke(
+                &sq,
+                canvas::Stroke {
+                    width: 1.0,
+                    style: canvas::Style::Solid(border),
+                    ..Default::default()
+                },
+            );
+        }
+    }
 }
 
 // ── Dynamic Input overlay ─────────────────────────────────────────────────

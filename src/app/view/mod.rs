@@ -215,18 +215,33 @@ impl OpenCADStudio {
                 None
             } else if let Some((vp_cam, full)) = tab.scene.viewport_edit_frame((vw, vh)) {
                 let (_, ux, uy, uz) = tab.ucs_xform().axes();
+                let origin_screen = self.ucs_icon_at_origin.then(|| {
+                    vp_cam
+                        .project(tab.ucs_origin_world(), full)
+                        .map(|p| iced::Point::new(full.x + p.x, full.y + p.y))
+                }).flatten();
                 Some(crate::ui::overlay::UcsIconParams {
                     view_proj: vp_cam.view_proj_rte(full),
                     bounds: full,
                     axes: (ux, uy, uz),
+                    origin_screen,
+                    hover: self.ucs_icon_hover,
+                    selected: self.ucs_icon_selected,
                 })
             } else if !is_paper {
                 let cam = tab.scene.camera.borrow();
                 let (_, ux, uy, uz) = tab.ucs_xform().axes();
+                let origin_screen = self.ucs_icon_at_origin.then(|| {
+                    cam.project(tab.ucs_origin_world(), vp_bounds)
+                        .map(|p| iced::Point::new(vp_bounds.x + p.x, vp_bounds.y + p.y))
+                }).flatten();
                 Some(crate::ui::overlay::UcsIconParams {
                     view_proj: cam.view_proj_rte(vp_bounds),
                     bounds: vp_bounds,
                     axes: (ux, uy, uz),
+                    origin_screen,
+                    hover: self.ucs_icon_hover,
+                    selected: self.ucs_icon_selected,
                 })
             } else {
                 None
