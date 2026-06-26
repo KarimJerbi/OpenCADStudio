@@ -116,6 +116,16 @@ pub fn tessellate(
         }
     };
 
+    // A HATCH is drawn as a fill by the hatch pipeline and highlighted via a
+    // fill tint when selected (issue #71), so it carries no boundary outline in
+    // the wire set. Skipping it here drops the dense boundary polyline — the
+    // dominant wire-instance cost on hatch-heavy drawings (issue #131). Picking
+    // is unaffected: hatches are caught by their fill area through the existing
+    // `pick::hit_test::click_hit_hatch` path, not this outline.
+    if matches!(entity, EntityType::Hatch(_)) {
+        return vec![];
+    }
+
     // MultiLeader is handled by scene/mod.rs since it emits multiple WireModels
     // (leader, text, frame, fill) with distinct colors.
     if let EntityType::Leader(leader) = entity {
