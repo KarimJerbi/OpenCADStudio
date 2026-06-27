@@ -116,6 +116,88 @@ impl OpenCADStudio {
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
             }
 
+            // QDIM second stage: the front-end relaunched with the picked
+            // dimension-line point and the gathered geometry now selected. Build
+            // a continuous chain of linear dimensions across the endpoints.
+            cmd if cmd.starts_with("QDIM_PLACE ") => {
+                let nums: Vec<f32> = cmd
+                    .split_whitespace()
+                    .skip(1)
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                if nums.len() < 3 {
+                    return Some(Task::none());
+                }
+                let place = glam::Vec3::new(nums[0], nums[1], nums[2]);
+                let handles: Vec<acadrust::Handle> = self.tabs[i]
+                    .scene
+                    .selected_entities()
+                    .iter()
+                    .map(|(h, _)| *h)
+                    .collect();
+                let mut pts: Vec<glam::Vec3> = Vec::new();
+                for h in &handles {
+                    if let Some(e) = self.tabs[i].scene.document.get_entity(*h) {
+                        qdim_collect_points(e, &mut pts);
+                    }
+                }
+                if pts.len() < 2 {
+                    self.command_line
+                        .push_error("QDIM: no dimensionable endpoints in the selection.");
+                    return Some(Task::none());
+                }
+                // Choose the dimension axis from the points' spread: a wider X
+                // span dimensions horizontally (ordered by X), else vertically.
+                let (minx, maxx) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| {
+                    (a.min(p.x), b.max(p.x))
+                });
+                let (miny, maxy) = pts.iter().fold((f32::MAX, f32::MIN), |(a, b), p| {
+                    (a.min(p.y), b.max(p.y))
+                });
+                let horizontal = (maxx - minx) >= (maxy - miny);
+                if horizontal {
+                    pts.sort_by(|a, b| a.x.total_cmp(&b.x));
+                    pts.dedup_by(|a, b| (a.x - b.x).abs() < 1e-4);
+                } else {
+                    pts.sort_by(|a, b| a.y.total_cmp(&b.y));
+                    pts.dedup_by(|a, b| (a.y - b.y).abs() < 1e-4);
+                }
+                if pts.len() < 2 {
+                    self.command_line
+                        .push_error("QDIM: endpoints collapse to a single position.");
+                    return Some(Task::none());
+                }
+                self.push_undo_snapshot(i, "QDIM");
+                let v = |p: glam::Vec3| acadrust::types::Vector3::new(p.x as f64, p.y as f64, p.z as f64);
+                let mut made = 0usize;
+                for w in pts.windows(2) {
+                    let (p1, p2) = (w[0], w[1]);
+                    let mut dim = acadrust::entities::DimensionLinear::new(v(p1), v(p2));
+                    dim.rotation = if horizontal {
+                        0.0
+                    } else {
+                        std::f64::consts::FRAC_PI_2
+                    };
+                    // Dim line passes through the picked perpendicular position.
+                    let def = if horizontal {
+                        glam::Vec3::new((p1.x + p2.x) * 0.5, place.y, 0.0)
+                    } else {
+                        glam::Vec3::new(place.x, (p1.y + p2.y) * 0.5, 0.0)
+                    };
+                    dim.definition_point = v(def);
+                    dim.base.definition_point = v(def);
+                    dim.base.actual_measurement = dim.measurement();
+                    self.commit_entity(acadrust::EntityType::Dimension(
+                        acadrust::entities::Dimension::Linear(dim),
+                    ));
+                    made += 1;
+                }
+                self.tabs[i].dirty = true;
+                self.command_line
+                    .push_output(&format!("QDIM  {made} dimensions created."));
+                return Some(Task::none());
+            }
+
             "DIMEDIT" | "DED" => {
                 use crate::modules::annotate::dimedit::DimEditCommand;
                 let cmd = DimEditCommand::new();
@@ -564,4 +646,41 @@ fn find_last_linear_dim(
         }
     }
     result
+}
+
+/// Collect candidate dimension endpoints from an entity for QDIM — line ends,
+/// polyline vertices, arc endpoints — in world space.
+fn qdim_collect_points(e: &acadrust::EntityType, out: &mut Vec<glam::Vec3>) {
+    use acadrust::EntityType as ET;
+    let p = |v: &acadrust::types::Vector3| glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32);
+    match e {
+        ET::Line(l) => {
+            out.push(p(&l.start));
+            out.push(p(&l.end));
+        }
+        ET::LwPolyline(pl) => {
+            for v in &pl.vertices {
+                out.push(glam::Vec3::new(
+                    v.location.x as f32,
+                    v.location.y as f32,
+                    pl.elevation as f32,
+                ));
+            }
+        }
+        ET::Polyline(pl) => {
+            for v in &pl.vertices {
+                out.push(p(&v.location));
+            }
+        }
+        ET::Arc(a) => {
+            for &ang in &[a.start_angle, a.end_angle] {
+                out.push(glam::Vec3::new(
+                    (a.center.x + a.radius * ang.cos()) as f32,
+                    (a.center.y + a.radius * ang.sin()) as f32,
+                    a.center.z as f32,
+                ));
+            }
+        }
+        _ => {}
+    }
 }

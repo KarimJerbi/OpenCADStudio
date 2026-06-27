@@ -481,12 +481,12 @@ impl OpenCADStudio {
                         if layer.starts_with("__DIMBREAK__")
                             || layer.starts_with("__DIMBREAK_AUTO__")
                         {
-                            // DIMBREAK is a geometry operation we approximate by
-                            // recording a note on the dimension; full intersection logic
-                            // requires render geometry. For now, just undo-snapshot and log.
-                            self.push_undo_snapshot(i, "DIMBREAK");
-                            self.command_line.push_output("DIMBREAK  Break applied.");
-                            self.tabs[i].dirty = true;
+                            // DIMBREAK needs a break-gap field on the dimension
+                            // model (not yet present) to store and render the gap.
+                            // Report honestly rather than claiming success while
+                            // changing nothing. (#181 / DIM-020)
+                            self.command_line
+                                .push_info("DIMBREAK: not yet implemented — nothing changed.");
                             self.tabs[i].active_cmd = None;
                             self.tabs[i].snap_result = None;
                             return Task::none();
@@ -503,10 +503,11 @@ impl OpenCADStudio {
                             return Task::none();
                         }
                         if layer.starts_with("__DIMJOG__") {
-                            // Record jog position — visual rendering handled by scene.
-                            self.push_undo_snapshot(i, "DIMJOGLINE");
-                            self.command_line.push_output("DIMJOGLINE  Jog added.");
-                            self.tabs[i].dirty = true;
+                            // DIMJOGLINE needs a jog-point field on the dimension
+                            // model (not yet present) to store and render the jog.
+                            // Report honestly rather than faking success. (DIM-019)
+                            self.command_line
+                                .push_info("DIMJOGLINE: not yet implemented — nothing changed.");
                             self.tabs[i].active_cmd = None;
                             self.tabs[i].snap_result = None;
                             return Task::none();
@@ -2177,24 +2178,58 @@ fn apply_dimspace(scene: &mut crate::scene::Scene, encoded: &str) {
         .collect();
     let spacing: f64 = parts[2].parse().unwrap_or(0.0);
 
+    use acadrust::entities::Dimension;
     let base_h = acadrust::Handle::from(base_val);
-    // Read base dimension's definition_point Z (perpendicular offset)
-    let base_z = if let Some(acadrust::EntityType::Dimension(d)) = scene.document.get_entity(base_h)
-    {
-        d.base().definition_point.z
-    } else {
-        return;
+    // Base dim: the perpendicular direction (from its rotation / axis) and the
+    // dim line's perpendicular coordinate. Spacing steps each parallel dim along
+    // this perp IN THE DRAWING PLANE — offsetting Z had no effect on the dim
+    // line, which is computed from def·perp with perp.z = 0. (#181 / DIM-021)
+    let (perp, base_coord) = match scene.document.get_entity(base_h) {
+        Some(acadrust::EntityType::Dimension(Dimension::Linear(d))) => {
+            let (s, c) = d.rotation.sin_cos();
+            let perp = (-s, c);
+            let dp = d.definition_point;
+            (perp, dp.x * perp.0 + dp.y * perp.1)
+        }
+        Some(acadrust::EntityType::Dimension(Dimension::Aligned(d))) => {
+            let dx = d.second_point.x - d.first_point.x;
+            let dy = d.second_point.y - d.first_point.y;
+            let len = (dx * dx + dy * dy).sqrt().max(1e-12);
+            let perp = (-dy / len, dx / len);
+            let dp = d.definition_point;
+            (perp, dp.x * perp.0 + dp.y * perp.1)
+        }
+        _ => return,
     };
 
     let effective_spacing = if spacing <= 0.0 { 10.0 } else { spacing };
     for (idx, &hv) in other_vals.iter().enumerate() {
         let h = acadrust::Handle::from(hv);
-        let new_z = base_z + effective_spacing * (idx + 1) as f64;
-        if let Some(acadrust::EntityType::Dimension(d)) = scene.document.get_entity_mut(h) {
-            let dp = &mut d.base_mut().definition_point;
-            dp.z = new_z;
+        let target = base_coord + effective_spacing * (idx + 1) as f64;
+        if let Some(acadrust::EntityType::Dimension(dim)) = scene.document.get_entity_mut(h) {
+            // Slide this dim's definition point along perp so its perpendicular
+            // coordinate equals `target`; update both the struct field (render)
+            // and base (save).
+            let slide = |p: &mut acadrust::types::Vector3| {
+                let cur = p.x * perp.0 + p.y * perp.1;
+                let delta = target - cur;
+                p.x += perp.0 * delta;
+                p.y += perp.1 * delta;
+            };
+            match dim {
+                Dimension::Linear(d) => {
+                    slide(&mut d.definition_point);
+                    d.base.definition_point = d.definition_point;
+                }
+                Dimension::Aligned(d) => {
+                    slide(&mut d.definition_point);
+                    d.base.definition_point = d.definition_point;
+                }
+                _ => {}
+            }
         }
     }
+    scene.bump_geometry();
 }
 
 // ── MLEADERALIGN helper ───────────────────────────────────────────────────────
