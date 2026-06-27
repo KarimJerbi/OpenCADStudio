@@ -16,7 +16,7 @@ pub mod patterns;
 pub mod update_check;
 
 use crate::scene::DerivedCaches;
-use acadrust::entities::{Dimension, EntityType};
+use acadrust::entities::EntityType;
 use acadrust::io::dwg::DwgReader;
 use acadrust::{CadDocument, DwgWriter, DxfReader, DxfWriter};
 use std::path::{Path, PathBuf};
@@ -856,9 +856,9 @@ fn fix_viewport_status_flags(doc: &mut CadDocument) {
 fn fix_dxf_dimension_rotations(doc: &mut CadDocument) {
     for entity in doc.entities_mut() {
         match entity {
-            EntityType::Dimension(Dimension::Linear(d)) => {
-                d.rotation = d.rotation.to_radians();
-            }
+            // Dimension angles (rotation / text / oblique) are converted
+            // degrees->radians inside the acadrust DXF reader now, so a
+            // dimension arm here would double-convert.
             EntityType::AttributeDefinition(a) => {
                 a.rotation = a.rotation.to_radians();
             }
