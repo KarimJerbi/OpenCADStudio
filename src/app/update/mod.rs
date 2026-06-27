@@ -213,6 +213,11 @@ impl OpenCADStudio {
                 Task::none()
             }
 
+            Message::ScrollLayoutTabs(dx) => iced::widget::operation::scroll_by(
+                iced::advanced::widget::Id::new(crate::ui::statusbar::LAYOUT_TABS_SCROLL_ID),
+                iced::widget::scrollable::AbsoluteOffset { x: dx, y: 0.0 },
+            ),
+
             Message::OpenRecent(path) => {
                 // Recents are read from disk every save → the path may be
                 // stale. Skip silently if the file no longer exists; the
@@ -1336,6 +1341,14 @@ impl OpenCADStudio {
                 self.scale_popup_open = false;
                 Task::none()
             }
+            Message::ToggleLayoutList => {
+                self.layout_list_open ^= true;
+                Task::none()
+            }
+            Message::CloseLayoutList => {
+                self.layout_list_open = false;
+                Task::none()
+            }
             Message::ToggleStatusBarMenu => {
                 self.statusbar_menu_open ^= true;
                 Task::none()
@@ -1946,7 +1959,10 @@ impl OpenCADStudio {
                 Task::none()
             }
 
-            Message::LayoutSwitch(name) => self.on_layout_switch(name),
+            Message::LayoutSwitch(name) => {
+                self.layout_list_open = false;
+                self.on_layout_switch(name)
+            }
 
             Message::LayoutCreate => self.on_layout_create(),
 

@@ -2,7 +2,7 @@
 //! opened from the bar's far-right handle. Rendered as a floating overlay
 //! above the status bar, same pattern as the scale picker.
 
-use iced::widget::{button, column, container, mouse_area, row, text};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text};
 use iced::{Background, Border, Color, Element, Fill, Length, Padding, Theme};
 
 use crate::app::Message;
@@ -48,6 +48,69 @@ pub fn statusbar_menu_overlay(config: &StatusBarConfig) -> Element<'static, Mess
 
     mouse_area(positioned)
         .on_press(Message::CloseStatusBarMenu)
+        .into()
+}
+
+/// Dropdown listing Model + every paper layout, opened from the leftmost
+/// hamburger. Pinned bottom-left just above the status bar; a click selects a
+/// layout (and closes), an outside click just closes.
+pub fn layout_list_overlay<'a>(layouts: &[String], current: &str) -> Element<'a, Message> {
+    let rows: Vec<Element<'a, Message>> = layouts
+        .iter()
+        .map(|name| layout_row(name.clone(), name == current))
+        .collect();
+
+    let panel = container(scrollable(column(rows)))
+        .style(|_: &Theme| container::Style {
+            background: Some(Background::Color(PANEL_BG)),
+            border: Border {
+                color: PANEL_BORDER,
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..Default::default()
+        })
+        .width(Length::Fixed(200.0))
+        .max_height(360.0);
+
+    let positioned = container(panel)
+        .align_left(Fill)
+        .align_bottom(Fill)
+        .padding(Padding {
+            bottom: 27.0,
+            left: 4.0,
+            top: 0.0,
+            right: 0.0,
+        })
+        .width(Fill)
+        .height(Fill);
+
+    mouse_area(positioned)
+        .on_press(Message::CloseLayoutList)
+        .into()
+}
+
+fn layout_row<'a>(name: String, is_current: bool) -> Element<'a, Message> {
+    let lbl = text(name.clone())
+        .size(11)
+        .color(if is_current { LABEL_ON } else { LABEL_OFF });
+    button(row![lbl].align_y(iced::Center))
+        .on_press(Message::LayoutSwitch(name))
+        .style(move |_: &Theme, status| button::Style {
+            background: Some(Background::Color(match (is_current, status) {
+                (_, button::Status::Hovered) => ROW_HOVER,
+                (true, _) => Color {
+                    r: 0.18,
+                    g: 0.26,
+                    b: 0.36,
+                    a: 1.0,
+                },
+                _ => Color::TRANSPARENT,
+            })),
+            ..Default::default()
+        })
+        .width(Fill)
+        .padding([4, 12])
         .into()
 }
 

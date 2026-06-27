@@ -1222,6 +1222,15 @@ impl OpenCADStudio {
             iced::widget::Space::new().width(0).height(0).into()
         };
 
+        let layout_list_layer: Element<'_, Message> = if self.layout_list_open && !tab.is_start {
+            crate::ui::statusbar::statusbar_menu::layout_list_overlay(
+                &tab.scene.layout_names(),
+                &tab.scene.current_layout,
+            )
+        } else {
+            iced::widget::Space::new().width(0).height(0).into()
+        };
+
         let units_layer: Element<'_, Message> = if self.units_popup_open {
             crate::ui::popup::units_popup::units_popup_overlay(tab.scene.document.header.insertion_units)
         } else {
@@ -1286,6 +1295,7 @@ impl OpenCADStudio {
             snap_layer,
             scale_layer,
             statusbar_menu_layer,
+            layout_list_layer,
             units_layer,
             isolate_layer,
             sel_filter_layer,

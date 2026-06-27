@@ -4,8 +4,17 @@ pub mod statusbar_config;
 pub mod statusbar_menu;
 
 use iced::widget::tooltip::Position as TipPos;
-use iced::widget::{button, column, container, mouse_area, row, text, text_input, tooltip, Row};
+use iced::widget::scrollable::{Direction, Scrollbar};
+use iced::widget::{
+    button, column, container, mouse_area, row, scrollable, text, text_input, tooltip, Row,
+};
 use iced::{Background, Border, Color, Element, Length, Theme};
+
+/// Scrollable id of the status-bar layout-tab strip, so the ‹ › arrows (and
+/// `Message::ScrollLayoutTabs`) can scroll it.
+pub const LAYOUT_TABS_SCROLL_ID: &str = "statusbar-layout-tabs";
+/// How far one ‹ / › arrow click scrolls the layout-tab strip.
+const LAYOUT_TAB_SCROLL_STEP: f32 = 96.0;
 
 /// Widget id of the inline layout-rename text input, so the rename can grab
 /// keyboard focus the moment it opens (issue #86).
@@ -78,10 +87,19 @@ impl StatusBar {
         // Which pills the user has chosen to show on the bar.
         config: &'a StatusBarConfig,
     ) -> Element<'a, Message> {
+        // Leftmost hamburger: opens a dropdown listing Model + every layout, so
+        // a layout can be picked directly even when the tab strip is scrolled.
         let menu_btn = button(crate::ui::icons::tinted(crate::ui::icons::MENU, 14.0, ICON_COLOR))
-            .on_press(Message::Command("MENU".into()))
-            .style(|_: &Theme, _| button::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
+            .on_press(Message::ToggleLayoutList)
+            .style(|_: &Theme, status| button::Style {
+                background: Some(Background::Color(match status {
+                    button::Status::Hovered => PILL_BG,
+                    _ => Color::TRANSPARENT,
+                })),
+                border: Border {
+                    radius: 3.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .padding([2, 8]);
@@ -236,16 +254,31 @@ impl StatusBar {
         let mut bar = Row::new().align_y(iced::Center).spacing(0);
         bar = bar.push(menu_btn);
         if show_layout_tabs {
+            // The layout tabs live in a horizontal scrollable that takes only
+            // the space left between the menu and the right-side tools, so many
+            // layouts scroll instead of pushing the tools off the bar (#199).
+            // ‹ › arrows scroll it (the mouse wheel works too).
+            let mut tabs_row = Row::new().align_y(iced::Center).spacing(0);
             for name in layouts {
                 let is_active = name == current_layout;
                 let renaming = rename_state
                     .filter(|(orig, _)| *orig == name)
                     .map(|(_, edit)| edit.as_str());
-                bar = bar.push(space_tab(name, is_active, renaming));
+                tabs_row = tabs_row.push(space_tab(name, is_active, renaming));
             }
-            bar = bar.push(add_btn);
+            tabs_row = tabs_row.push(add_btn);
+
+            let tabs_scroll = scrollable(tabs_row)
+                .direction(Direction::Horizontal(Scrollbar::hidden()))
+                .id(iced::advanced::widget::Id::new(LAYOUT_TABS_SCROLL_ID))
+                .width(Length::Shrink);
+
+            bar = bar.push(scroll_arrow(false));
+            bar = bar.push(container(tabs_scroll).width(Length::Fill));
+            bar = bar.push(scroll_arrow(true));
+        } else {
+            bar = bar.push(iced::widget::Space::new().width(Length::Fill));
         }
-        bar = bar.push(iced::widget::Space::new().width(Length::Fill));
         bar = bar.push(right_status);
 
         container(bar)
@@ -269,6 +302,38 @@ impl StatusBar {
 
 fn format_coords(p: glam::Vec3) -> String {
     format!("{:.4}, {:.4}, {:.4}", p.x, p.y, p.z)
+}
+
+// ── Layout-tab scroll arrow ───────────────────────────────────────────────
+
+/// A ‹ / › arrow that scrolls the layout-tab strip. `right` picks the
+/// direction (and step sign).
+fn scroll_arrow<'a>(right: bool) -> Element<'a, Message> {
+    let glyph = if right {
+        crate::ui::icons::arrow_right(9.0, ICON_COLOR)
+    } else {
+        crate::ui::icons::arrow_left(9.0, ICON_COLOR)
+    };
+    let step = if right {
+        LAYOUT_TAB_SCROLL_STEP
+    } else {
+        -LAYOUT_TAB_SCROLL_STEP
+    };
+    button(glyph)
+        .on_press(Message::ScrollLayoutTabs(step))
+        .style(|_: &Theme, status| button::Style {
+            background: Some(Background::Color(match status {
+                button::Status::Hovered => PILL_BG,
+                _ => Color::TRANSPARENT,
+            })),
+            border: Border {
+                radius: 3.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .padding([2, 4])
+        .into()
 }
 
 // ── Customization handle ──────────────────────────────────────────────────

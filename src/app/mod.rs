@@ -202,6 +202,8 @@ pub(super) struct OpenCADStudio {
     scale_popup_open: bool,
     /// True while the status-bar customization menu is open.
     statusbar_menu_open: bool,
+    /// True while the leftmost hamburger's Model/layout list dropdown is open.
+    layout_list_open: bool,
     /// True while the drawing-units picker is open.
     units_popup_open: bool,
     /// True while the Isolate pill's action menu is open.
@@ -1011,6 +1013,9 @@ pub enum Message {
     OpenRecent(PathBuf),
     /// Open a URL in the system browser (start-page intro video, links).
     OpenUrl(String),
+    /// Scroll the status-bar layout-tab strip horizontally by `delta` px
+    /// (negative = left). Driven by the ‹ › arrows next to the tabs.
+    ScrollLayoutTabs(f32),
     /// Drop a path from the recent-documents list.
     RecentRemove(PathBuf),
     /// User clicked Cancel on the loading overlay. The parser thread keeps
@@ -1215,6 +1220,10 @@ pub enum Message {
     ToggleScalePopup,
     /// Close the scale picker popup.
     CloseScalePopup,
+    /// Toggle the leftmost hamburger's Model/layout list dropdown.
+    ToggleLayoutList,
+    /// Close the Model/layout list dropdown.
+    CloseLayoutList,
     /// Toggle the status-bar customization menu open/closed.
     ToggleStatusBarMenu,
     /// Close the status-bar customization menu.
@@ -1794,6 +1803,7 @@ impl OpenCADStudio {
             snap_popup_open: false,
             scale_popup_open: false,
             statusbar_menu_open: false,
+            layout_list_open: false,
             units_popup_open: false,
             isolate_popup_open: false,
             selection_filter_popup_open: false,
