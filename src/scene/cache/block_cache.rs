@@ -1083,6 +1083,12 @@ fn expand_defn(
         eprintln!("block_cache: nested-block depth > {MAX_NESTING_DEPTH}, truncating");
         return;
     }
+    // Track the last text OBB that received a LOD substitute (baseline line
+    // or greeked box). Colour-split MTEXT produces one outline wire per
+    // \C/\c segment; only the first outline from a source entity should
+    // emit the substitute — subsequent segments use the same full-document
+    // OBB and would draw overlapping rectangles with the wrong colour.
+    let mut last_lod_obb: Option<[[f64; 3]; 4]> = None;
     for sub in &defn.subs {
         match sub {
             LocalSub::Wire(lw) => {
@@ -1114,27 +1120,38 @@ fn expand_defn(
                     // We apply the Insert's transform scale to the stored
                     // local glyph height to get the screen height.
                     if let Some(h_local) = lw.text_height_local {
-                        // Fill-only wires (outline stripped into a sibling
-                        // LocalWire) must bypass the LOD ladder: both
-                        // emit_text_baseline and emit_greeked_text generate
-                        // their own OBB geometry and completely ignore
-                        // lw.fill_tris, so routing a fill-only wire through
-                        // either path would produce an invisible double-draw.
-                        // emit_wire handles fill_tris correctly at all zoom
-                        // levels, so skip the LOD rungs for these wires.
-                        if !lw.is_fill_only {
-                            let m = &accum_xform.matrix.m;
-                            let sy = ((m[1][0] * m[1][0]
-                                + m[1][1] * m[1][1]
-                                + m[1][2] * m[1][2]) as f64)
-                                .sqrt() as f32;
-                            let h_world = h_local * sy;
-                            let h_px = h_world / wpp;
+                        let m = &accum_xform.matrix.m;
+                        let sy = ((m[1][0] * m[1][0]
+                            + m[1][1] * m[1][1]
+                            + m[1][2] * m[1][2]) as f64)
+                            .sqrt() as f32;
+                        let h_world = h_local * sy;
+                        let h_px = h_world / wpp;
+                        if lw.is_fill_only {
+                            // Fill-only wire: suppress at text LOD thresholds.
+                            // The outline sibling carries the LOD substitute
+                            // (baseline line or greeked box). Emitting every
+                            // glyph triangle at sub-pixel zoom defeats the
+                            // purpose of the LOD ladder.
+                            if h_px < 5.0 {
+                                continue;
+                            }
+                        } else {
                             if h_px < 1.0 {
                                 emit_text_baseline(lw, accum_xform, ctx, out, wpp);
                                 continue;
                             }
                             if h_px < 5.0 {
+                                // Colour-split MTEXT: only the first outline
+                                // wire from a source entity emits the greek
+                                // substitute. Subsequent segments share the
+                                // same text_obb_local and would draw
+                                // overlapping rectangles with the wrong
+                                // (last-wins) colour.
+                                if lw.text_obb_local == last_lod_obb {
+                                    continue;
+                                }
+                                last_lod_obb = lw.text_obb_local;
                                 emit_greeked_text(lw, local, accum_xform, ctx, out);
                                 continue;
                             }
