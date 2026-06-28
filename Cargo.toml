@@ -87,7 +87,7 @@ rayon = "1"
 open = "5"
 # PDF export / printing. Native-only: printpdf pulls a wasm-incompatible
 # `memchr` (1.0.2) via lopdf → nom_locate, and the web build has no filesystem.
-printpdf = "0.9.1"
+printpdf = { version = "0.9.1", default-features = false }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Parse the GitHub Releases API response for the plugin marketplace.
 serde_json = "1"
