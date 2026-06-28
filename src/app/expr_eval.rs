@@ -90,9 +90,18 @@ struct Parser {
     pos: usize,
 }
 
-/// Maximum recursion depth for the recursive-descent parser. Deeply nested
-/// expressions (e.g. thousands of parentheses) otherwise overflow the stack.
+/// Maximum recursion depth (parser stack frames) for the recursive-descent
+/// parser. Deeply nested expressions otherwise overflow the stack. This counts
+/// *frames*, not nesting levels: each parenthesis level descends ~6 methods
+/// (expr→sum→product→power→unary→atom), so 256 frames ≈ 41 nested parens — well
+/// past anything a human types, while still capping the stack at a safe depth.
 const MAX_RECURSION: usize = 256;
+
+/// Maximum input length for `eval_to_string`'s embedded-expression fallback
+/// scan. The scan is super-linear in the input length, so this bounds it to a
+/// worst case of a few milliseconds. Command-line / dynamic-input fields are
+/// never legitimately this long; longer text is returned unchanged.
+const MAX_EVAL_SCAN_LEN: usize = 256;
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
@@ -403,6 +412,17 @@ pub fn eval_to_string(input: &str) -> String {
         return format!("{}", v);
     }
 
+    // Length cap on the embedded-expression fallback below. That greedy
+    // longest-match rescan re-tokenises every (start, end) window, so its cost
+    // is super-linear (≈O(n³)): without a cap a few-KB paste of non-evaluable
+    // text freezes this synchronous, UI-thread caller for seconds. Whole-string
+    // numbers and expressions of any length already returned via the fast paths
+    // above; only mixed free-text scanning is bounded here. Over the cap we hand
+    // the text back unchanged rather than hunting for embedded sub-expressions.
+    if trimmed.len() > MAX_EVAL_SCAN_LEN {
+        return trimmed.to_string();
+    }
+
     // Fallback: scan character-by-character, finding maximal expression substrings
     let chars: Vec<char> = trimmed.chars().collect();
     let len = chars.len();
@@ -631,5 +651,44 @@ mod tests {
     fn moderately_nested_parens_still_evaluate() {
         let expr = "(".repeat(30) + "1" + &")".repeat(30);
         assert_eq!(eval_number(&expr), Some(1.0), "moderately nested expression should evaluate");
+    }
+
+    #[test]
+    fn nesting_limit_boundary_is_pinned() {
+        // ~6 parser frames per paren level → 41 accepted, 42 rejected. Pinned so
+        // a refactor that changes the method-chain length can't silently shift
+        // the real depth limit without a failing test.
+        let ok = "(".repeat(41) + "1" + &")".repeat(41);
+        let over = "(".repeat(42) + "1" + &")".repeat(42);
+        assert_eq!(eval_number(&ok), Some(1.0), "41 levels must still evaluate");
+        assert_eq!(eval_number(&over), None, "42 levels must be rejected");
+    }
+
+    #[test]
+    fn deep_unary_chain_is_rejected_not_overflow() {
+        // The unary recursion (parse_unary → parse_unary) is also depth-guarded:
+        // a long sign run must return None, not overflow the stack.
+        let expr = "-".repeat(100_000) + "1";
+        assert_eq!(eval_number(&expr), None);
+    }
+
+    #[test]
+    fn deep_function_arg_nesting_is_rejected_not_overflow() {
+        // parse_atom → parse_args → parse_expr is the third recursion entry.
+        let expr = "abs(".repeat(100_000) + "1" + &")".repeat(100_000);
+        assert_eq!(eval_number(&expr), None);
+    }
+
+    #[test]
+    fn eval_to_string_over_cap_returns_promptly_unchanged() {
+        // Above MAX_EVAL_SCAN_LEN the super-linear fallback scan must be skipped
+        // entirely (DoS guard): a long non-evaluable string returns unchanged
+        // without freezing. Without the cap this input takes seconds.
+        let junk = "x".repeat(50_000);
+        assert_eq!(eval_to_string(&junk), junk);
+        // Nested parens (the class the depth guard targets) routed through the
+        // production entry point must also return promptly, not hang.
+        let nested = "(".repeat(50_000) + "1" + &")".repeat(50_000);
+        assert_eq!(eval_to_string(&nested), nested);
     }
 }
