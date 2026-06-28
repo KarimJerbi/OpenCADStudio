@@ -717,12 +717,7 @@ impl Ribbon {
                     .style(move |_: &Theme| container::Style {
                         background: Some(Background::Color(lc)),
                         border: Border {
-                            color: Color {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 0.5,
-                            },
+                            color: SWATCH_BORDER,
                             width: 1.0,
                             radius: 1.0.into(),
                         },
