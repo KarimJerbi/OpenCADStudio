@@ -141,7 +141,34 @@ impl OpenCADStudio {
         }
     }
 
+    /// Applies one command result, then — when that result ended the active
+    /// command — drops the selection. Editing tools (MOVE, COPY, ROTATE, …) and
+    /// every other interactive command leave nothing selected once they finish,
+    /// so a follow-up edit doesn't silently reuse the previous working set.
+    ///
+    /// `Relaunch`/`Dispatch` are excepted: they end the front-end command only
+    /// to immediately start another and hand it a deliberate selection (the
+    /// pick-first selector relaunching MOVE on the picked set works this way).
+    /// Pure-selection commands (SELECTALL, QSELECT, …) run without an active
+    /// command, so `was_active` is false and their selection is preserved.
     pub(super) fn apply_cmd_result(&mut self, result: CmdResult) -> Task<Message> {
+        let was_active = self.tabs[self.active_tab].active_cmd.is_some();
+        let preserve_selection =
+            matches!(result, CmdResult::Relaunch(..) | CmdResult::Dispatch(..));
+        let task = self.apply_cmd_result_inner(result);
+        let i = self.active_tab;
+        if was_active
+            && !preserve_selection
+            && self.tabs[i].active_cmd.is_none()
+            && !self.tabs[i].scene.selected.is_empty()
+        {
+            self.tabs[i].scene.deselect_all();
+            self.refresh_properties();
+        }
+        task
+    }
+
+    fn apply_cmd_result_inner(&mut self, result: CmdResult) -> Task<Message> {
         let i = self.active_tab;
         match result {
             CmdResult::NeedPoint => {
